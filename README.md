@@ -63,7 +63,8 @@ Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set thes
 | `DATABASE_URL` | Supabase **Transaction** pooler URI (port `6543`, `?pgbouncer=true`) |
 | `DIRECT_URL` | Supabase **Session** URI (port `5432`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://jfutawxwjqekerugbqzt.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon / publishable key (Storage uploads to public `spoods` bucket) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon JWT from **Settings → API** (starts with `eyJ…`) |
+| `RESEND_API_KEY` | Resend API key for feedback emails to `hello@beccapossible.com` |
 
 Then **Redeploy** (Deployments → ⋮ → Redeploy). Env changes do not apply to an already-running deployment until you redeploy.
 
