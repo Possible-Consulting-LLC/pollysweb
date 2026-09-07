@@ -9,11 +9,11 @@ Spoodly Space is a cute, beginner-friendly jumping spider care and tracking app.
 
 - **Next.js** (App Router) + TypeScript
 - **Tailwind CSS** for mobile-first UI
-- **Prisma** + **SQLite** for local/dev (schema is portable to PostgreSQL)
+- **Prisma** + **Supabase PostgreSQL**
 - **Auth.js (NextAuth v5)** credentials auth
 - Zod validation + server actions
 
-SQLite keeps the MVP runnable without Docker. The Prisma schema can point at PostgreSQL for production later.
+Database is hosted on Supabase. Copy `.env.example` to `.env` and fill in your Supabase connection strings.
 
 ## Features (MVP)
 
@@ -34,8 +34,8 @@ SQLite keeps the MVP runnable without Docker. The Prisma schema can point at Pos
 
 ```bash
 npm install
-cp .env.example .env   # or use the existing .env
-npx prisma migrate dev
+cp .env.example .env   # set DATABASE_URL + DIRECT_URL from Supabase
+npx prisma migrate deploy
 npm run db:seed
 npm run dev
 ```
