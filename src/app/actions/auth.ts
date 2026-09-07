@@ -1,0 +1,209 @@
+"use server";
+
+import bcrypt from "bcryptjs";
+import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
+import { z } from "zod";
+import { signIn, signOut } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { requireUser } from "@/lib/session";
+import {
+  DEFAULT_SPOOOD_AVATAR_SRC,
+  isDefaultSpoodAvatar,
+  normalizeTheme,
+} from "@/lib/constants";
+import { revalidatePath } from "next/cache";
+
+const authSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  name: z.string().optional(),
+});
+
+export async function registerAction(
+  _prev: { error?: string } | undefined,
+  formData: FormData,
+) {
+  const parsed = authSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+    name: formData.get("name") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return { error: "An account with that email already exists." };
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  await prisma.user.create({
+    data: {
+      email,
+      passwordHash,
+      name: parsed.data.name || email.split("@")[0],
+    },
+  });
+
+  try {
+    await signIn("credentials", {
+      email,
+      password: parsed.data.password,
+      redirectTo: "/home",
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: "Account created, but sign-in failed. Try logging in." };
+    }
+    throw error;
+  }
+}
+
+export async function loginAction(
+  _prev: { error?: string } | undefined,
+  formData: FormData,
+) {
+  const parsed = authSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
+  if (!parsed.success) {
+    return { error: "Enter a valid email and password." };
+  }
+
+  try {
+    await signIn("credentials", {
+      email: parsed.data.email.toLowerCase(),
+      password: parsed.data.password,
+      redirectTo: "/home",
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: "Those credentials didn’t match. Try again?" };
+    }
+    throw error;
+  }
+}
+
+export async function logoutAction() {
+  await signOut({ redirectTo: "/login" });
+}
+
+export async function createSpiderAction(formData: FormData) {
+  const user = await requireUser();
+
+  const name = String(formData.get("name") || "").trim();
+  if (!name) throw new Error("Name is required");
+
+  const sex = String(formData.get("sex") || "Unknown");
+  const species = (formData.get("species") as string) || undefined;
+  const commonName = (formData.get("commonName") as string) || undefined;
+  const instar = (formData.get("instar") as string) || undefined;
+  const source = (formData.get("source") as string) || undefined;
+  const notes = (formData.get("notes") as string) || undefined;
+  const hatchDateRaw = formData.get("hatchDate") as string;
+  const acquisitionDateRaw = formData.get("acquisitionDate") as string;
+
+  const enclosureName = (formData.get("enclosureName") as string) || undefined;
+  const enclosureType = (formData.get("enclosureType") as string) || undefined;
+  const enclosureDimensions =
+    (formData.get("enclosureDimensions") as string) || undefined;
+
+  let profilePhoto = String(formData.get("profilePhoto") || "").trim();
+  if (!isDefaultSpoodAvatar(profilePhoto)) {
+    profilePhoto = DEFAULT_SPOOOD_AVATAR_SRC;
+  }
+  let uploadedUrl: string | null = null;
+
+  const file = formData.get("photo");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error("Photo must be under 5MB.");
+    }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const safeExt = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext)
+      ? ext
+      : "jpg";
+    const filename = `${user.id}-${Date.now()}.${safeExt}`;
+    const dir = path.join(process.cwd(), "public", "uploads");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, filename), bytes);
+    uploadedUrl = `/uploads/${filename}`;
+    profilePhoto = uploadedUrl;
+  }
+
+  const spider = await prisma.spider.create({
+    data: {
+      userId: user.id!,
+      name,
+      sex,
+      species,
+      commonName,
+      instar,
+      source,
+      notes,
+      hatchDate: hatchDateRaw ? new Date(hatchDateRaw) : undefined,
+      acquisitionDate: acquisitionDateRaw
+        ? new Date(acquisitionDateRaw)
+        : new Date(),
+      profilePhoto,
+      enclosure: enclosureName
+        ? {
+            create: {
+              name: enclosureName,
+              type: enclosureType,
+              dimensions: enclosureDimensions,
+              setupDate: new Date(),
+            },
+          }
+        : undefined,
+      reminders: {
+        create: [
+          { userId: user.id!, kind: "feeding", intervalDays: 3 },
+          { userId: user.id!, kind: "misting", intervalDays: 1 },
+          { userId: user.id!, kind: "cleaning", intervalDays: 14 },
+        ],
+      },
+      photos: uploadedUrl
+        ? {
+            create: {
+              url: uploadedUrl,
+              kind: "profile",
+              caption: `${name}'s welcome photo`,
+              takenAt: new Date(),
+            },
+          }
+        : undefined,
+    },
+  });
+
+  revalidatePath("/home");
+  revalidatePath("/spoods");
+  redirect(`/spoods/${spider.id}`);
+}
+
+export async function updateSettingsAction(formData: FormData) {
+  const user = await requireUser();
+
+  await prisma.user.update({
+    where: { id: user.id! },
+    data: {
+      name: String(formData.get("name") || user.name || ""),
+      dateFormat: String(formData.get("dateFormat") || "MMM d, yyyy"),
+      measurement: String(formData.get("measurement") || "imperial"),
+      theme: normalizeTheme(String(formData.get("theme") || "cosmic")),
+      feedDefaultDays: Number(formData.get("feedDefaultDays") || 3),
+      mistDefaultDays: Number(formData.get("mistDefaultDays") || 1),
+      cleanDefaultDays: Number(formData.get("cleanDefaultDays") || 14),
+    },
+  });
+
+  revalidatePath("/", "layout");
+  revalidatePath("/settings");
+  revalidatePath("/home");
+  redirect("/settings?saved=1");
+}
