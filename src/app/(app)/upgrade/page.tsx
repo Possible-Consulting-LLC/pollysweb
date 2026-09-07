@@ -63,7 +63,10 @@ export default async function UpgradePage({
             <dt className="text-xs text-[var(--midnight)]/55">Spoods</dt>
             <dd className="font-semibold">
               {billing.spiderCount}
-              {billing.plan === "free" ? ` / ${FREE_SPIDER_LIMIT} free` : " · unlimited"}
+              {billing.plan === "free" ? ` / ${FREE_SPIDER_LIMIT} active` : " · unlimited"}
+              {billing.memorialCount
+                ? ` · ${billing.memorialCount} in memory`
+                : ""}
             </dd>
           </div>
           {billing.subscriptionCurrentPeriodEnd ? (

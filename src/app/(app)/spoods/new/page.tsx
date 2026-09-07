@@ -25,12 +25,16 @@ export default async function AddSpoodPage() {
       ) : (
         <Card className="space-y-4">
           <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--midnight)]">
-            Free plan includes {FREE_SPIDER_LIMIT} spood
+            Free plan includes {FREE_SPIDER_LIMIT} active spood
           </p>
           <p className="text-sm text-[var(--midnight)]/70">
-            You’re caring for {billing.spiderCount} already. Upgrade to Spoodly
-            Pro for unlimited profiles — {PLAN_PRICES.monthly.amountLabel}/month
-            or {PLAN_PRICES.yearly.amountLabel}/year.
+            You’re caring for {billing.spiderCount} already
+            {billing.memorialCount
+              ? ` (${billing.memorialCount} in memory don’t count)`
+              : ""}
+            . Upgrade to Spoodly Pro for unlimited profiles —{" "}
+            {PLAN_PRICES.monthly.amountLabel}/month or{" "}
+            {PLAN_PRICES.yearly.amountLabel}/year.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link href="/upgrade" className="flex-1">
