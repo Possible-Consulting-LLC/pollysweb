@@ -555,3 +555,96 @@ export async function deleteSpiderPhoto(photoId: string): Promise<ActionResult> 
     };
   }
 }
+
+export async function memorializeSpider(
+  spiderId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  try {
+    const user = await getActionUser();
+    if (!user) return { ok: false, error: "Please sign in again." };
+    const spider = await ownedSpider(spiderId, user.id!);
+    if (!spider) return { ok: false, error: "Spider not found." };
+    if (spider.memorializedAt) {
+      return { ok: true, message: `${spider.name} is already in the memorial.` };
+    }
+
+    const passedOnRaw = String(formData.get("passedOn") || "").trim();
+    const memorialNote = asOptionalString(formData.get("memorialNote") ?? null);
+    const passedOn = passedOnRaw ? new Date(`${passedOnRaw}T12:00:00`) : new Date();
+    if (Number.isNaN(passedOn.getTime())) {
+      return { ok: false, error: "That passing date doesn’t look valid." };
+    }
+
+    await prisma.spider.update({
+      where: { id: spiderId },
+      data: {
+        memorializedAt: new Date(),
+        passedOn,
+        memorialNote: memorialNote ?? null,
+      },
+    });
+
+    revalidateSpider(spiderId);
+    revalidatePath("/upgrade");
+    revalidatePath("/settings");
+    revalidatePath("/spoods/new");
+    return {
+      ok: true,
+      message: `${spider.name} is memorialized. Their story stays, and they no longer use a free plan slot.`,
+    };
+  } catch (error) {
+    console.error("memorializeSpider", error);
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not memorialize.",
+    };
+  }
+}
+
+export async function restoreMemorializedSpider(
+  spiderId: string,
+): Promise<ActionResult> {
+  try {
+    const user = await getActionUser();
+    if (!user) return { ok: false, error: "Please sign in again." };
+    const spider = await ownedSpider(spiderId, user.id!);
+    if (!spider) return { ok: false, error: "Spider not found." };
+    if (!spider.memorializedAt) {
+      return { ok: true, message: `${spider.name} is already an active spood.` };
+    }
+
+    const { getBillingProfile } = await import("@/lib/stripe");
+    const billing = await getBillingProfile(user.id!);
+    if (!billing.canAddSpider) {
+      return {
+        ok: false,
+        error: `Free accounts include ${billing.freeLimit} active spood. Upgrade to Pro, or memorialize another spood first.`,
+      };
+    }
+
+    await prisma.spider.update({
+      where: { id: spiderId },
+      data: {
+        memorializedAt: null,
+        passedOn: null,
+        memorialNote: null,
+      },
+    });
+
+    revalidateSpider(spiderId);
+    revalidatePath("/upgrade");
+    revalidatePath("/settings");
+    revalidatePath("/spoods/new");
+    return {
+      ok: true,
+      message: `${spider.name} is active again and counts toward your plan.`,
+    };
+  } catch (error) {
+    console.error("restoreMemorializedSpider", error);
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not restore spood.",
+    };
+  }
+}
