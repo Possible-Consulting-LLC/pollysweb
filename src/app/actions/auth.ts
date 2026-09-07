@@ -3,18 +3,18 @@
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { z } from "zod";
 import { signIn, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, getActionUser } from "@/lib/session";
 import {
   DEFAULT_SPOOOD_AVATAR_SRC,
   isDefaultSpoodAvatar,
   normalizeTheme,
 } from "@/lib/constants";
+import { saveImageUpload } from "@/lib/uploads";
 import { revalidatePath } from "next/cache";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 const authSchema = z.object({
   email: z.string().email(),
@@ -114,11 +114,15 @@ export async function logoutAction() {
   await signOut({ redirectTo: "/login" });
 }
 
-export async function createSpiderAction(formData: FormData) {
-  const user = await requireUser();
+export async function createSpiderAction(
+  _prev: { error?: string } | undefined,
+  formData: FormData,
+): Promise<{ error?: string }> {
+  const user = await getActionUser();
+  if (!user?.id) return { error: "Please sign in again." };
 
   const name = String(formData.get("name") || "").trim();
-  if (!name) throw new Error("Name is required");
+  if (!name) return { error: "Name is required." };
 
   const sex = String(formData.get("sex") || "Unknown");
   const species = (formData.get("species") as string) || undefined;
@@ -126,13 +130,17 @@ export async function createSpiderAction(formData: FormData) {
   const instar = (formData.get("instar") as string) || undefined;
   const source = (formData.get("source") as string) || undefined;
   const notes = (formData.get("notes") as string) || undefined;
-  const hatchDateRaw = formData.get("hatchDate") as string;
-  const acquisitionDateRaw = formData.get("acquisitionDate") as string;
+  const hatchDateRaw = String(formData.get("hatchDate") || "").trim();
+  const acquisitionDateRaw = String(
+    formData.get("acquisitionDate") || "",
+  ).trim();
 
-  const enclosureName = (formData.get("enclosureName") as string) || undefined;
-  const enclosureType = (formData.get("enclosureType") as string) || undefined;
+  const enclosureName =
+    String(formData.get("enclosureName") || "").trim() || undefined;
+  const enclosureType =
+    String(formData.get("enclosureType") || "").trim() || undefined;
   const enclosureDimensions =
-    (formData.get("enclosureDimensions") as string) || undefined;
+    String(formData.get("enclosureDimensions") || "").trim() || undefined;
 
   let profilePhoto = String(formData.get("profilePhoto") || "").trim();
   if (!isDefaultSpoodAvatar(profilePhoto)) {
@@ -142,70 +150,69 @@ export async function createSpiderAction(formData: FormData) {
 
   const file = formData.get("photo");
   if (file instanceof File && file.size > 0) {
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error("Photo must be under 5MB.");
-    }
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const safeExt = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext)
-      ? ext
-      : "jpg";
-    const filename = `${user.id}-${Date.now()}.${safeExt}`;
-    const dir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, filename), bytes);
-    uploadedUrl = `/uploads/${filename}`;
-    profilePhoto = uploadedUrl;
+    const saved = await saveImageUpload(file, user.id);
+    if ("error" in saved) return { error: saved.error };
+    uploadedUrl = saved.url;
+    profilePhoto = saved.url;
   }
 
-  const spider = await prisma.spider.create({
-    data: {
-      userId: user.id!,
-      name,
-      sex,
-      species,
-      commonName,
-      instar,
-      source,
-      notes,
-      hatchDate: hatchDateRaw ? new Date(hatchDateRaw) : undefined,
-      acquisitionDate: acquisitionDateRaw
-        ? new Date(acquisitionDateRaw)
-        : new Date(),
-      profilePhoto,
-      enclosure: enclosureName
-        ? {
-            create: {
-              name: enclosureName,
-              type: enclosureType,
-              dimensions: enclosureDimensions,
-              setupDate: new Date(),
-            },
-          }
-        : undefined,
-      reminders: {
-        create: [
-          { userId: user.id!, kind: "feeding", intervalDays: 3 },
-          { userId: user.id!, kind: "misting", intervalDays: 1 },
-          { userId: user.id!, kind: "cleaning", intervalDays: 14 },
-        ],
+  try {
+    const spider = await prisma.spider.create({
+      data: {
+        userId: user.id,
+        name,
+        sex,
+        species,
+        commonName,
+        instar,
+        source,
+        notes,
+        hatchDate: hatchDateRaw ? new Date(hatchDateRaw) : undefined,
+        acquisitionDate: acquisitionDateRaw
+          ? new Date(acquisitionDateRaw)
+          : new Date(),
+        profilePhoto,
+        enclosure: enclosureName
+          ? {
+              create: {
+                name: enclosureName,
+                type: enclosureType,
+                dimensions: enclosureDimensions,
+                setupDate: new Date(),
+              },
+            }
+          : undefined,
+        reminders: {
+          create: [
+            { userId: user.id, kind: "feeding", intervalDays: 3 },
+            { userId: user.id, kind: "misting", intervalDays: 1 },
+            { userId: user.id, kind: "cleaning", intervalDays: 14 },
+          ],
+        },
+        photos: uploadedUrl
+          ? {
+              create: {
+                url: uploadedUrl,
+                kind: "profile",
+                caption: `${name}'s welcome photo`,
+                takenAt: new Date(),
+              },
+            }
+          : undefined,
       },
-      photos: uploadedUrl
-        ? {
-            create: {
-              url: uploadedUrl,
-              kind: "profile",
-              caption: `${name}'s welcome photo`,
-              takenAt: new Date(),
-            },
-          }
-        : undefined,
-    },
-  });
+    });
 
-  revalidatePath("/home");
-  revalidatePath("/spoods");
-  redirect(`/spoods/${spider.id}`);
+    revalidatePath("/home");
+    revalidatePath("/spoods");
+    redirect(`/spoods/${spider.id}`);
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    console.error("[createSpider] failed", error);
+    return {
+      error:
+        "Couldn’t save that spood. Please try again — if you uploaded a photo, try a default portrait first.",
+    };
+  }
 }
 
 export async function updateSettingsAction(formData: FormData) {

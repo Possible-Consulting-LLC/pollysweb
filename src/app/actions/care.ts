@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { mkdir, unlink, writeFile } from "fs/promises";
+import { unlink } from "fs/promises";
 import path from "path";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -11,6 +11,7 @@ import {
   fastingDaysBeforeMolt,
   nextInstar,
 } from "@/lib/care";
+import { saveImageUpload } from "@/lib/uploads";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -427,21 +428,13 @@ export async function addSpiderPhoto(
     if (!(file instanceof File) || file.size === 0) {
       return { ok: false, error: "Choose a photo to upload." };
     }
-    if (file.size > 5 * 1024 * 1024) {
-      return { ok: false, error: "Photo must be under 5MB." };
+
+    const saved = await saveImageUpload(file, spiderId);
+    if ("error" in saved) {
+      return { ok: false, error: saved.error };
     }
+    const url = saved.url;
 
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const safeExt = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext)
-      ? ext
-      : "jpg";
-    const filename = `${spiderId}-${Date.now()}.${safeExt}`;
-    const dir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, filename), bytes);
-
-    const url = `/uploads/${filename}`;
     const caption = asOptionalString(formData.get("caption"));
     const setAsProfile = formData.get("setAsProfile") === "on";
 
