@@ -47,6 +47,10 @@ model Spider {
   status          String   @default("Normal") // Normal | Possible premolt | Premolt | Molting | Post-molt recovery
   profilePhoto    String?
   notes           String?
+  /// When set, this spood is memorialized (passed) and does not count toward free-plan limits.
+  memorializedAt  DateTime?
+  passedOn        DateTime?
+  memorialNote    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -61,6 +65,7 @@ model Spider {
   reminders    Reminder[]
 
   @@index([userId])
+  @@index([userId, memorializedAt])
 }
 
 model Enclosure {

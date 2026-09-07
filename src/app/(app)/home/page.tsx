@@ -20,7 +20,9 @@ export default async function HomePage() {
   const views = await listSpidersForUser(user.id!);
   const activity = await getRecentActivity(user.id!);
 
-  const needing = views.filter((v) => v.careStatus !== "All good");
+  const active = views.filter((v) => !v.spider.memorializedAt);
+  const memorial = views.filter((v) => v.spider.memorializedAt);
+  const needing = active.filter((v) => v.careStatus !== "All good");
   const name = defaults.name || "keeper";
 
   return (
@@ -46,7 +48,7 @@ export default async function HomePage() {
             </Link>
           }
         />
-        {views.length === 0 ? (
+        {active.length === 0 && memorial.length === 0 ? (
           <EmptyState
             title="No spoods yet"
             body="Your little corner of the web is looking pretty empty."
@@ -75,7 +77,10 @@ export default async function HomePage() {
       </section>
 
       <section>
-        <SectionHeader title="All spoods" subtitle={`${views.length} in your web`} />
+        <SectionHeader
+          title="All spoods"
+          subtitle={`${active.length} active${memorial.length ? ` · ${memorial.length} in memory` : ""}`}
+        />
         <div className="flex flex-wrap gap-2">
           {views.map((v) => (
             <Link
@@ -84,7 +89,9 @@ export default async function HomePage() {
               className="inline-flex items-center gap-2 rounded-full border border-[var(--plum)]/15 bg-[var(--card)] px-3 py-2 text-sm transition hover:border-[var(--plum)]/30 hover:bg-[var(--hover-strong)]"
             >
               <span className="font-semibold text-[var(--midnight)]">{v.spider.name}</span>
-              <StatusPill status={v.careStatus} />
+              <StatusPill
+                status={v.spider.memorializedAt ? "In memory" : v.careStatus}
+              />
             </Link>
           ))}
         </div>
