@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
@@ -11,6 +10,7 @@ import {
   PhotoUploadForm,
 } from "@/components/spoods/profile-forms";
 import { PhotoGallery } from "@/components/spoods/photo-gallery";
+import { SpoodImage } from "@/components/spoods/spood-image";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader, StatusPill } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -47,15 +47,10 @@ export default async function SpiderProfilePage({
         </span>
         <div className="flex gap-4">
           <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[1.5rem] bg-[var(--lavender)] shadow-lg">
-            <Image
-              src={spider.profilePhoto || "/spoods/defaults/star.svg"}
+            <SpoodImage
+              src={spider.profilePhoto}
               alt={spider.name}
-              fill
-              unoptimized={
-                (spider.profilePhoto || "").endsWith(".svg") ||
-                !(spider.profilePhoto || "").startsWith("/uploads/")
-              }
-              className="object-cover"
+              className="h-full w-full"
               priority
             />
           </div>
@@ -93,7 +88,7 @@ export default async function SpiderProfilePage({
           <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
             <dt className="text-xs text-[var(--midnight)]/55">
               Last successful meal
-            </dt>
+            </dd>
             <dd className="font-semibold">
               {formatCareWhen(view.lastSuccessfulFedAt)}
             </dd>

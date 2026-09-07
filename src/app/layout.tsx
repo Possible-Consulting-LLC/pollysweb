@@ -37,13 +37,18 @@ export const viewport: Viewport = {
 };
 
 async function resolveTheme() {
-  const session = await auth();
-  if (!session?.user?.id) return "system";
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { theme: true },
-  });
-  return normalizeTheme(user?.theme);
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return "system";
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { theme: true },
+    });
+    return normalizeTheme(user?.theme);
+  } catch (error) {
+    console.error("[layout] theme lookup failed", error);
+    return "system";
+  }
 }
 
 export default async function RootLayout({

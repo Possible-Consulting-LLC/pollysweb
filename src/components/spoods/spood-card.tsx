@@ -1,10 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Card, StatusPill } from "@/components/ui/card";
 import { formatRelativeDays, parseHydrationMethods } from "@/lib/utils";
 import { friendlyNeedCopy } from "@/lib/care";
 import type { SpiderCareView } from "@/lib/spiders";
 import { QuickLogButtons } from "@/components/spoods/quick-log";
+import { SpoodImage } from "@/components/spoods/spood-image";
 
 export function SpoodCareCard({
   view,
@@ -23,15 +23,10 @@ export function SpoodCareCard({
       <div className="flex gap-3">
         <Link href={`/spoods/${spider.id}`} className="shrink-0">
           <div className="relative h-16 w-16 overflow-hidden rounded-2xl bg-[var(--lavender)]">
-            <Image
-              src={spider.profilePhoto || "/spoods/defaults/star.svg"}
+            <SpoodImage
+              src={spider.profilePhoto}
               alt={spider.name}
-              fill
-              unoptimized={
-                (spider.profilePhoto || "").endsWith(".svg") ||
-                !(spider.profilePhoto || "").startsWith("/uploads/")
-              }
-              className="object-cover"
+              className="h-full w-full"
             />
           </div>
         </Link>

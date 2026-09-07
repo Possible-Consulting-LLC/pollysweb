@@ -1,3 +1,6 @@
+"use client";
+
+import { useActionState } from "react";
 import { createSpiderAction } from "@/app/actions/auth";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodAvatarPicker } from "@/components/spoods/avatar-picker";
@@ -7,6 +10,11 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ENCLOSURE_TYPES, SEX_OPTIONS } from "@/lib/constants";
 
 export default function AddSpoodPage() {
+  const [state, action, pending] = useActionState(
+    createSpiderAction,
+    undefined as { error?: string } | undefined,
+  );
+
   return (
     <div className="space-y-6">
       <AppHeader
@@ -15,7 +23,7 @@ export default function AddSpoodPage() {
       />
 
       <Card>
-        <form action={createSpiderAction} className="space-y-4">
+        <form action={action} className="space-y-4">
           <Field label="Name" htmlFor="name">
             <Input id="name" name="name" required placeholder="Star" />
           </Field>
@@ -94,8 +102,14 @@ export default function AddSpoodPage() {
             </div>
           </div>
 
-          <Button type="submit" size="lg" className="w-full">
-            Welcome them home
+          {state?.error ? (
+            <p className="text-sm text-rose-700" role="alert">
+              {state.error}
+            </p>
+          ) : null}
+
+          <Button type="submit" size="lg" className="w-full" disabled={pending}>
+            {pending ? "Welcoming…" : "Welcome them home"}
           </Button>
         </form>
       </Card>
