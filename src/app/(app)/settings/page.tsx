@@ -43,8 +43,11 @@ export default async function SettingsPage({
           {" · "}
           {billing.spiderCount}
           {billing.plan === "free"
-            ? ` / ${FREE_SPIDER_LIMIT} free spood`
-            : " spoods · unlimited"}
+            ? ` / ${FREE_SPIDER_LIMIT} active free`
+            : " active · unlimited"}
+          {billing.memorialCount
+            ? ` · ${billing.memorialCount} in memory`
+            : ""}
         </p>
         <Link href="/upgrade">
           <Button type="button" variant="soft" className="w-full">
