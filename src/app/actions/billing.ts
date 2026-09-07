@@ -1,8 +1,12 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import Stripe from "stripe";
 import { getActionUser } from "@/lib/session";
-import { appUrl, isStripeConfigured, type BillingInterval } from "@/lib/billing";
+import {
+  appUrl,
+  isStripeConfigured,
+  type BillingInterval,
+} from "@/lib/billing";
 import {
   getBillingProfile,
   getStripe,
@@ -11,75 +15,129 @@ import {
 } from "@/lib/stripe";
 import { prisma } from "@/lib/db";
 
-export async function startCheckoutAction(formData: FormData) {
-  const user = await getActionUser();
-  if (!user?.id) redirect("/login");
-
-  if (!isStripeConfigured()) {
-    redirect("/upgrade?error=not_configured");
+function stripeMessage(error: unknown): string {
+  if (error instanceof Stripe.errors.StripeError) {
+    if (error.code === "resource_missing") {
+      return "Stripe couldn’t find that price. Double-check STRIPE_PRICE_MONTHLY / STRIPE_PRICE_YEARLY are Price IDs (price_…), not Product IDs (prod_…)."
+    }
+    if (error.type === "StripeAuthenticationError") {
+      return "Stripe rejected the secret key. Confirm STRIPE_SECRET_KEY matches the same mode (test/live) as your price IDs."
+    }
+    if (error.message?.toLowerCase().includes("mode")) {
+      return "Stripe test/live mismatch — use test keys with test prices, or live keys with live prices."
+    }
+    return error.message || "Stripe checkout failed."
   }
-
-  const interval = String(formData.get("interval") || "monthly") as BillingInterval;
-  if (interval !== "monthly" && interval !== "yearly") {
-    redirect("/upgrade?error=invalid_plan");
+  if (error instanceof Error && error.message) {
+    if (error.message.startsWith("Missing ")) {
+      return `${error.message}. Add it in Vercel → Settings → Environment Variables, then redeploy.`
+    }
+    return error.message;
   }
-
-  const profile = await getBillingProfile(user.id);
-  const stripe = getStripe();
-  const priceId = priceIdForInterval(interval);
-
-  let customerId = profile.stripeCustomerId;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: profile.email,
-      name: profile.name || undefined,
-      metadata: { userId: user.id },
-    });
-    customerId = customer.id;
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { stripeCustomerId: customerId },
-    });
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl()}/upgrade?success=1`,
-    cancel_url: `${appUrl()}/upgrade?canceled=1`,
-    client_reference_id: user.id,
-    metadata: { userId: user.id, interval },
-    subscription_data: {
-      metadata: { userId: user.id, interval },
-    },
-    allow_promotion_codes: true,
-  });
-
-  if (!session.url) redirect("/upgrade?error=checkout");
-  redirect(session.url);
+  return "Checkout failed unexpectedly. Please try again.";
 }
 
-export async function openBillingPortalAction() {
+export async function startCheckoutAction(
+  interval: BillingInterval,
+): Promise<{ url?: string; error?: string }> {
   const user = await getActionUser();
-  if (!user?.id) redirect("/login");
+  if (!user?.id) {
+    return { error: "Please sign in again, then retry checkout." };
+  }
 
   if (!isStripeConfigured()) {
-    redirect("/upgrade?error=not_configured");
+    return {
+      error:
+        "Billing isn’t fully configured yet. Add STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, and STRIPE_PRICE_YEARLY on Vercel, then redeploy.",
+    };
   }
 
-  const profile = await getBillingProfile(user.id);
-  if (!profile.stripeCustomerId) {
-    redirect("/upgrade");
+  if (interval !== "monthly" && interval !== "yearly") {
+    return { error: "Pick monthly or yearly." };
   }
 
-  const stripe = getStripe();
-  const portal = await stripe.billingPortal.sessions.create({
-    customer: profile.stripeCustomerId,
-    return_url: `${appUrl()}/settings`,
-  });
+  try {
+    const profile = await getBillingProfile(user.id);
+    const stripe = getStripe();
+    const priceId = priceIdForInterval(interval);
 
-  redirect(portal.url);
+    if (!priceId.startsWith("price_")) {
+      return {
+        error: `${interval === "monthly" ? "STRIPE_PRICE_MONTHLY" : "STRIPE_PRICE_YEARLY"} should look like price_… (not prod_…).`,
+      };
+    }
+
+    let customerId = profile.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: profile.email,
+        name: profile.name || undefined,
+        metadata: { userId: user.id },
+      });
+      customerId = customer.id;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { stripeCustomerId: customerId },
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${appUrl()}/upgrade?success=1`,
+      cancel_url: `${appUrl()}/upgrade?canceled=1`,
+      client_reference_id: user.id,
+      metadata: { userId: user.id, interval },
+      subscription_data: {
+        metadata: { userId: user.id, interval },
+      },
+      allow_promotion_codes: true,
+    });
+
+    if (!session.url) {
+      return { error: "Stripe didn’t return a checkout URL." };
+    }
+    return { url: session.url };
+  } catch (error) {
+    console.error("[billing] checkout failed", error);
+    return { error: stripeMessage(error) };
+  }
+}
+
+export async function openBillingPortalAction(): Promise<{
+  url?: string;
+  error?: string;
+}> {
+  const user = await getActionUser();
+  if (!user?.id) {
+    return { error: "Please sign in again, then retry." };
+  }
+
+  if (!isStripeConfigured()) {
+    return {
+      error:
+        "Billing isn’t fully configured yet. Add Stripe keys on Vercel, then redeploy.",
+    };
+  }
+
+  try {
+    const profile = await getBillingProfile(user.id);
+    if (!profile.stripeCustomerId) {
+      return { error: "No Stripe customer on this account yet." };
+    }
+
+    const stripe = getStripe();
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: profile.stripeCustomerId,
+      return_url: `${appUrl()}/settings`,
+    });
+
+    return { url: portal.url };
+  } catch (error) {
+    console.error("[billing] portal failed", error);
+    return { error: stripeMessage(error) };
+  }
 }
 
 /** Used by webhook / checkout success reconciliation. */

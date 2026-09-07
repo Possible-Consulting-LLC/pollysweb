@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stripeEnvStatus } from "@/lib/billing";
 import { getSupabaseKeyKind, isSupabaseConfigured } from "@/lib/supabase";
 
 /** Public readiness probe — booleans only, never secret values. */
@@ -9,6 +10,7 @@ export async function GET() {
   const authUrl = Boolean(process.env.AUTH_URL || process.env.NEXTAUTH_URL);
   const supabaseConfigured = isSupabaseConfigured();
   const supabaseKeyKind = getSupabaseKeyKind();
+  const stripe = stripeEnvStatus();
 
   const ok = authSecret && databaseUrl;
 
@@ -25,6 +27,7 @@ export async function GET() {
         ),
         SUPABASE_KEY: supabaseConfigured,
         SUPABASE_KEY_KIND: supabaseKeyKind,
+        ...stripe,
       },
       hint: ok
         ? supabaseConfigured
