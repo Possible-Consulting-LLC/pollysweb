@@ -1,15 +1,70 @@
 # Spoodly Space
 
-Your little corner of the web. Track. Care. Celebrate.
+**Your little corner of the web.**  
+Track. Care. Celebrate.
 
-Jumping-spider care app (Next.js + Prisma).
+Spoodly Space is a cute, beginner-friendly jumping spider care and tracking app. Open it, see who needs attention today, log care in seconds, and keep a scrapbook-style life story for each spood.
 
-## Local
+## Stack
+
+- **Next.js** (App Router) + TypeScript
+- **Tailwind CSS** for mobile-first UI
+- **Prisma** + **SQLite** for local/dev (schema is portable to PostgreSQL)
+- **Auth.js (NextAuth v5)** credentials auth
+- Zod validation + server actions
+
+SQLite keeps the MVP runnable without Docker. The Prisma schema can point at PostgreSQL for production later.
+
+## Features (MVP)
+
+- Home dashboard: who needs care today
+- My Spoods + search/filter
+- Add a Spood
+- Spider profiles with quick logs (feed, mist, molt, observation)
+- Feeding (offered vs successful), misting, molt tracking with auto instar update
+- Premolt mode that pauses feeding reminders
+- Body condition observations
+- Enclosure + maintenance
+- Spoodly Story timeline
+- Activity history
+- Settings + reminder defaults (push-ready architecture)
+- Demo seed data (Star and friends)
+
+## Getting started
 
 ```bash
 npm install
+cp .env.example .env   # or use the existing .env
 npx prisma migrate dev
+npm run db:seed
 npm run dev
 ```
 
-Demo: `demo@spoodly.space` / `spoodly123`
+App runs at [http://127.0.0.1:43123](http://127.0.0.1:43123).
+
+### Demo account
+
+- Email: `demo@spoodly.space`
+- Password: `spoodly123`
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Dev server on port 43123 |
+| `npm run build` | Production build |
+| `npm test` | Care-logic unit tests |
+| `npm run db:seed` | Seed demo keeper + Star |
+| `npm run db:reset` | Reset DB and re-seed |
+
+## Architecture notes
+
+- **UI** in `src/app` and `src/components`
+- **Domain logic** in `src/lib/care.ts` (status derivation, molt math, reminder suppression)
+- **Data access** in `src/lib/spiders.ts`
+- **Mutations** via server actions in `src/app/actions`
+- Reminders store interval + enabled flags so native push can be added later (Capacitor / native clients)
+
+## Mobile future
+
+Designed mobile-first with large touch targets and bottom navigation. The same API/data layer can later power Capacitor or native clients — no desktop-only interactions are required.
