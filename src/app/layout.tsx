@@ -36,6 +36,9 @@ export const viewport: Viewport = {
   themeColor: "#6b4c7a",
 };
 
+/** Auth + DB theme lookup — keep the whole app request-rendered. */
+export const dynamic = "force-dynamic";
+
 async function resolveTheme() {
   try {
     const session = await auth();
@@ -46,7 +49,18 @@ async function resolveTheme() {
     });
     return normalizeTheme(user?.theme);
   } catch (error) {
-    console.error("[layout] theme lookup failed", error);
+    // During `next build`, Next may probe routes statically before dynamism
+    // is finalized. auth() throws DYNAMIC_SERVER_USAGE — that is expected.
+    const digest =
+      typeof error === "object" &&
+      error !== null &&
+      "digest" in error &&
+      typeof (error as { digest?: unknown }).digest === "string"
+        ? (error as { digest: string }).digest
+        : null;
+    if (digest !== "DYNAMIC_SERVER_USAGE") {
+      console.error("[layout] theme lookup failed", error);
+    }
     return "system";
   }
 }
