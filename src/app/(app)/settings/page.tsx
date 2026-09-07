@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import Link from "next/link";
 import { logoutAction, updateSettingsAction } from "@/app/actions/auth";
 import { AppHeader } from "@/components/layout/nav";
 import { PasswordForm } from "@/components/settings/password-form";
@@ -6,7 +7,9 @@ import { ThemeSelect } from "@/components/settings/theme-select";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
+import { FREE_SPIDER_LIMIT } from "@/lib/billing";
 import { normalizeTheme } from "@/lib/constants";
+import { getBillingProfile } from "@/lib/stripe";
 import { getUserDefaults } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 
@@ -23,6 +26,7 @@ export default async function SettingsPage({
 }) {
   const user = await requireUser();
   const defaults = await getUserDefaults(user.id!);
+  const billing = await getBillingProfile(user.id!);
   const params = searchParams ? await searchParams : {};
   const saved = params.saved === "1";
   const theme = normalizeTheme(defaults.theme);
@@ -31,6 +35,23 @@ export default async function SettingsPage({
   return (
     <div className="space-y-6">
       <AppHeader title="Settings" subtitle="Tune your little corner." />
+
+      <Card className="space-y-3">
+        <SectionHeader title="Plan" />
+        <p className="text-sm text-[var(--midnight)]/75">
+          You’re on <span className="font-semibold capitalize">{billing.plan}</span>
+          {" · "}
+          {billing.spiderCount}
+          {billing.plan === "free"
+            ? ` / ${FREE_SPIDER_LIMIT} free spood`
+            : " spoods · unlimited"}
+        </p>
+        <Link href="/upgrade">
+          <Button type="button" variant="soft" className="w-full">
+            {billing.plan === "pro" ? "Manage billing" : "Upgrade to Pro"}
+          </Button>
+        </Link>
+      </Card>
 
       <Card>
         <SectionHeader title="Profile" />
@@ -121,18 +142,6 @@ export default async function SettingsPage({
         />
         <PasswordForm />
       </Card>
-
-      {false && (
-        <Card className="space-y-3">
-          <SectionHeader
-            title="Data export"
-            subtitle="Export is coming soon. Your data lives in a relational model ready for portable backups."
-          />
-          <Button variant="soft" disabled className="w-full">
-            Export data (soon)
-          </Button>
-        </Card>
-      )}
 
       <form action={logoutAction}>
         <Button type="submit" variant="danger" className="w-full">
