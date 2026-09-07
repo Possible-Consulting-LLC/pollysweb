@@ -59,9 +59,6 @@ export function LoginForm() {
           Create an account
         </Link>
       </p>
-      <p className="mt-3 text-center text-xs text-[var(--midnight)]/45">
-        Demo: demo@spoodly.space / spoodly123
-      </p>
     </div>
   );
 }
