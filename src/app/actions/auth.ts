@@ -246,3 +246,47 @@ export async function updateSettingsAction(formData: FormData) {
   revalidatePath("/home");
   redirect("/settings?saved=1");
 }
+
+export async function updatePasswordAction(
+  _prev: { error?: string; success?: string } | undefined,
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  const user = await getActionUser();
+  if (!user?.id) return { error: "Please sign in again." };
+
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (currentPassword.length < 6 || newPassword.length < 6) {
+    return { error: "Passwords must be at least 6 characters." };
+  }
+  if (newPassword !== confirmPassword) {
+    return { error: "New passwords don’t match." };
+  }
+  if (currentPassword === newPassword) {
+    return { error: "Pick a new password that’s different from the current one." };
+  }
+
+  try {
+    const record = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { passwordHash: true },
+    });
+    if (!record) return { error: "Account not found." };
+
+    const valid = await bcrypt.compare(currentPassword, record.passwordHash);
+    if (!valid) return { error: "Current password is incorrect." };
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    return { success: "Password updated." };
+  } catch (error) {
+    console.error("[updatePassword] failed", error);
+    return { error: "Couldn’t update your password. Try again." };
+  }
+}

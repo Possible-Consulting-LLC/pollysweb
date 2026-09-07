@@ -1,5 +1,7 @@
+import { format } from "date-fns";
 import { logoutAction, updateSettingsAction } from "@/app/actions/auth";
 import { AppHeader } from "@/components/layout/nav";
+import { PasswordForm } from "@/components/settings/password-form";
 import { ThemeSelect } from "@/components/settings/theme-select";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
@@ -7,6 +9,12 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { normalizeTheme } from "@/lib/constants";
 import { getUserDefaults } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
+
+const DATE_FORMAT_OPTIONS = [
+  "MMM d, yyyy",
+  "d MMM yyyy",
+  "yyyy-MM-dd",
+] as const;
 
 export default async function SettingsPage({
   searchParams,
@@ -18,6 +26,7 @@ export default async function SettingsPage({
   const params = searchParams ? await searchParams : {};
   const saved = params.saved === "1";
   const theme = normalizeTheme(defaults.theme);
+  const today = new Date();
 
   return (
     <div className="space-y-6">
@@ -41,10 +50,7 @@ export default async function SettingsPage({
             <Input value={defaults.email} disabled readOnly />
           </Field>
 
-          <SectionHeader
-            title="Care reminder defaults"
-            subtitle="Used when a spood doesn’t have a custom schedule. Native push can plug into this later."
-          />
+          <SectionHeader title="Care reminder defaults" />
           <div className="grid grid-cols-3 gap-2">
             <Field label="Feeding (days)" htmlFor="feedDefaultDays">
               <Input
@@ -76,10 +82,16 @@ export default async function SettingsPage({
           </div>
 
           <Field label="Date format" htmlFor="dateFormat">
-            <Select id="dateFormat" name="dateFormat" defaultValue={defaults.dateFormat}>
-              <option value="MMM d, yyyy">MMM d, yyyy</option>
-              <option value="d MMM yyyy">d MMM yyyy</option>
-              <option value="yyyy-MM-dd">yyyy-MM-dd</option>
+            <Select
+              id="dateFormat"
+              name="dateFormat"
+              defaultValue={defaults.dateFormat}
+            >
+              {DATE_FORMAT_OPTIONS.map((pattern) => (
+                <option key={pattern} value={pattern}>
+                  {format(today, pattern)}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="Measurement preference" htmlFor="measurement">
@@ -102,16 +114,24 @@ export default async function SettingsPage({
         </form>
       </Card>
 
-      {false && (
-      <Card className="space-y-3">
+      <Card>
         <SectionHeader
-          title="Data export"
-          subtitle="Export is coming soon. Your data lives in a relational model ready for portable backups."
+          title="Password"
+          subtitle="Choose a new password for this account."
         />
-        <Button variant="soft" disabled className="w-full">
-          Export data (soon)
-        </Button>
+        <PasswordForm />
       </Card>
+
+      {false && (
+        <Card className="space-y-3">
+          <SectionHeader
+            title="Data export"
+            subtitle="Export is coming soon. Your data lives in a relational model ready for portable backups."
+          />
+          <Button variant="soft" disabled className="w-full">
+            Export data (soon)
+          </Button>
+        </Card>
       )}
 
       <form action={logoutAction}>
