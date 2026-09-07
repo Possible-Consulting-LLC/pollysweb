@@ -18,19 +18,19 @@ import { prisma } from "@/lib/db";
 function stripeMessage(error: unknown): string {
   if (error instanceof Stripe.errors.StripeError) {
     if (error.code === "resource_missing") {
-      return "Stripe couldn’t find that price. Double-check STRIPE_PRICE_MONTHLY / STRIPE_PRICE_YEARLY are Price IDs (price_…), not Product IDs (prod_…)."
+      return "Stripe couldn’t find that price. Double-check STRIPE_PRICE_MONTHLY / STRIPE_PRICE_YEARLY are Price IDs (price_…), not Product IDs (prod_…).";
     }
     if (error.type === "StripeAuthenticationError") {
-      return "Stripe rejected the secret key. Confirm STRIPE_SECRET_KEY matches the same mode (test/live) as your price IDs."
+      return "Stripe rejected the secret key. Confirm STRIPE_SECRET_KEY matches the same mode (test/live) as your price IDs.";
     }
     if (error.message?.toLowerCase().includes("mode")) {
-      return "Stripe test/live mismatch — use test keys with test prices, or live keys with live prices."
+      return "Stripe test/live mismatch — use test keys with test prices, or live keys with live prices.";
     }
-    return error.message || "Stripe checkout failed."
+    return error.message || "Stripe checkout failed.";
   }
   if (error instanceof Error && error.message) {
     if (error.message.startsWith("Missing ")) {
-      return `${error.message}. Add it in Vercel → Settings → Environment Variables, then redeploy.`
+      return `${error.message}. Add it in Vercel → Settings → Environment Variables, then redeploy.`;
     }
     return error.message;
   }
