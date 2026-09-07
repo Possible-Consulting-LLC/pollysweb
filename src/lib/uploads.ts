@@ -6,11 +6,6 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 export const SPOODS_BUCKET = "spoods";
 
-function contentTypeFor(ext: string, fileType: string) {
-  if (fileType && fileType.startsWith("image/")) return fileType;
-  return `image/${ext === "jpg" ? "jpeg" : ext}`;
-}
-
 function objectPath(prefix: string, ext: string) {
   const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "spood";
   return `${safePrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -52,7 +47,12 @@ export async function saveImageUpload(
   const bytes = Buffer.from(await file.arrayBuffer());
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const safeExt = ALLOWED_EXT.has(ext) ? ext : "jpg";
-  const contentType = contentTypeFor(safeExt, file.type);
+  const mime =
+    file.type && file.type.startsWith("image/")
+      ? file.type
+      : `image/${safeExt === "jpg" ? "jpeg" : safeExt}`;
+  // Normalize jpg → jpeg for Storage MIME allow-lists
+  const contentType = mime === "image/jpg" ? "image/jpeg" : mime;
   const pathInBucket = objectPath(prefix, safeExt);
 
   if (isSupabaseConfigured()) {
@@ -69,10 +69,10 @@ export async function saveImageUpload(
       if (error) {
         console.error("[upload] supabase storage error", error);
         const msg = error.message || "Forbidden";
-        if (/forbidden|row-level security|policy/i.test(msg)) {
+        if (/forbidden|row-level security|policy|invalid.*key|jwt/i.test(msg)) {
           return {
             error:
-              "Storage blocked the upload (Forbidden). In Supabase → Storage → spoods, allow public INSERT/SELECT, and use the anon JWT key (starts with eyJ…) — not the S3 secret.",
+              "Storage blocked the upload (Forbidden). On Vercel, set NEXT_PUBLIC_SUPABASE_ANON_KEY to the anon JWT from Supabase → Settings → API (starts with eyJ…). Remove any S3 secret from SUPABASE_SERVICE_ROLE_KEY. Check /api/health → SUPABASE_KEY_KIND.",
           };
         }
         return { error: `Couldn’t upload photo: ${msg}` };
