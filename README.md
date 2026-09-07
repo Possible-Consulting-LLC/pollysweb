@@ -47,6 +47,28 @@ App runs at [http://127.0.0.1:43123](http://127.0.0.1:43123).
 - Email: `demo@spoodly.space`
 - Password: `spoodly123`
 
+## Deploy on Vercel
+
+If login hits `/api/auth/callback/credentials` with:
+
+> There was a problem with the server configuration.
+
+Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set these under **Project → Settings → Environment Variables** for **Production** (and Preview if you use it):
+
+| Variable | Value |
+|----------|--------|
+| `AUTH_SECRET` | Long random string (`openssl rand -base64 32`) |
+| `AUTH_URL` | `https://spoodly-space.vercel.app` |
+| `NEXTAUTH_URL` | `https://spoodly-space.vercel.app` |
+| `DATABASE_URL` | Supabase **Transaction** pooler URI (port `6543`, `?pgbouncer=true`) |
+| `DIRECT_URL` | Supabase **Session** URI (port `5432`) |
+
+Then **Redeploy** (Deployments → ⋮ → Redeploy). Env changes do not apply to an already-running deployment until you redeploy.
+
+Check [https://spoodly-space.vercel.app/api/health](https://spoodly-space.vercel.app/api/health) — every key under `env` should be `true` before trying login again.
+
+**Where accounts live:** Spoodly uses Prisma tables in Postgres, not Supabase Auth. Look in **Table Editor → `User`**, not **Authentication → Users**.
+
 ## Scripts
 
 | Script | Description |

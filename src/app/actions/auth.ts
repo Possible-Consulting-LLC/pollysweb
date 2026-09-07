@@ -22,10 +22,20 @@ const authSchema = z.object({
   name: z.string().optional(),
 });
 
+function missingDatabaseHint() {
+  if (!process.env.DATABASE_URL) {
+    return "Database isn’t configured on this deploy. Add DATABASE_URL (and DIRECT_URL) in Vercel → Settings → Environment Variables, then Redeploy.";
+  }
+  return null;
+}
+
 export async function registerAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ) {
+  const dbHint = missingDatabaseHint();
+  if (dbHint) return { error: dbHint };
+
   const parsed = authSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -36,17 +46,26 @@ export async function registerAction(
   }
 
   const email = parsed.data.email.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return { error: "An account with that email already exists." };
 
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      name: parsed.data.name || email.split("@")[0],
-    },
-  });
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return { error: "An account with that email already exists." };
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: parsed.data.name || email.split("@")[0],
+      },
+    });
+  } catch (error) {
+    console.error("[register] database error", error);
+    return {
+      error:
+        "Couldn’t save your account to the database. Check DATABASE_URL on Vercel and that the User table exists.",
+    };
+  }
 
   try {
     await signIn("credentials", {
@@ -66,6 +85,9 @@ export async function loginAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ) {
+  const dbHint = missingDatabaseHint();
+  if (dbHint) return { error: dbHint };
+
   const parsed = authSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),

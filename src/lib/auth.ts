@@ -11,10 +11,14 @@ const credentialsSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
+  // Required on Vercel — without this, every /api/auth/* route returns
+  // "There was a problem with the server configuration."
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },
+
   providers: [
     Credentials({
       name: "Email",
@@ -26,19 +30,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(raw);
         if (!parsed.success) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email.toLowerCase() },
-        });
-        if (!user) return null;
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: parsed.data.email.toLowerCase() },
+          });
+          if (!user) return null;
 
-        const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
-        if (!valid) return null;
+          const valid = await bcrypt.compare(
+            parsed.data.password,
+            user.passwordHash,
+          );
+          if (!valid) return null;
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name ?? user.email.split("@")[0],
-        };
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name ?? user.email.split("@")[0],
+          };
+        } catch (error) {
+          console.error("[auth] database error during authorize", error);
+          return null;
+        }
       },
     }),
   ],

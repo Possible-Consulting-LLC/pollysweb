@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { normalizeTheme } from "@/lib/constants";
@@ -64,6 +65,7 @@ export default async function RootLayout({
           className="cosmic-orbit pointer-events-none fixed inset-0 -z-10"
         />
         {children}
+        <Analytics />
       </body>
     </html>
   );
