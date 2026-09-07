@@ -88,7 +88,7 @@ export default async function SpiderProfilePage({
           <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
             <dt className="text-xs text-[var(--midnight)]/55">
               Last successful meal
-            </dd>
+            </dt>
             <dd className="font-semibold">
               {formatCareWhen(view.lastSuccessfulFedAt)}
             </dd>
