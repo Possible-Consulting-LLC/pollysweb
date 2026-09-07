@@ -125,7 +125,7 @@ export async function createSpiderAction(
   const billing = await getBillingProfile(user.id);
   if (!billing.canAddSpider) {
     return {
-      error: `Free accounts include ${billing.freeLimit} spood. Upgrade to Pro to add more.`,
+      error: `Free accounts include ${billing.freeLimit} active spood. Upgrade to Pro to add more — or memorialize a passed spood to free a slot.`,
     };
   }
 
@@ -161,6 +161,7 @@ export async function createSpiderAction(
   if (file instanceof File && file.size > 0) {
     const saved = await saveImageUpload(file, user.id);
     if ("error" in saved) {
+      // Still create the spood — don't block the whole welcome on Storage hiccups.
       console.warn("[createSpider] photo upload failed; using default portrait", saved.error);
       photoSkipped = true;
       profilePhoto = DEFAULT_SPOOOD_AVATAR_SRC;
