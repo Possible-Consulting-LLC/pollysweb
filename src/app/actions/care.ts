@@ -11,7 +11,7 @@ import {
   fastingDaysBeforeMolt,
   nextInstar,
 } from "@/lib/care";
-import { saveImageUpload } from "@/lib/uploads";
+import { deleteStoredImage, saveImageUpload } from "@/lib/uploads";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -530,6 +530,8 @@ export async function deleteSpiderPhoto(photoId: string): Promise<ActionResult> 
       } catch {
         // File may already be missing; DB row is what matters for the UI.
       }
+    } else {
+      await deleteStoredImage(photo.url);
     }
 
     if (photo.spider.profilePhoto === photo.url) {
