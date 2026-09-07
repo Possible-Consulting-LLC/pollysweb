@@ -149,11 +149,19 @@ export async function createSpiderAction(
   let uploadedUrl: string | null = null;
 
   const file = formData.get("photo");
+  let photoSkipped = false;
   if (file instanceof File && file.size > 0) {
     const saved = await saveImageUpload(file, user.id);
-    if ("error" in saved) return { error: saved.error };
-    uploadedUrl = saved.url;
-    profilePhoto = saved.url;
+    if ("error" in saved) {
+      // Still create the spood — don't block the whole welcome on Storage hiccups.
+      console.warn("[createSpider] photo upload failed; using default portrait", saved.error);
+      photoSkipped = true;
+      profilePhoto = DEFAULT_SPOOOD_AVATAR_SRC;
+      uploadedUrl = null;
+    } else {
+      uploadedUrl = saved.url;
+      profilePhoto = saved.url;
+    }
   }
 
   try {
@@ -204,7 +212,9 @@ export async function createSpiderAction(
 
     revalidatePath("/home");
     revalidatePath("/spoods");
-    redirect(`/spoods/${spider.id}`);
+    redirect(
+      `/spoods/${spider.id}${photoSkipped ? "?photo=skipped" : ""}`,
+    );
   } catch (error) {
     if (isRedirectError(error)) throw error;
     console.error("[createSpider] failed", error);

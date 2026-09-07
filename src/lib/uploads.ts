@@ -68,7 +68,14 @@ export async function saveImageUpload(
 
       if (error) {
         console.error("[upload] supabase storage error", error);
-        return { error: `Couldn’t upload photo: ${error.message}` };
+        const msg = error.message || "Forbidden";
+        if (/forbidden|row-level security|policy/i.test(msg)) {
+          return {
+            error:
+              "Storage blocked the upload (Forbidden). In Supabase → Storage → spoods, allow public INSERT/SELECT, and use the anon JWT key (starts with eyJ…) — not the S3 secret.",
+          };
+        }
+        return { error: `Couldn’t upload photo: ${msg}` };
       }
 
       return { url: publicSpoodUrl(pathInBucket) };

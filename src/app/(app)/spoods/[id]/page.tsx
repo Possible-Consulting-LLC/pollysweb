@@ -21,11 +21,14 @@ import { isPremoltLike } from "@/lib/care";
 
 export default async function SpiderProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ photo?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
+  const { photo: photoFlag } = await searchParams;
   const view = await getSpiderCare(user.id!, id);
   if (!view) notFound();
 
@@ -40,6 +43,16 @@ export default async function SpiderProfilePage({
 
   return (
     <div className="space-y-6">
+      {photoFlag === "skipped" ? (
+        <p
+          className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          Spood saved, but the photo upload was blocked. You can add a photo from
+          this profile — if it keeps failing, check the Supabase Storage policies
+          and that Vercel uses the anon JWT key (starts with eyJ…).
+        </p>
+      ) : null}
       <div className="relative overflow-hidden rounded-[2rem] bg-[var(--panel)] p-5 text-[var(--on-panel)]">
         <div className="orbit-ring pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full border border-[var(--gold)]/25" />
         <span className="animate-twinkle absolute right-8 top-6 text-[var(--gold)]">
