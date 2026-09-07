@@ -121,6 +121,14 @@ export async function createSpiderAction(
   const user = await getActionUser();
   if (!user?.id) return { error: "Please sign in again." };
 
+  const { getBillingProfile } = await import("@/lib/stripe");
+  const billing = await getBillingProfile(user.id);
+  if (!billing.canAddSpider) {
+    return {
+      error: `Free accounts include ${billing.freeLimit} spood. Upgrade to Pro to add more.`,
+    };
+  }
+
   const name = String(formData.get("name") || "").trim();
   if (!name) return { error: "Name is required." };
 
@@ -153,7 +161,6 @@ export async function createSpiderAction(
   if (file instanceof File && file.size > 0) {
     const saved = await saveImageUpload(file, user.id);
     if ("error" in saved) {
-      // Still create the spood — don't block the whole welcome on Storage hiccups.
       console.warn("[createSpider] photo upload failed; using default portrait", saved.error);
       photoSkipped = true;
       profilePhoto = DEFAULT_SPOOOD_AVATAR_SRC;
