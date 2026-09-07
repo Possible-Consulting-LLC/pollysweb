@@ -24,6 +24,8 @@ async function main() {
       email,
       name: "Keeper",
       passwordHash,
+      plan: "pro",
+      subscriptionStatus: "demo",
       feedDefaultDays: 3,
       mistDefaultDays: 1,
       cleanDefaultDays: 14,
@@ -115,14 +117,10 @@ async function main() {
     ],
   });
 
-  // Fix last molt to be i8 -> i9 for better demo story - actually requirements say Star is i8
-  // Remove the third weird molt and keep two clean ones ending at i8
   await prisma.moltEvent.deleteMany({
     where: { spiderId: star.id, moltDate: new Date("2026-08-30") },
   });
 
-  // Update second molt notes - Star is currently i8 after July 20 molt
-  // Add a third molt from an earlier stage for story: i5->i6
   await prisma.moltEvent.create({
     data: {
       spiderId: star.id,
@@ -283,7 +281,6 @@ async function main() {
     ],
   });
 
-  // Extra spoods so dashboard shows multiple needs
   const clementine = await prisma.spider.create({
     data: {
       userId: user.id,
