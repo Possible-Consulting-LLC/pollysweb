@@ -1,15 +1,11 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import {
-  openBillingPortalAction,
-  startCheckoutAction,
-} from "@/app/actions/billing";
+import { CheckoutButtons } from "@/components/billing/checkout-buttons";
 import { AppHeader } from "@/components/layout/nav";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
 import {
   FREE_SPIDER_LIMIT,
-  PLAN_PRICES,
   isStripeConfigured,
 } from "@/lib/billing";
 import { getBillingProfile } from "@/lib/stripe";
@@ -88,11 +84,7 @@ export default async function UpgradePage({
             title="Manage billing"
             subtitle="Update card, cancel, or switch monthly/yearly in Stripe’s customer portal."
           />
-          <form action={openBillingPortalAction}>
-            <Button type="submit" className="w-full" disabled={!stripeReady}>
-              Open billing portal
-            </Button>
-          </form>
+          <CheckoutButtons stripeReady={stripeReady} mode="portal" />
           <Link href="/spoods/new" className="block">
             <Button type="button" variant="soft" className="w-full">
               Add another spood
@@ -105,41 +97,7 @@ export default async function UpgradePage({
             title="Go Pro"
             subtitle={`Free includes ${FREE_SPIDER_LIMIT} spood. Pro unlocks unlimited profiles, stories, and care tracking.`}
           />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <form action={startCheckoutAction} className="rounded-2xl border border-[var(--plum)]/15 bg-[var(--cream-deep)]/40 p-4">
-              <input type="hidden" name="interval" value="monthly" />
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--plum)]/70">
-                Monthly
-              </p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-3xl text-[var(--midnight)]">
-                {PLAN_PRICES.monthly.amountLabel}
-                <span className="text-base font-sans font-semibold text-[var(--midnight)]/55">
-                  /{PLAN_PRICES.monthly.periodLabel}
-                </span>
-              </p>
-              <Button type="submit" className="mt-4 w-full" disabled={!stripeReady}>
-                Start monthly
-              </Button>
-            </form>
-            <form action={startCheckoutAction} className="rounded-2xl border border-[var(--gold)]/40 bg-[var(--panel)] p-4 text-[var(--on-panel)]">
-              <input type="hidden" name="interval" value="yearly" />
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--gold)]">
-                Yearly · best value
-              </p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-3xl">
-                {PLAN_PRICES.yearly.amountLabel}
-                <span className="text-base font-sans font-semibold text-[var(--on-panel)]/70">
-                  /{PLAN_PRICES.yearly.periodLabel}
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-[var(--on-panel)]/65">
-                About $1.67/mo when billed annually
-              </p>
-              <Button type="submit" variant="gold" className="mt-4 w-full" disabled={!stripeReady}>
-                Start yearly
-              </Button>
-            </form>
-          </div>
+          <CheckoutButtons stripeReady={stripeReady} mode="upgrade" />
           {!stripeReady ? (
             <p className="text-xs text-[var(--midnight)]/55">
               Checkout unlocks once Stripe price IDs are configured on this
