@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/* Cosmic cream — warm parchment + plum (default / system light) */
+:root,
+[data-theme="cosmic"],
+[data-theme="system"] {
+  --cream: #f7f1e8;
+  --cream-deep: #ebe3d6;
+  --midnight: #1e2442;
+  --plum: #6b4c7a;
+  --plum-deep: #523860;
+  --lavender: #d8c8ea;
+  --lavender-deep: #c4b5d9;
+  --gold: #e8c56a;
+  --background: var(--cream);
+  --foreground: var(--midnight);
+  --panel: #1e2442;
+  --on-panel: #f7f1e8;
+  --on-accent: #f7f1e8;
+  --star: #d8c8ea;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #fffaf3;
+  --input: rgba(255, 255, 255, 0.84);
+  --hover: rgba(107, 76, 122, 0.12);
+  --hover-strong: #ebe3d6;
+  --shadow: rgba(30, 36, 66, 0.06);
+  --body-glow-1: rgba(232, 197, 106, 0.28);
+  --body-glow-2: rgba(184, 169, 212, 0.45);
+  --body-glow-3: rgba(107, 76, 122, 0.12);
+}
+
+[data-theme="cosmic"] {
+  color-scheme: light;
+}
+
+[data-theme="system"] {
+  color-scheme: light dark;
+}
+
+/* Midnight soft — cool indigo night, soft lilac text */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --cream: #121628;
+  --cream-deep: #1a2036;
+  --midnight: #ebe6f5;
+  --plum: #a984c0;
+  --plum-deep: #b998cf;
+  --lavender: #2a3148;
+  --lavender-deep: #363e58;
+  --gold: #d4b56a;
+  --background: var(--cream);
+  --foreground: var(--midnight);
+  --panel: #0a0e1c;
+  --on-panel: #f0e8da;
+  --on-accent: #161222;
+  --star: #d4c2e8;
+  --card: rgba(28, 34, 56, 0.88);
+  --card-solid: #252b42;
+  --input: rgba(24, 30, 50, 0.96);
+  --hover: rgba(235, 230, 245, 0.18);
+  --hover-strong: #4f5c82;
+  --shadow: rgba(0, 0, 0, 0.35);
+  --body-glow-1: rgba(120, 140, 220, 0.18);
+  --body-glow-2: rgba(160, 120, 200, 0.22);
+  --body-glow-3: rgba(80, 100, 180, 0.16);
+}
+
+/* System follows the OS: dark → midnight tokens */
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --cream: #121628;
+    --cream-deep: #1a2036;
+    --midnight: #ebe6f5;
+    --plum: #a984c0;
+    --plum-deep: #b998cf;
+    --lavender: #2a3148;
+    --lavender-deep: #363e58;
+    --gold: #d4b56a;
+    --background: var(--cream);
+    --foreground: var(--midnight);
+    --panel: #0a0e1c;
+    --on-panel: #f0e8da;
+    --on-accent: #161222;
+    --star: #d4c2e8;
+    --card: rgba(28, 34, 56, 0.88);
+    --card-solid: #252b42;
+    --input: rgba(24, 30, 50, 0.96);
+    --hover: rgba(235, 230, 245, 0.18);
+    --hover-strong: #4f5c82;
+    --shadow: rgba(0, 0, 0, 0.35);
+    --body-glow-1: rgba(120, 140, 220, 0.18);
+    --body-glow-2: rgba(160, 120, 200, 0.22);
+    --body-glow-3: rgba(80, 100, 180, 0.16);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+html {
+  background: var(--cream);
+}
+
+body {
+  /* Solid fill only — glows live on the fixed .cosmic-orbit layer so they
+     don't scroll and leave a hard seam at the original viewport height. */
+  background: var(--cream);
+  color: var(--foreground);
+  font-family: var(--font-body), "Nunito", sans-serif;
+  min-height: 100dvh;
+}
+
+/* Fixed viewport atmosphere: soft glows + star dust stay put while content scrolls */
+.cosmic-orbit {
+  background-color: var(--cream);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 10% -10%, var(--body-glow-1), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, var(--body-glow-2), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, var(--body-glow-3), transparent 55%),
+    radial-gradient(circle at 20% 30%, rgba(232, 197, 106, 0.35) 0 1px, transparent 2px),
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.7) 0 1px, transparent 2px),
+    radial-gradient(circle at 40% 70%, rgba(107, 76, 122, 0.35) 0 1.5px, transparent 3px),
+    radial-gradient(circle at 85% 60%, rgba(255, 255, 255, 0.5) 0 1px, transparent 2px);
+}
+
+[data-theme="midnight"] .cosmic-orbit {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 10% -10%, var(--body-glow-1), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, var(--body-glow-2), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, var(--body-glow-3), transparent 55%),
+    radial-gradient(circle at 18% 28%, rgba(212, 181, 106, 0.55) 0 1.2px, transparent 2.2px),
+    radial-gradient(circle at 72% 18%, rgba(255, 255, 255, 0.85) 0 1px, transparent 2px),
+    radial-gradient(circle at 42% 68%, rgba(196, 163, 216, 0.5) 0 1.6px, transparent 3px),
+    radial-gradient(circle at 88% 58%, rgba(255, 255, 255, 0.7) 0 1px, transparent 2px),
+    radial-gradient(circle at 55% 40%, rgba(255, 255, 255, 0.35) 0 0.8px, transparent 1.6px);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] .cosmic-orbit {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 10% -10%, var(--body-glow-1), transparent 55%),
+      radial-gradient(ellipse 70% 45% at 100% 0%, var(--body-glow-2), transparent 50%),
+      radial-gradient(ellipse 60% 40% at 50% 100%, var(--body-glow-3), transparent 55%),
+      radial-gradient(circle at 18% 28%, rgba(212, 181, 106, 0.55) 0 1.2px, transparent 2.2px),
+      radial-gradient(circle at 72% 18%, rgba(255, 255, 255, 0.85) 0 1px, transparent 2px),
+      radial-gradient(circle at 42% 68%, rgba(196, 163, 216, 0.5) 0 1.6px, transparent 3px),
+      radial-gradient(circle at 88% 58%, rgba(255, 255, 255, 0.7) 0 1px, transparent 2px),
+      radial-gradient(circle at 55% 40%, rgba(255, 255, 255, 0.35) 0 0.8px, transparent 1.6px);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-float {
+  animation: float-soft 5s ease-in-out infinite;
+}
+
+.animate-twinkle {
+  animation: twinkle 2.8s ease-in-out infinite;
+}
+
+.orbit-ring {
+  animation: orbit-spin 48s linear infinite;
+}
