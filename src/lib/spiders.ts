@@ -140,7 +140,14 @@ export async function listSpidersForUser(userId: string, query?: {
   });
 
   const defaults = await getUserDefaults(userId);
-  return spiders.map((s) => buildCareView(s, defaults));
+  return spiders
+    .map((s) => buildCareView(s, defaults))
+    .sort((a, b) => {
+      const am = a.spider.memorializedAt ? 1 : 0;
+      const bm = b.spider.memorializedAt ? 1 : 0;
+      if (am !== bm) return am - bm;
+      return a.spider.name.localeCompare(b.spider.name);
+    });
 }
 
 export async function getSpiderCare(userId: string, spiderId: string) {

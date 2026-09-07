@@ -52,7 +52,7 @@ function Feedback({
   return null;
 }
 
-function useActionFeedback() {
+export function useActionFeedback() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
