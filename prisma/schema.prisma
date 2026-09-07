@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String?
+  passwordHash     String
+  dateFormat       String   @default("MMM d, yyyy")
+  measurement      String   @default("imperial")
+  theme            String   @default("cosmic")
+  feedDefaultDays  Int      @default(3)
+  mistDefaultDays  Int      @default(1)
+  cleanDefaultDays Int      @default(14)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  spiders   Spider[]
+  reminders Reminder[]
+}
+
+model Spider {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  species         String?
+  commonName      String?
+  sex             String   @default("Unknown") // Female | Male | Unknown
+  instar          String?
+  hatchDate       DateTime?
+  acquisitionDate DateTime?
+  source          String?
+  status          String   @default("Normal") // Normal | Possible premolt | Premolt | Molting | Post-molt recovery
+  profilePhoto    String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enclosure    Enclosure?
+  feedings     FeedingEvent[]
+  mistings     MistingEvent[]
+  molts        MoltEvent[]
+  observations ObservationEvent[]
+  bodyConditions BodyConditionEvent[]
+  photos       Photo[]
+  reminders    Reminder[]
+
+  @@index([userId])
+}
+
+model Enclosure {
+  id           String   @id @default(cuid())
+  spiderId     String   @unique
+  name         String?
+  dimensions   String?
+  setupDate    DateTime?
+  type         String?  // acrylic | glass | mesh | custom | other
+  notes        String?
+  photo        String?
+  lastCleaned  DateTime?
+  lastRehoused DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  spider       Spider                     @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+  maintenance  EnclosureMaintenanceEvent[]
+}
+
+model FeedingEvent {
+  id           String   @id @default(cuid())
+  spiderId     String
+  date         DateTime @default(now())
+  preyType     String
+  quantity     Int      @default(1)
+  preySize     String?
+  outcome      String   // Ate normally | Ate partially | Showed interest but did not eat | Ignored prey | Refused prey | Appeared stressed / afraid of prey
+  notes        String?
+  photoUrl     String?
+  createdAt    DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, date])
+}
+
+model MistingEvent {
+  id               String   @id @default(cuid())
+  spiderId         String
+  date             DateTime @default(now())
+  mistedEnclosure  Boolean  @default(true)
+  waterDroplet     Boolean  @default(false)
+  methods          String   @default("[]")
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, date])
+}
+
+model MoltEvent {
+  id                 String   @id @default(cuid())
+  spiderId           String
+  moltDate           DateTime
+  approximate        Boolean  @default(false)
+  previousInstar     String?
+  newInstar          String?
+  moltPhoto          String?
+  postMoltPhoto      String?
+  notes              String?
+  successful         Boolean  @default(true)
+  daysSincePriorMolt Int?
+  fastingDaysBefore  Int?
+  createdAt          DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, moltDate])
+}
+
+model ObservationEvent {
+  id        String   @id @default(cuid())
+  spiderId  String
+  date      DateTime @default(now())
+  kind      String   // built hammock | unusually active | etc | custom
+  notes     String?
+  photoUrl  String?
+  createdAt DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, date])
+}
+
+model BodyConditionEvent {
+  id          String   @id @default(cuid())
+  spiderId    String
+  date        DateTime @default(now())
+  condition   String   // Very thin | Thin | Normal | Plump | Very full
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, date])
+}
+
+model EnclosureMaintenanceEvent {
+  id          String   @id @default(cuid())
+  enclosureId String
+  date        DateTime @default(now())
+  kind        String   // cleaning | rehouse | maintenance
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  enclosure Enclosure @relation(fields: [enclosureId], references: [id], onDelete: Cascade)
+
+  @@index([enclosureId, date])
+}
+
+model Photo {
+  id        String   @id @default(cuid())
+  spiderId  String
+  url       String
+  caption   String?
+  kind      String   @default("general") // profile | molt | feeding | observation | general
+  takenAt   DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([spiderId, takenAt])
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  userId    String
+  spiderId  String?
+  kind      String   // feeding | misting | cleaning
+  intervalDays Int
+  enabled   Boolean  @default(true)
+  lastSentAt DateTime?
+  // Architecture note: lastSentAt / enabled support future native push delivery
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spider Spider? @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
