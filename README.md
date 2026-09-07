@@ -72,7 +72,7 @@ Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set thes
 
 Then **Redeploy** (Deployments → ⋮ → Redeploy). Env changes do not apply to an already-running deployment until you redeploy.
 
-**Plans:** Free includes 1 spood. Spoodly Pro is $1.99/month or $19.99/year (Stripe Checkout).
+**Plans:** Free includes 1 active spood (memorialized / passed spiders don’t count). Spoodly Pro is $1.99/month or $19.99/year (Stripe Checkout).
 
 Check [https://spoodly-space.vercel.app/api/health](https://spoodly-space.vercel.app/api/health) — every key under `env` should be `true` before trying login again.
 
