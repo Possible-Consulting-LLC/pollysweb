@@ -43,18 +43,28 @@ export async function getBillingProfile(userId: string) {
       stripePriceId: true,
       subscriptionStatus: true,
       subscriptionCurrentPeriodEnd: true,
-      _count: { select: { spiders: true } },
     },
   });
 
+  // Memorialized (passed) spiders keep their story but don't use a free slot.
+  const [activeSpiderCount, memorialCount] = await Promise.all([
+    prisma.spider.count({
+      where: { userId, memorializedAt: null },
+    }),
+    prisma.spider.count({
+      where: { userId, memorializedAt: { not: null } },
+    }),
+  ]);
+
   const plan = isProPlan(user.plan) ? "pro" : "free";
-  const spiderCount = user._count.spiders;
+  const spiderCount = activeSpiderCount;
   const atFreeLimit = plan === "free" && spiderCount >= FREE_SPIDER_LIMIT;
 
   return {
     ...user,
     plan,
     spiderCount,
+    memorialCount,
     freeLimit: FREE_SPIDER_LIMIT,
     atFreeLimit,
     canAddSpider: plan === "pro" || spiderCount < FREE_SPIDER_LIMIT,

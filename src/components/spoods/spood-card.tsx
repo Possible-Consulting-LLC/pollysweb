@@ -14,6 +14,7 @@ export function SpoodCareCard({
   showQuickActions?: boolean;
 }) {
   const { spider, careStatus } = view;
+  const memorialized = Boolean(spider.memorializedAt);
   const subtitle = [spider.sex, spider.commonName || spider.species, spider.instar]
     .filter(Boolean)
     .join(" · ");
@@ -41,61 +42,72 @@ export function SpoodCareCard({
               </Link>
               <p className="truncate text-sm text-[var(--midnight)]/60">{subtitle}</p>
             </div>
-            <StatusPill status={careStatus} />
+            {memorialized ? (
+              <StatusPill status="In memory" />
+            ) : (
+              <StatusPill status={careStatus} />
+            )}
           </div>
           <p className="mt-1 text-sm text-[var(--midnight)]/70">
-            {friendlyNeedCopy(spider.name, careStatus)}
+            {memorialized
+              ? spider.memorialNote?.trim() ||
+                `${spider.name}'s story lives on in your corner of the web.`
+              : friendlyNeedCopy(spider.name, careStatus)}
           </p>
         </div>
       </div>
 
-      <dl className="grid grid-cols-2 gap-2 text-xs text-[var(--midnight)]/70 sm:grid-cols-4">
-        <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
-          <dt>Last fed</dt>
-          <dd className="font-semibold text-[var(--midnight)]">
-            {formatRelativeDays(view.daysSinceFeed)}
-          </dd>
-        </div>
-        <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
-          <dt>Last hydrated</dt>
-          <dd className="font-semibold text-[var(--midnight)]">
-            {formatRelativeDays(view.daysSinceMist)}
-          </dd>
-        </div>
-        <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
-          <dt>Last molt</dt>
-          <dd className="font-semibold text-[var(--midnight)]">
-            {formatRelativeDays(view.daysSinceMolt)}
-          </dd>
-        </div>
-        <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
-          <dt>Status</dt>
-          <dd className="font-semibold text-[var(--midnight)]">{careStatus}</dd>
-        </div>
-      </dl>
+      {memorialized ? null : (
+        <>
+          <dl className="grid grid-cols-2 gap-2 text-xs text-[var(--midnight)]/70 sm:grid-cols-4">
+            <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
+              <dt>Last fed</dt>
+              <dd className="font-semibold text-[var(--midnight)]">
+                {formatRelativeDays(view.daysSinceFeed)}
+              </dd>
+            </div>
+            <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
+              <dt>Last hydrated</dt>
+              <dd className="font-semibold text-[var(--midnight)]">
+                {formatRelativeDays(view.daysSinceMist)}
+              </dd>
+            </div>
+            <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
+              <dt>Last molt</dt>
+              <dd className="font-semibold text-[var(--midnight)]">
+                {formatRelativeDays(view.daysSinceMolt)}
+              </dd>
+            </div>
+            <div className="rounded-2xl bg-[var(--cream-deep)]/60 px-3 py-2">
+              <dt>Status</dt>
+              <dd className="font-semibold text-[var(--midnight)]">{careStatus}</dd>
+            </div>
+          </dl>
 
-      {showQuickActions ? (
-        <QuickLogButtons
-          spiderId={spider.id}
-          spiderName={spider.name}
-          lastFeeding={
-            spider.feedings[0]
-              ? {
-                  preyType: spider.feedings[0].preyType,
-                  quantity: spider.feedings[0].quantity,
-                  outcome: spider.feedings[0].outcome,
-                }
-              : null
-          }
-          lastHydration={
-            spider.mistings[0]
-              ? {
-                  methods: parseHydrationMethods(spider.mistings[0]),
-                }
-              : null
-          }
-        />
-      ) : null}
+          {showQuickActions ? (
+            <QuickLogButtons
+              spiderId={spider.id}
+              spiderName={spider.name}
+              lastFeeding={
+                spider.feedings[0]
+                  ? {
+                      preyType: spider.feedings[0].preyType,
+                      quantity: spider.feedings[0].quantity,
+                      outcome: spider.feedings[0].outcome,
+                    }
+                  : null
+              }
+              lastHydration={
+                spider.mistings[0]
+                  ? {
+                      methods: parseHydrationMethods(spider.mistings[0]),
+                    }
+                  : null
+              }
+            />
+          ) : null}
+        </>
+      )}
     </Card>
   );
 }
