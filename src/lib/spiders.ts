@@ -168,32 +168,67 @@ export async function getSpiderCare(userId: string, spiderId: string) {
   return buildCareView(spider as SpiderWithRelations, defaults);
 }
 
+export type ActivityType =
+  | "feeding"
+  | "misting"
+  | "molt"
+  | "observation"
+  | "body"
+  | "maintenance";
+
 export type ActivityItem = {
   id: string;
-  type: "feeding" | "misting" | "molt" | "observation" | "body" | "maintenance";
+  type: ActivityType;
   spiderId: string;
   spiderName: string;
   date: Date;
   title: string;
   detail?: string | null;
+  /** Serializable fields for the edit form (dates as yyyy-MM-dd). */
+  fields: {
+    date: string;
+    preyType?: string;
+    quantity?: number;
+    preySize?: string | null;
+    outcome?: string;
+    notes?: string | null;
+    methods?: string[];
+    previousInstar?: string | null;
+    newInstar?: string | null;
+    approximate?: boolean;
+    successful?: boolean;
+    kind?: string;
+    condition?: string;
+  };
 };
+
+function parseMethods(raw: string | null | undefined): string[] {
+  try {
+    const parsed = JSON.parse(raw || "[]") as unknown;
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
 
 export async function getRecentActivity(
   userId: string,
   filters?: { spiderId?: string; type?: string },
 ): Promise<ActivityItem[]> {
+  const { toDateInputValue } = await import("@/lib/utils");
   const spiders = await prisma.spider.findMany({
     where: { userId, ...(filters?.spiderId ? { id: filters.spiderId } : {}) },
     select: {
       id: true,
       name: true,
-      feedings: { orderBy: { date: "desc" }, take: 30 },
-      mistings: { orderBy: { date: "desc" }, take: 30 },
-      molts: { orderBy: { moltDate: "desc" }, take: 30 },
-      observations: { orderBy: { date: "desc" }, take: 30 },
-      bodyConditions: { orderBy: { date: "desc" }, take: 20 },
+      feedings: { orderBy: { date: "desc" }, take: 40 },
+      mistings: { orderBy: { date: "desc" }, take: 40 },
+      molts: { orderBy: { moltDate: "desc" }, take: 40 },
+      observations: { orderBy: { date: "desc" }, take: 40 },
+      bodyConditions: { orderBy: { date: "desc" }, take: 30 },
       enclosure: {
-        include: { maintenance: { orderBy: { date: "desc" }, take: 20 } },
+        include: { maintenance: { orderBy: { date: "desc" }, take: 30 } },
       },
     },
   });
@@ -210,25 +245,23 @@ export async function getRecentActivity(
         date: f.date,
         title: `Fed ${spider.name}`,
         detail: `${f.quantity}× ${f.preyType} — ${f.outcome}`,
+        fields: {
+          date: toDateInputValue(f.date),
+          preyType: f.preyType,
+          quantity: f.quantity,
+          preySize: f.preySize,
+          outcome: f.outcome,
+          notes: f.notes,
+        },
       });
     }
     for (const m of spider.mistings) {
-      let methodDetail = "";
-      try {
-        const parsed = JSON.parse(m.methods || "[]") as unknown;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          methodDetail = parsed.map(String).join(" · ");
-        }
-      } catch {
-        methodDetail = "";
-      }
-      if (!methodDetail) {
-        methodDetail = [
+      let methods = parseMethods(m.methods);
+      if (methods.length === 0) {
+        methods = [
           m.mistedEnclosure ? "Misted enclosure" : null,
           m.waterDroplet ? "Water droplet on glass" : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
+        ].filter(Boolean) as string[];
       }
       items.push({
         id: m.id,
@@ -237,7 +270,12 @@ export async function getRecentActivity(
         spiderName: spider.name,
         date: m.date,
         title: `Hydrated ${spider.name}`,
-        detail: methodDetail,
+        detail: methods.join(" · "),
+        fields: {
+          date: toDateInputValue(m.date),
+          methods,
+          notes: m.notes,
+        },
       });
     }
     for (const molt of spider.molts) {
@@ -249,6 +287,14 @@ export async function getRecentActivity(
         date: molt.moltDate,
         title: `${spider.name} molted`,
         detail: [molt.previousInstar, molt.newInstar].filter(Boolean).join(" → "),
+        fields: {
+          date: toDateInputValue(molt.moltDate),
+          previousInstar: molt.previousInstar,
+          newInstar: molt.newInstar,
+          approximate: molt.approximate,
+          successful: molt.successful,
+          notes: molt.notes,
+        },
       });
     }
     for (const o of spider.observations) {
@@ -260,6 +306,11 @@ export async function getRecentActivity(
         date: o.date,
         title: `${spider.name}: ${o.kind}`,
         detail: o.notes,
+        fields: {
+          date: toDateInputValue(o.date),
+          kind: o.kind,
+          notes: o.notes,
+        },
       });
     }
     for (const b of spider.bodyConditions) {
@@ -271,6 +322,11 @@ export async function getRecentActivity(
         date: b.date,
         title: `${spider.name} body condition`,
         detail: b.condition,
+        fields: {
+          date: toDateInputValue(b.date),
+          condition: b.condition,
+          notes: b.notes,
+        },
       });
     }
     if (spider.enclosure) {
@@ -283,6 +339,11 @@ export async function getRecentActivity(
           date: maint.date,
           title: `${spider.name} enclosure ${maint.kind}`,
           detail: maint.notes,
+          fields: {
+            date: toDateInputValue(maint.date),
+            kind: maint.kind,
+            notes: maint.notes,
+          },
         });
       }
     }
@@ -293,5 +354,5 @@ export async function getRecentActivity(
     filtered = items.filter((i) => i.type === filters.type);
   }
 
-  return filtered.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 80);
+  return filtered.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 100);
 }
