@@ -1,16 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, type ReactNode } from "react";
 import { loginAction, registerAction } from "@/app/actions/auth";
 import { BrandLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
+/** Login hero logo sized 3x prior max-width. */
 function AuthBrand({ eyebrow }: { eyebrow: string }) {
   return (
     <div className="mb-8 flex flex-col items-center text-center">
-      <BrandLogo href={null} size="hero" priority className="max-w-[15rem] sm:max-w-[17rem]" />
+      <BrandLogo
+        href={null}
+        size="hero"
+        priority
+        src="/brand/spoodly-logo-mark.png"
+        className="max-w-[45rem] sm:max-w-[51rem]"
+      />
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--plum)]/70">
         {eyebrow}
       </p>
@@ -24,12 +31,41 @@ function AuthBrand({ eyebrow }: { eyebrow: string }) {
   );
 }
 
+function AuthShell({
+  brand,
+  children,
+  footer,
+}: {
+  brand: ReactNode;
+  children: ReactNode;
+  footer: ReactNode;
+}) {
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-[52rem] flex-col justify-center px-4 py-8">
+      {brand}
+      <div className="mx-auto w-full max-w-md">
+        {children}
+        {footer}
+      </div>
+    </div>
+  );
+}
+
 export function LoginForm() {
   const [state, action, pending] = useActionState(loginAction, undefined);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-8">
-      <AuthBrand eyebrow="Welcome back" />
+    <AuthShell
+      brand={<AuthBrand eyebrow="Welcome back" />}
+      footer={
+        <p className="mt-5 text-center text-sm text-[var(--midnight)]/65">
+          New here?{" "}
+          <Link href="/register" className="font-semibold text-[var(--plum)]">
+            Create an account
+          </Link>
+        </p>
+      }
+    >
       <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_8px_30px_var(--shadow)]">
         <Field label="Email" htmlFor="email">
           <Input id="email" name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
@@ -46,13 +82,7 @@ export function LoginForm() {
           {pending ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-      <p className="mt-5 text-center text-sm text-[var(--midnight)]/65">
-        New here?{" "}
-        <Link href="/register" className="font-semibold text-[var(--plum)]">
-          Create an account
-        </Link>
-      </p>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -60,8 +90,17 @@ export function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, undefined);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-8">
-      <AuthBrand eyebrow="Join the web" />
+    <AuthShell
+      brand={<AuthBrand eyebrow="Join the web" />}
+      footer={
+        <p className="mt-5 text-center text-sm text-[var(--midnight)]/65">
+          Already have a corner?{" "}
+          <Link href="/login" className="font-semibold text-[var(--plum)]">
+            Sign in
+          </Link>
+        </p>
+      }
+    >
       <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_8px_30px_var(--shadow)]">
         <Field label="Display name" htmlFor="name">
           <Input id="name" name="name" placeholder="Keeper name" />
@@ -81,12 +120,6 @@ export function RegisterForm() {
           {pending ? "Creating…" : "Create account"}
         </Button>
       </form>
-      <p className="mt-5 text-center text-sm text-[var(--midnight)]/65">
-        Already have a corner?{" "}
-        <Link href="/login" className="font-semibold text-[var(--plum)]">
-          Sign in
-        </Link>
-      </p>
-    </div>
+    </AuthShell>
   );
 }
