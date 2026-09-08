@@ -1,0 +1,1 @@
+redeploy mark path — Vercel stuck on f73f72d; tip needs /brand/spoodly-logo-mark.png
