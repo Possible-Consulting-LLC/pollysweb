@@ -217,9 +217,11 @@ export async function getRecentActivity(
   userId: string,
   filters?: { spiderId?: string; type?: string },
 ): Promise<ActivityItem[]> {
-  const { toDateTimeLocalInputValue } = await import("@/lib/utils");
   const defaults = await getUserDefaults(userId);
-  const displayZone = defaults.timezone || undefined;
+  const { toDateTimeLocalInputValue, resolveDisplayTimeZone } = await import(
+    "@/lib/utils"
+  );
+  const displayZone = await resolveDisplayTimeZone(defaults.timezone);
   const spiders = await prisma.spider.findMany({
     where: { userId, ...(filters?.spiderId ? { id: filters.spiderId } : {}) },
     select: {
