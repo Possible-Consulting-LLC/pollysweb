@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,13 @@ function togglePanel<T extends string>(
   return current === next ? null : next;
 }
 
+function softRefresh(router: ReturnType<typeof useRouter>) {
+  // Keep this low-priority so Home / Settings taps aren't queued behind it.
+  startTransition(() => {
+    router.refresh();
+  });
+}
+
 export function QuickLogButtons({
   spiderId,
   spiderName,
@@ -47,7 +54,7 @@ export function QuickLogButtons({
   lastHydration?: LastHydrationDefaults | null;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [panel, setPanel] = useState<
     "feed" | "hydrate" | "molt" | "note" | null
   >(null);
@@ -75,32 +82,25 @@ export function QuickLogButtons({
   const hydrationDefaults =
     defaultMethods.length > 0 ? defaultMethods : [HYDRATION_METHODS[0]];
 
-  function applyResult(result: ActionResult, closePanel = true) {
-    if (result.ok) {
-      setError(null);
-      setMessage(result.message);
-      if (closePanel) setPanel(null);
-      // Refresh outside the pending transition so buttons unlock as soon as
-      // the save finishes; stats catch up in the background.
-      router.refresh();
-    } else {
-      setMessage(null);
-      setError(result.error);
-    }
-  }
-
-  function run(action: () => Promise<ActionResult>, closePanel = true) {
+  async function run(action: () => Promise<ActionResult>, closePanel = true) {
     setError(null);
     setMessage(null);
-    startTransition(async () => {
-      try {
-        const result = await action();
-        applyResult(result, closePanel);
-      } catch (err) {
-        setMessage(null);
-        setError(err instanceof Error ? err.message : "Something went wrong.");
+    setSaving(true);
+    try {
+      const result = await action();
+      if (result.ok) {
+        setMessage(result.message);
+        if (closePanel) setPanel(null);
+        setSaving(false);
+        softRefresh(router);
+      } else {
+        setError(result.error);
+        setSaving(false);
       }
-    });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -172,7 +172,7 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickFeed(spiderId, fd));
+            void run(() => quickFeed(spiderId, fd));
           }}
         >
           <p className="text-sm font-semibold text-[var(--midnight)]">
@@ -227,8 +227,8 @@ export function QuickLogButtons({
               placeholder="Optional note"
             />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save feeding"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save feeding"}
           </Button>
         </form>
       ) : null}
@@ -240,7 +240,7 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickMist(spiderId, fd));
+            void run(() => quickMist(spiderId, fd));
           }}
         >
           <p className="text-sm font-semibold text-[var(--midnight)]">
@@ -280,8 +280,8 @@ export function QuickLogButtons({
               placeholder="Optional note"
             />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save hydration"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save hydration"}
           </Button>
         </form>
       ) : null}
@@ -292,7 +292,7 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => logMolt(spiderId, fd));
+            void run(() => logMolt(spiderId, fd));
           }}
         >
           <DateTimeField
@@ -328,8 +328,8 @@ export function QuickLogButtons({
           <Field label="Notes" htmlFor={`mn-${spiderId}`}>
             <Textarea id={`mn-${spiderId}`} name="notes" />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save molt"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save molt"}
           </Button>
         </form>
       ) : null}
@@ -340,7 +340,7 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickObservation(spiderId, fd));
+            void run(() => quickObservation(spiderId, fd));
           }}
         >
           <DateTimeField
@@ -370,15 +370,15 @@ export function QuickLogButtons({
           <Field label="Notes" htmlFor={`on-${spiderId}`}>
             <Textarea id={`on-${spiderId}`} name="notes" />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save observation"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save observation"}
           </Button>
         </form>
       ) : null}
 
       <p className="text-xs text-[var(--midnight)]/45">
-        Fed and Hydration open a short form — defaults match what you logged
-        last time for {spiderName}.
+        Fed and Hydration open a short form — tap Save when you’re ready.
+        Defaults match what you logged last time for {spiderName}.
       </p>
     </div>
   );
