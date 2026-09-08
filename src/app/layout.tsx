@@ -22,6 +22,10 @@ export const metadata: Metadata = {
   title: "Spoodly Space",
   description: "Your little corner of the web. Track. Care. Celebrate.",
   applicationName: "Spoodly Space",
+  icons: {
+    icon: [{ url: "/brand/spoodly-logo-mark.png", type: "image/png" }],
+    apple: [{ url: "/brand/spoodly-logo-mark.png" }],
+  },
   appleWebApp: {
     capable: true,
     title: "Spoodly Space",

@@ -75,10 +75,7 @@ export function AppHeader({
 }) {
   return (
     <header className="mb-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--plum)]/70">
-        Spoodly Space
-      </p>
-      <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-tight text-[var(--midnight)]">
+      <h1 className="font-[family-name:var(--font-display)] text-3xl leading-tight text-[var(--midnight)]">
         {title ?? "Your little corner of the web."}
       </h1>
       {subtitle ? (

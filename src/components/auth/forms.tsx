@@ -3,28 +3,21 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { loginAction, registerAction } from "@/app/actions/auth";
+import { BrandLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
-function BrandHero({ eyebrow }: { eyebrow: string }) {
+function AuthBrand({ eyebrow }: { eyebrow: string }) {
   return (
-    <div className="relative mb-8 overflow-hidden rounded-[2rem] bg-[var(--panel)] px-6 py-10 text-[var(--on-panel)]">
-      <div className="orbit-ring pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full border border-[var(--gold)]/30" />
-      <div className="orbit-ring pointer-events-none absolute -bottom-16 left-6 h-48 w-48 rounded-full border border-[var(--lavender)]/25" style={{ animationDuration: "70s" }} />
-      <span className="animate-twinkle absolute right-10 top-8 text-[var(--gold)]">✦</span>
-      <span className="animate-twinkle absolute bottom-10 left-8 text-[var(--star)]" style={{ animationDelay: "1s" }}>
-        ✧
-      </span>
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--star)]">
+    <div className="mb-8 flex flex-col items-center text-center">
+      <BrandLogo href={null} size="hero" priority className="max-w-[15rem] sm:max-w-[17rem]" />
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--plum)]/70">
         {eyebrow}
       </p>
-      <h1 className="animate-float mt-3 font-[family-name:var(--font-display)] text-4xl leading-none">
-        Spoodly Space
-      </h1>
-      <p className="mt-3 max-w-xs text-sm text-[var(--on-panel)]/75">
+      <p className="mt-2 max-w-xs text-sm text-[var(--midnight)]/65">
         Your little corner of the web.
       </p>
-      <p className="mt-4 text-xs font-semibold tracking-wide text-[var(--gold)]">
+      <p className="mt-2 text-xs font-semibold tracking-wide text-[var(--plum)]">
         Track. Care. Celebrate.
       </p>
     </div>
@@ -36,8 +29,8 @@ export function LoginForm() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-8">
-      <BrandHero eyebrow="Welcome back" />
-      <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card)] p-5 shadow-[0_8px_30px_var(--shadow)]">
+      <AuthBrand eyebrow="Welcome back" />
+      <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_8px_30px_var(--shadow)]">
         <Field label="Email" htmlFor="email">
           <Input id="email" name="email" type="email" autoComplete="email" required placeholder="you@example.com" />
         </Field>
@@ -68,8 +61,8 @@ export function RegisterForm() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-8">
-      <BrandHero eyebrow="Join the web" />
-      <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card)] p-5 shadow-[0_8px_30px_var(--shadow)]">
+      <AuthBrand eyebrow="Join the web" />
+      <form action={action} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_8px_30px_var(--shadow)]">
         <Field label="Display name" htmlFor="name">
           <Input id="name" name="name" placeholder="Keeper name" />
         </Field>

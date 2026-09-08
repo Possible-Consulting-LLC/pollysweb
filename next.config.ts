@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
     localPatterns: [
       { pathname: "/spoods/**" },
       { pathname: "/uploads/**" },
+      { pathname: "/brand/**" },
     ],
   },
 };
