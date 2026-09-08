@@ -23,9 +23,7 @@ function asOptionalString(value: FormDataEntryValue | null) {
 }
 
 function revalidateSpider(spiderId: string) {
-  revalidatePath("/", "layout");
   revalidatePath("/home");
-  revalidatePath("/today");
   revalidatePath("/spoods");
   revalidatePath("/activity");
   revalidatePath(`/spoods/${spiderId}`);
