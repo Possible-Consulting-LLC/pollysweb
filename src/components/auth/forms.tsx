@@ -15,6 +15,7 @@ function AuthBrand({ eyebrow }: { eyebrow: string }) {
         href={null}
         size="hero"
         priority
+        src="/brand/spoodly-logo-mark.png"
         className="max-w-[45rem] sm:max-w-[51rem]"
       />
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--plum)]/70">
