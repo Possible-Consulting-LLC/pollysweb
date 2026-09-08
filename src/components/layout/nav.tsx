@@ -16,6 +16,9 @@ const links = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Immersive sketch hub owns the full viewport when visited directly.
+  if (pathname === "/today") return null;
+
   return (
     <nav
       aria-label="Primary"
