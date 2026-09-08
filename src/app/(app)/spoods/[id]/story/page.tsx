@@ -1,13 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
 import { ActivityEditorRow } from "@/components/activity/activity-editor";
 import { PhotoOpenButton } from "@/components/spoods/photo-gallery";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { toDateInputValue } from "@/lib/utils";
-import { getSpiderCare } from "@/lib/spiders";
+import { formatDateTimeInZone, toDateTimeLocalInputValue } from "@/lib/utils";
+import { getSpiderCare, getUserDefaults } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 import { daysBetweenMolts } from "@/lib/care";
 import { parseHydrationMethods } from "@/lib/utils";
@@ -47,9 +46,13 @@ export default async function StoryPage({
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const view = await getSpiderCare(user.id!, id);
+  const [view, defaults] = await Promise.all([
+    getSpiderCare(user.id!, id),
+    getUserDefaults(user.id!),
+  ]);
   if (!view) notFound();
   const { spider } = view;
+  const zone = defaults.timezone || undefined;
 
   const events: StoryEvent[] = [];
 
@@ -78,7 +81,7 @@ export default async function StoryPage({
       instarLabel: molt.newInstar,
       editable: true,
       fields: {
-        date: toDateInputValue(molt.moltDate),
+        date: toDateTimeLocalInputValue(molt.moltDate, zone),
         previousInstar: molt.previousInstar,
         newInstar: molt.newInstar,
         approximate: molt.approximate,
@@ -98,7 +101,7 @@ export default async function StoryPage({
       photo: obs.photoUrl,
       editable: true,
       fields: {
-        date: toDateInputValue(obs.date),
+        date: toDateTimeLocalInputValue(obs.date, zone),
         kind: obs.kind,
         notes: obs.notes,
       },
@@ -115,7 +118,7 @@ export default async function StoryPage({
       photo: feed.photoUrl,
       editable: true,
       fields: {
-        date: toDateInputValue(feed.date),
+        date: toDateTimeLocalInputValue(feed.date, zone),
         preyType: feed.preyType,
         quantity: feed.quantity,
         preySize: feed.preySize,
@@ -135,7 +138,7 @@ export default async function StoryPage({
       detail: methods.join(" · ") || mist.notes,
       editable: true,
       fields: {
-        date: toDateInputValue(mist.date),
+        date: toDateTimeLocalInputValue(mist.date, zone),
         methods,
         notes: mist.notes,
       },
@@ -151,7 +154,7 @@ export default async function StoryPage({
       detail: body.notes,
       editable: true,
       fields: {
-        date: toDateInputValue(body.date),
+        date: toDateTimeLocalInputValue(body.date, zone),
         condition: body.condition,
         notes: body.notes,
       },
@@ -177,7 +180,7 @@ export default async function StoryPage({
         detail: maint.notes,
         editable: true,
         fields: {
-          date: toDateInputValue(maint.date),
+          date: toDateTimeLocalInputValue(maint.date, zone),
           kind: maint.kind,
           notes: maint.notes,
         },
@@ -195,7 +198,7 @@ export default async function StoryPage({
       photo: photo.url,
       editable: true,
       fields: {
-        date: toDateInputValue(photo.takenAt),
+        date: toDateTimeLocalInputValue(photo.takenAt, zone),
         caption: photo.caption,
       },
     });
@@ -306,7 +309,7 @@ export default async function StoryPage({
                             spiderName: spider.name,
                             title: event.title,
                             detail: event.detail,
-                            dateLabel: `${format(event.date, "MMMM d, yyyy")}${
+                            dateLabel: `${formatDateTimeInZone(event.date, zone)}${
                               event.kind === "molt" &&
                               spider.molts.find((m) => m.id === event.id)?.approximate
                                 ? " · approx."
@@ -326,7 +329,7 @@ export default async function StoryPage({
                             </p>
                           ) : null}
                           <time className="mt-2 block text-xs text-[var(--midnight)]/45">
-                            {format(event.date, "MMMM d, yyyy")}
+                            {formatDateTimeInZone(event.date, zone)}
                           </time>
                         </>
                       )}
