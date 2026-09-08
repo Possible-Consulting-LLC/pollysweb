@@ -235,13 +235,15 @@ export async function createSpiderAction(
 
 export async function updateSettingsAction(formData: FormData) {
   const user = await requireUser();
+  const { normalizeTimeZone } = await import("@/lib/utils");
+  const timezone = normalizeTimeZone(String(formData.get("timezone") || ""));
 
   await prisma.user.update({
     where: { id: user.id! },
     data: {
       name: String(formData.get("name") || user.name || ""),
       dateFormat: String(formData.get("dateFormat") || "MMM d, yyyy"),
-      timezone: String(formData.get("timezone") || "").trim(),
+      timezone,
       measurement: String(formData.get("measurement") || "imperial"),
       theme: normalizeTheme(String(formData.get("theme") || "cosmic")),
       feedDefaultDays: Number(formData.get("feedDefaultDays") || 3),
