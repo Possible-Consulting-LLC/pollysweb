@@ -64,7 +64,7 @@ export function FeedbackButton() {
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
           <button
             type="button"
-            className="absolute inset-0 bg-[var(--cream)]"
+            className="absolute inset-0 bg-[var(--midnight)]/45"
             aria-label="Close feedback"
             onClick={() => setOpen(false)}
           />
