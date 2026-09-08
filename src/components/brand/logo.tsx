@@ -26,7 +26,7 @@ export function BrandLogo({
       fetchPriority={priority ? "high" : "auto"}
       className={cn(
         "h-auto w-full select-none",
-        size === "hero" ? "max-w-[16rem] sm:max-w-[18rem]" : "max-w-[7.5rem]",
+        size === "hero" ? "max-w-[48rem] sm:max-w-[54rem]" : "max-w-[7.5rem]",
         className,
       )}
     />
