@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
@@ -9,10 +10,11 @@ type SessionUser = {
   image?: string | null;
 };
 
-async function loadSessionUser(): Promise<{
+/** Deduped per request so layout + page don't hit auth/DB twice. */
+const loadSessionUser = cache(async (): Promise<{
   user: SessionUser | null;
   stale: boolean;
-}> {
+}> => {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return { user: null, stale: false };
@@ -24,7 +26,7 @@ async function loadSessionUser(): Promise<{
 
   if (!existing) return { user: null, stale: true };
   return { user: session.user, stale: false };
-}
+});
 
 /**
  * Resolve the signed-in user. JWTs that no longer match a DB row (reseed /

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updatePremoltStatus } from "@/app/actions/care";
 import { PREMOLT_STATUSES } from "@/lib/constants";
@@ -14,19 +14,36 @@ export function PremoltToggle({
   status: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [value, setValue] = useState(status);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    setValue(status);
+  }, [status]);
 
   return (
     <Select
       aria-label="Premolt status"
       disabled={pending}
-      value={status}
+      value={value}
       onChange={(e) => {
         const next = e.target.value;
-        startTransition(async () => {
-          await updatePremoltStatus(spiderId, next);
-          router.refresh();
-        });
+        const previous = value;
+        setValue(next);
+        setPending(true);
+        void (async () => {
+          try {
+            const result = await updatePremoltStatus(spiderId, next);
+            if (!result.ok) {
+              setValue(previous);
+            }
+            setPending(false);
+            router.refresh();
+          } catch {
+            setValue(previous);
+            setPending(false);
+          }
+        })();
       }}
     >
       {PREMOLT_STATUSES.map((s) => (

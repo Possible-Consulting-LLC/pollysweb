@@ -14,9 +14,9 @@ export async function ownedSpider(spiderId: string, userId: string) {
 }
 
 export function revalidateSpider(spiderId: string) {
-  revalidatePath("/", "layout");
+  // Keep this narrow — layout-wide invalidation made every button feel like a
+  // full page reload. These paths cover care cards, activity, and the profile.
   revalidatePath("/home");
-  revalidatePath("/today");
   revalidatePath("/spoods");
   revalidatePath("/activity");
   revalidatePath(`/spoods/${spiderId}`);
