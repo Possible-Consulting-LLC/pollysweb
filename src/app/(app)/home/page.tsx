@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodCareCard } from "@/components/spoods/spood-card";
+import { SpoodImage } from "@/components/spoods/spood-image";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
@@ -87,8 +88,15 @@ export default async function HomePage() {
             <Link
               key={v.spider.id}
               href={`/spoods/${v.spider.id}`}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--plum)]/15 bg-[var(--card)] px-3 py-2 text-sm transition hover:border-[var(--plum)]/30 hover:bg-[var(--hover-strong)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--plum)]/15 bg-[var(--card)] py-1.5 pl-1.5 pr-3 text-sm transition hover:border-[var(--plum)]/30 hover:bg-[var(--hover-strong)]"
             >
+              <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--lavender)] ring-1 ring-[var(--plum)]/10">
+                <SpoodImage
+                  src={v.spider.profilePhoto}
+                  alt=""
+                  className="h-full w-full"
+                />
+              </span>
               <span className="font-semibold text-[var(--midnight)]">{v.spider.name}</span>
               <StatusPill
                 status={v.spider.memorializedAt ? "In memory" : v.careStatus}
