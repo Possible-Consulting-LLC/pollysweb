@@ -7,6 +7,7 @@ import {
   daysBetweenMolts,
   fastingDaysBeforeMolt,
   nextInstar,
+  statusAfterSuccessfulMolt,
 } from "@/lib/care";
 import {
   ActionResult,
@@ -264,7 +265,9 @@ export async function logMolt(
       where: { id: spiderId },
       data: {
         ...(newInstar ? { instar: newInstar } : {}),
-        status: successful ? "Post-molt recovery" : spider.status,
+        status: successful
+          ? statusAfterSuccessfulMolt(moltDate)
+          : spider.status,
       },
     });
 
@@ -304,3 +307,4 @@ export async function updatePremoltStatus(
     };
   }
 }
+
