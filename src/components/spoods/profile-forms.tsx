@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { BODY_CONDITIONS, ENCLOSURE_TYPES } from "@/lib/constants";
+import { DateTimeField } from "@/components/ui/datetime-field";
 import { formatShortDate, toDateInputValue } from "@/lib/utils";
 
 const bodyIcons: Record<string, string> = {
@@ -114,15 +115,7 @@ export function BodyConditionForm({
           ))}
         </Select>
       </Field>
-      <Field label="Date" htmlFor="bc-date">
-        <Input
-          id="bc-date"
-          name="date"
-          type="date"
-          defaultValue={toDateInputValue(new Date())}
-          required
-        />
-      </Field>
+      <DateTimeField id="bc-date" name="date" label="When" />
       <p className="text-xs text-[var(--midnight)]/50">
         A visual observation — not a medical diagnosis.
       </p>
@@ -268,15 +261,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
           <option value="maintenance">Maintenance</option>
         </Select>
       </Field>
-      <Field label="Date" htmlFor="maint-date">
-        <Input
-          id="maint-date"
-          name="date"
-          type="date"
-          defaultValue={toDateInputValue(new Date())}
-          required
-        />
-      </Field>
+      <DateTimeField id="maint-date" name="date" label="When" />
       <Field label="Notes" htmlFor="maint-notes">
         <Textarea id="maint-notes" name="notes" />
       </Field>
@@ -319,6 +304,7 @@ export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
       <Field label="Caption (optional)" htmlFor="caption">
         <Input id="caption" name="caption" placeholder="Fresh hammock view" />
       </Field>
+      <DateTimeField id="photo-taken" name="date" label="Taken at" />
       <label className="flex items-center gap-2 text-sm text-[var(--midnight)]/80">
         <input type="checkbox" name="setAsProfile" className="rounded" />
         Set as profile photo
