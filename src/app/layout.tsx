@@ -53,6 +53,8 @@ async function resolveTheme() {
     });
     return normalizeTheme(user?.theme);
   } catch (error) {
+    // During `next build`, Next may probe routes statically before dynamism
+    // is finalized. auth() throws DYNAMIC_SERVER_USAGE — that is expected.
     const digest =
       typeof error === "object" &&
       error !== null &&
