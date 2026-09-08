@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getActionUser } from "@/lib/session";
-import { requireLocalDateInput } from "@/lib/utils";
+import { requireFormDateTime } from "@/lib/utils";
 import { daysBetweenMolts, fastingDaysBeforeMolt } from "@/lib/care";
 import type { ActionResult } from "@/app/actions/care";
 
@@ -25,6 +25,7 @@ function asOptionalString(value: FormDataEntryValue | null) {
 function revalidateSpider(spiderId: string) {
   revalidatePath("/", "layout");
   revalidatePath("/home");
+  revalidatePath("/today");
   revalidatePath("/spoods");
   revalidatePath("/activity");
   revalidatePath(`/spoods/${spiderId}`);
@@ -118,7 +119,7 @@ export async function updateActivityAction(
     const owned = await resolveOwnedEvent(type, id, user.id);
     if (!owned) return { ok: false, error: "Activity not found." };
 
-    const date = requireLocalDateInput(String(formData.get("date") || ""));
+    const date = requireFormDateTime(formData);
 
     switch (type) {
       case "feeding": {
