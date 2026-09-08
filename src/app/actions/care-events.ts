@@ -8,7 +8,7 @@ import {
   fastingDaysBeforeMolt,
   nextInstar,
 } from "@/lib/care";
-import { requireLocalDateInput } from "@/lib/utils";
+import { requireFormDateTime } from "@/lib/utils";
 import {
   ActionResult,
   ownedSpider,
@@ -53,9 +53,7 @@ export async function quickFeed(
         outcome: data.outcome,
         notes: data.notes,
         preySize: data.preySize,
-        date: requireLocalDateInput(
-          formData ? String(formData.get("date") || "") : "",
-        ),
+        date: formData ? requireFormDateTime(formData) : new Date(),
       },
     });
 
@@ -109,9 +107,7 @@ export async function quickMist(
         waterDroplet,
         methods: JSON.stringify(methods),
         notes,
-        date: requireLocalDateInput(
-          formData ? String(formData.get("date") || "") : "",
-        ),
+        date: formData ? requireFormDateTime(formData) : new Date(),
       },
     });
 
@@ -148,7 +144,7 @@ export async function quickObservation(
         spiderId,
         kind,
         notes,
-        date: requireLocalDateInput(String(formData.get("date") || "")),
+        date: requireFormDateTime(formData),
       },
     });
 
@@ -182,7 +178,7 @@ export async function logBodyCondition(
         spiderId,
         condition,
         notes,
-        date: requireLocalDateInput(String(formData.get("date") || "")),
+        date: requireFormDateTime(formData),
       },
     });
 
@@ -213,8 +209,9 @@ export async function logMolt(
     const spider = await ownedSpider(spiderId, user.id!);
     if (!spider) return { ok: false, error: "Spider not found." };
 
-    const moltDate = requireLocalDateInput(
-      String(formData.get("moltDate") || formData.get("date") || ""),
+    const moltDate = requireFormDateTime(
+      formData,
+      formData.get("moltDate") ? "moltDate" : "date",
     );
     const previousInstar =
       asOptionalString(formData.get("previousInstar")) ||
