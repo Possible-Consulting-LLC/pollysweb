@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { QuickLogButtons } from "@/components/spoods/quick-log";
 import { PremoltToggle } from "@/components/spoods/premolt-toggle";
 import {
+  AboutForm,
   BodyConditionForm,
   EnclosureForm,
   MaintenanceForm,
@@ -185,33 +186,26 @@ export default async function SpiderProfilePage({
         </>
       ) : null}
 
-      <Card className="space-y-2 text-sm">
-        <SectionHeader title="About" />
-        <p>
-          <span className="text-[var(--midnight)]/55">Species: </span>
-          {spider.species || "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Acquired: </span>
-          {spider.acquisitionDate
-            ? format(spider.acquisitionDate, "MMM d, yyyy")
-            : "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Hatch: </span>
-          {spider.hatchDate
-            ? format(spider.hatchDate, "MMM d, yyyy")
-            : "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Source: </span>
-          {spider.source || "Unknown"}
-        </p>
-        {spider.notes ? (
-          <p className="rounded-2xl bg-[var(--cream-deep)]/50 p-3 text-[var(--midnight)]/80">
-            {spider.notes}
-          </p>
-        ) : null}
+      <Card className="space-y-2">
+        <SectionHeader title="About" subtitle="Name, species, dates, and notes" />
+        <AboutForm
+          spiderId={spider.id}
+          about={{
+            name: spider.name,
+            commonName: spider.commonName,
+            species: spider.species,
+            sex: spider.sex,
+            instar: spider.instar,
+            hatchDate: spider.hatchDate
+              ? spider.hatchDate.toISOString()
+              : null,
+            acquisitionDate: spider.acquisitionDate
+              ? spider.acquisitionDate.toISOString()
+              : null,
+            source: spider.source,
+            notes: spider.notes,
+          }}
+        />
       </Card>
 
       {!memorialized ? (
