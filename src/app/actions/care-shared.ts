@@ -1,10 +1,9 @@
-"use server";
-
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { getActionUser } from "@/lib/session";
 
-export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
+export type ActionResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string };
 
 export async function ownedSpider(spiderId: string, userId: string) {
   return prisma.spider.findFirst({ where: { id: spiderId, userId } });
