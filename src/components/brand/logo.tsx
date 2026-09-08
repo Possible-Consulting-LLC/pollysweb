@@ -1,17 +1,17 @@
-import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
+/** Served by /api/brand/* from embedded PNG modules (public/brand stubs are corrupt on GitHub). */
 const MARK = {
-  src: "/brand/spoodly-logo-mark.png",
-  width: 240,
-  height: 240,
+  src: "/api/brand/mark",
+  width: 120,
+  height: 120,
 } as const;
 
 const HERO = {
-  src: "/brand/spoodly-logo.png",
-  width: 720,
-  height: 720,
+  src: "/api/brand/hero",
+  width: 180,
+  height: 180,
 } as const;
 
 export function BrandLogo({
@@ -27,12 +27,15 @@ export function BrandLogo({
 }) {
   const asset = size === "hero" ? HERO : MARK;
   const image = (
-    <Image
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src={asset.src}
       alt="Spoodly Space"
       width={asset.width}
       height={asset.height}
-      priority={priority}
+      decoding="async"
+      // eslint-disable-next-line react/no-unknown-property
+      fetchPriority={priority ? "high" : "auto"}
       className={cn(
         "h-auto w-full select-none",
         size === "hero" ? "max-w-[16rem] sm:max-w-[18rem]" : "max-w-[7.5rem]",
