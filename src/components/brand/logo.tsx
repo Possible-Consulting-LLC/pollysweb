@@ -1,6 +1,18 @@
+import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { LOGO_HERO, LOGO_MARK } from "@/components/brand/logo-data";
+
+const MARK = {
+  src: "/brand/spoodly-logo-mark.png",
+  width: 240,
+  height: 240,
+} as const;
+
+const HERO = {
+  src: "/brand/spoodly-logo.png",
+  width: 720,
+  height: 720,
+} as const;
 
 export function BrandLogo({
   href = "/home",
@@ -13,17 +25,14 @@ export function BrandLogo({
   className?: string;
   priority?: boolean;
 }) {
-  const asset = size === "hero" ? LOGO_HERO : LOGO_MARK;
+  const asset = size === "hero" ? HERO : MARK;
   const image = (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       src={asset.src}
       alt="Spoodly Space"
       width={asset.width}
       height={asset.height}
-      decoding="async"
-      // eslint-disable-next-line react/no-unknown-property
-      fetchPriority={priority ? "high" : "auto"}
+      priority={priority}
       className={cn(
         "h-auto w-full select-none",
         size === "hero" ? "max-w-[16rem] sm:max-w-[18rem]" : "max-w-[7.5rem]",
