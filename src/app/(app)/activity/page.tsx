@@ -1,10 +1,14 @@
-import { format } from "date-fns";
 import { AppHeader } from "@/components/layout/nav";
 import { ActivityEditorList } from "@/components/activity/activity-editor";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/field";
-import { getRecentActivity, listSpidersForUser } from "@/lib/spiders";
+import {
+  getRecentActivity,
+  getUserDefaults,
+  listSpidersForUser,
+} from "@/lib/spiders";
+import { formatDateTimeInZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
 
 export default async function ActivityPage({
@@ -14,17 +18,20 @@ export default async function ActivityPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const spiders = await listSpidersForUser(user.id!);
-  const activity = await getRecentActivity(user.id!, {
-    spiderId: params.spiderId,
-    type: params.type,
-  });
+  const [spiders, activity, defaults] = await Promise.all([
+    listSpidersForUser(user.id!),
+    getRecentActivity(user.id!, {
+      spiderId: params.spiderId,
+      type: params.type,
+    }),
+    getUserDefaults(user.id!),
+  ]);
 
   return (
     <div className="space-y-6">
       <AppHeader
         title="Recent Activity"
-        subtitle="Feedings, molts, mistings and little moments — tap Edit to fix a date or detail."
+        subtitle="Feedings, molts, mistings and little moments — tap Edit to fix a time or detail."
       />
 
       <form className="grid gap-2 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-3 sm:grid-cols-3">
@@ -72,7 +79,7 @@ export default async function ActivityPage({
             spiderName: item.spiderName,
             title: item.title,
             detail: item.detail,
-            dateLabel: format(item.date, "MMM d, yyyy"),
+            dateLabel: formatDateTimeInZone(item.date, defaults.timezone),
             fields: item.fields,
           }))}
         />
