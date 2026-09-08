@@ -64,7 +64,7 @@ export function FeedbackButton() {
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
           <button
             type="button"
-            className="absolute inset-0 bg-[var(--midnight)]/45"
+            className="absolute inset-0 bg-[var(--cream)]"
             aria-label="Close feedback"
             onClick={() => setOpen(false)}
           />
@@ -72,7 +72,7 @@ export function FeedbackButton() {
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="relative z-10 w-full max-w-md rounded-t-[1.75rem] border border-[var(--plum)]/10 bg-[var(--card)] p-5 shadow-[0_16px_48px_var(--shadow)] sm:rounded-[1.75rem]"
+            className="relative z-10 w-full max-w-md rounded-t-[1.75rem] border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_16px_48px_var(--shadow)] sm:rounded-[1.75rem]"
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
