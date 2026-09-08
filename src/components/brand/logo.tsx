@@ -7,17 +7,20 @@ export function BrandLogo({
   size = "header",
   className,
   priority = false,
+  src,
 }: {
   href?: string | null;
   size?: "header" | "hero";
   className?: string;
   priority?: boolean;
+  /** Optional image URL override (e.g. `/brand/spoodly-logo-mark.png`). */
+  src?: string;
 }) {
   const asset = size === "hero" ? LOGO_HERO : LOGO_MARK;
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={asset.src}
+      src={src ?? asset.src}
       alt="Spoodly Space"
       width={asset.width}
       height={asset.height}
