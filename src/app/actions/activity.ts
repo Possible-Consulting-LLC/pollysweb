@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getActionUser } from "@/lib/session";
-import { daysBetweenMolts, fastingDaysBeforeMolt } from "@/lib/care";
+import { daysBetweenMolts, fastingDaysBeforeMolt, statusAfterSuccessfulMolt } from "@/lib/care";
 import type { ActionResult } from "@/app/actions/care";
 import { resolveActivityDateTime } from "@/app/actions/care-shared";
 
@@ -206,6 +206,15 @@ export async function updateActivityAction(
             fastingDaysBefore: fasting ?? null,
           },
         });
+        if (successful) {
+          await prisma.spider.update({
+            where: { id: owned.spiderId },
+            data: {
+              ...(newInstar ? { instar: newInstar } : {}),
+              status: statusAfterSuccessfulMolt(date),
+            },
+          });
+        }
         break;
       }
       case "observation": {
