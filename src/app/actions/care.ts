@@ -1,5 +1,3 @@
-"use server";
-
 export type { ActionResult } from "@/app/actions/care-shared";
 export {
   quickFeed,
