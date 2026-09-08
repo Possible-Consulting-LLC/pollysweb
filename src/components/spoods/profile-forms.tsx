@@ -114,6 +114,15 @@ export function BodyConditionForm({
           ))}
         </Select>
       </Field>
+      <Field label="Date" htmlFor="bc-date">
+        <Input
+          id="bc-date"
+          name="date"
+          type="date"
+          defaultValue={toDateInputValue(new Date())}
+          required
+        />
+      </Field>
       <p className="text-xs text-[var(--midnight)]/50">
         A visual observation — not a medical diagnosis.
       </p>
@@ -258,6 +267,15 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
           <option value="rehouse">Rehouse</option>
           <option value="maintenance">Maintenance</option>
         </Select>
+      </Field>
+      <Field label="Date" htmlFor="maint-date">
+        <Input
+          id="maint-date"
+          name="date"
+          type="date"
+          defaultValue={toDateInputValue(new Date())}
+          required
+        />
       </Field>
       <Field label="Notes" htmlFor="maint-notes">
         <Textarea id="maint-notes" name="notes" />
