@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   logBodyCondition,
@@ -69,7 +69,9 @@ export function useActionFeedback() {
           setMessage(result.message);
           setError(null);
           setPending(false);
-          router.refresh();
+          startTransition(() => {
+            router.refresh();
+          });
         } else {
           setMessage(null);
           setError(result.error);
