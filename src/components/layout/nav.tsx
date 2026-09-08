@@ -36,6 +36,8 @@ export function BottomNav() {
             <li key={href} className="flex-1">
               <Link
                 href={href}
+                prefetch
+                // Navigation must stay tappable even while a save/refresh runs.
                 className={cn(
                   "flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold transition",
                   active
