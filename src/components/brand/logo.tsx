@@ -1,18 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-
-/** Served by /api/brand/* from embedded PNG modules. */
-const MARK = {
-  src: "/api/brand/mark",
-  width: 120,
-  height: 120,
-} as const;
-
-const HERO = {
-  src: "/api/brand/hero",
-  width: 180,
-  height: 180,
-} as const;
+import { LOGO_HERO, LOGO_MARK } from "@/components/brand/logo-data";
 
 export function BrandLogo({
   href = "/home",
@@ -25,7 +13,7 @@ export function BrandLogo({
   className?: string;
   priority?: boolean;
 }) {
-  const asset = size === "hero" ? HERO : MARK;
+  const asset = size === "hero" ? LOGO_HERO : LOGO_MARK;
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
