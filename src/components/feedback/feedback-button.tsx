@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
+import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { submitFeedbackAction } from "@/app/actions/feedback";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Field, Select, Textarea } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
 export function FeedbackButton() {
+  const pathname = usePathname();
   const titleId = useId();
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(
@@ -35,6 +37,8 @@ export function FeedbackButton() {
       return () => window.clearTimeout(timer);
     }
   }, [state?.success]);
+
+  if (pathname === "/today") return null;
 
   return (
     <>
