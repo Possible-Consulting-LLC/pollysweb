@@ -1,0 +1,1 @@
+LOAD_FROM:/tmp/push_logo_data_content.txt
