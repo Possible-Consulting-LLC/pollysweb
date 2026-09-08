@@ -107,6 +107,7 @@ export async function getUserDefaults(userId: string) {
       mistDefaultDays: true,
       cleanDefaultDays: true,
       dateFormat: true,
+      timezone: true,
       measurement: true,
       theme: true,
       name: true,
@@ -216,7 +217,9 @@ export async function getRecentActivity(
   userId: string,
   filters?: { spiderId?: string; type?: string },
 ): Promise<ActivityItem[]> {
-  const { toDateInputValue } = await import("@/lib/utils");
+  const { toDateTimeLocalInputValue } = await import("@/lib/utils");
+  const defaults = await getUserDefaults(userId);
+  const displayZone = defaults.timezone || undefined;
   const spiders = await prisma.spider.findMany({
     where: { userId, ...(filters?.spiderId ? { id: filters.spiderId } : {}) },
     select: {
@@ -246,7 +249,7 @@ export async function getRecentActivity(
         title: `Fed ${spider.name}`,
         detail: `${f.quantity}× ${f.preyType} — ${f.outcome}`,
         fields: {
-          date: toDateInputValue(f.date),
+          date: toDateTimeLocalInputValue(f.date, displayZone),
           preyType: f.preyType,
           quantity: f.quantity,
           preySize: f.preySize,
@@ -272,7 +275,7 @@ export async function getRecentActivity(
         title: `Hydrated ${spider.name}`,
         detail: methods.join(" · "),
         fields: {
-          date: toDateInputValue(m.date),
+          date: toDateTimeLocalInputValue(m.date, displayZone),
           methods,
           notes: m.notes,
         },
@@ -288,7 +291,7 @@ export async function getRecentActivity(
         title: `${spider.name} molted`,
         detail: [molt.previousInstar, molt.newInstar].filter(Boolean).join(" → "),
         fields: {
-          date: toDateInputValue(molt.moltDate),
+          date: toDateTimeLocalInputValue(molt.moltDate, displayZone),
           previousInstar: molt.previousInstar,
           newInstar: molt.newInstar,
           approximate: molt.approximate,
@@ -307,7 +310,7 @@ export async function getRecentActivity(
         title: `${spider.name}: ${o.kind}`,
         detail: o.notes,
         fields: {
-          date: toDateInputValue(o.date),
+          date: toDateTimeLocalInputValue(o.date, displayZone),
           kind: o.kind,
           notes: o.notes,
         },
@@ -323,7 +326,7 @@ export async function getRecentActivity(
         title: `${spider.name} body condition`,
         detail: b.condition,
         fields: {
-          date: toDateInputValue(b.date),
+          date: toDateTimeLocalInputValue(b.date, displayZone),
           condition: b.condition,
           notes: b.notes,
         },
@@ -340,7 +343,7 @@ export async function getRecentActivity(
           title: `${spider.name} enclosure ${maint.kind}`,
           detail: maint.notes,
           fields: {
-            date: toDateInputValue(maint.date),
+            date: toDateTimeLocalInputValue(maint.date, displayZone),
             kind: maint.kind,
             notes: maint.notes,
           },
