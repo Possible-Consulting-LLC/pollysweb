@@ -7,6 +7,7 @@ import { ThemeSelect } from "@/components/settings/theme-select";
 import { Button } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
+import { TimezoneSelect } from "@/components/ui/datetime-field";
 import { FREE_SPIDER_LIMIT } from "@/lib/billing";
 import { normalizeTheme } from "@/lib/constants";
 import { getBillingProfile } from "@/lib/stripe";
@@ -118,6 +119,7 @@ export default async function SettingsPage({
               ))}
             </Select>
           </Field>
+          <TimezoneSelect defaultValue={defaults.timezone} />
           <Field label="Measurement preference" htmlFor="measurement">
             <Select
               id="measurement"
