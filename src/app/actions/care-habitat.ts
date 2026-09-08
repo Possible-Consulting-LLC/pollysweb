@@ -6,12 +6,12 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getActionUser } from "@/lib/session";
 import { deleteStoredImage, saveImageUpload } from "@/lib/uploads";
-import { requireFormDateTime } from "@/lib/utils";
 import {
   ActionResult,
   ownedSpider,
   revalidateSpider,
   asOptionalString,
+  resolveActivityDateTime,
 } from "@/app/actions/care-shared";
 
 export async function upsertEnclosure(
@@ -90,7 +90,7 @@ export async function logEnclosureMaintenance(
 
     const kind = String(formData.get("kind") || "cleaning");
     const notes = asOptionalString(formData.get("notes"));
-    const date = requireFormDateTime(formData);
+    const date = await resolveActivityDateTime(user.id!, formData);
 
     await prisma.enclosureMaintenanceEvent.create({
       data: {
@@ -147,7 +147,7 @@ export async function addSpiderPhoto(
     const caption = asOptionalString(formData.get("caption"));
     const setAsProfile = formData.get("setAsProfile") === "on";
     const takenAt = formData.get("date")
-      ? requireFormDateTime(formData)
+      ? await resolveActivityDateTime(user.id!, formData)
       : new Date();
 
     await prisma.photo.create({
