@@ -23,8 +23,8 @@ export const metadata: Metadata = {
   description: "Your little corner of the web. Track. Care. Celebrate.",
   applicationName: "Spoodly Space",
   icons: {
-    icon: [{ url: "/brand/spoodly-logo-mark.png", type: "image/png" }],
-    apple: [{ url: "/brand/spoodly-logo-mark.png" }],
+    icon: [{ url: "/api/brand/mark", type: "image/png" }],
+    apple: [{ url: "/api/brand/mark" }],
   },
   appleWebApp: {
     capable: true,
@@ -53,8 +53,6 @@ async function resolveTheme() {
     });
     return normalizeTheme(user?.theme);
   } catch (error) {
-    // During `next build`, Next may probe routes statically before dynamism
-    // is finalized. auth() throws DYNAMIC_SERVER_USAGE — that is expected.
     const digest =
       typeof error === "object" &&
       error !== null &&
