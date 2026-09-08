@@ -5,7 +5,7 @@ import { ActivityEditorRow } from "@/components/activity/activity-editor";
 import { PhotoOpenButton } from "@/components/spoods/photo-gallery";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { formatDateTimeInZone, toDateTimeLocalInputValue } from "@/lib/utils";
+import { formatDateTimeInZone, resolveDisplayTimeZone, toDateTimeLocalInputValue } from "@/lib/utils";
 import { getSpiderCare, getUserDefaults } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 import { daysBetweenMolts } from "@/lib/care";
@@ -52,7 +52,7 @@ export default async function StoryPage({
   ]);
   if (!view) notFound();
   const { spider } = view;
-  const zone = defaults.timezone || undefined;
+  const zone = await resolveDisplayTimeZone(defaults.timezone);
 
   const events: StoryEvent[] = [];
 
