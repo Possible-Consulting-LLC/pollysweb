@@ -193,3 +193,145 @@ body {
 .orbit-ring {
   animation: orbit-spin 48s linear infinite;
 }
+
+/* —— Home hub animations —— */
+@keyframes hub-bop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes hub-crawl {
+  0%,
+  100% {
+    transform: translate(-50%, 12%);
+  }
+  50% {
+    transform: translate(-50%, 68%);
+  }
+}
+
+@keyframes hub-walk {
+  0% {
+    left: 10%;
+    transform: translateX(0) scaleX(1);
+  }
+  45% {
+    left: 68%;
+    transform: translateX(0) scaleX(1);
+  }
+  50% {
+    left: 68%;
+    transform: translateX(0) scaleX(-1);
+  }
+  95% {
+    left: 10%;
+    transform: translateX(0) scaleX(-1);
+  }
+  100% {
+    left: 10%;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+@keyframes hub-walk-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes hub-silk-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.92;
+  }
+}
+
+.hub-label {
+  text-shadow: 0 1px 0 rgba(255, 250, 243, 0.65);
+}
+
+/* Chunky bubble letters like the pencil sketch */
+.hub-bubble {
+  display: inline-block;
+  font-family: var(--font-body), ui-rounded, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  color: var(--midnight);
+  -webkit-text-stroke: 0.04em color-mix(in srgb, var(--midnight) 45%, transparent);
+  paint-order: stroke fill;
+  text-shadow:
+    0.05em 0.06em 0 color-mix(in srgb, var(--plum) 32%, transparent),
+    0 0.015em 0 rgba(255, 250, 243, 0.9);
+}
+
+.hub-bubble-diagonal {
+  transform-origin: center;
+}
+
+.hub-bop {
+  animation: hub-bop 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.hub-bop-0 {
+  animation-delay: 0s;
+}
+
+.hub-bop-1 {
+  animation-delay: 0.35s;
+}
+
+.hub-bop-2 {
+  animation-delay: 0.7s;
+}
+
+.hub-crawl-spood {
+  animation: hub-crawl 5.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.hub-walk-spood {
+  animation: hub-walk 9s ease-in-out infinite;
+  will-change: transform;
+}
+
+.hub-walk-spood svg {
+  animation: hub-walk-bob 0.55s ease-in-out infinite;
+}
+
+.hub-silk-plus {
+  animation: hub-silk-pulse 3.2s ease-in-out infinite;
+}
+
+.hub-tile {
+  transition: background-color 0.25s ease;
+}
+
+.hub-tile:hover {
+  background-color: color-mix(in srgb, var(--lavender) 22%, var(--cream));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-bop,
+  .hub-crawl-spood,
+  .hub-walk-spood,
+  .hub-walk-spood svg,
+  .hub-silk-plus {
+    animation: none !important;
+  }
+}
