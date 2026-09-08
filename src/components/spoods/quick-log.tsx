@@ -16,7 +16,7 @@ import {
   HYDRATION_METHODS,
   PREY_TYPES,
 } from "@/lib/constants";
-import { toDateInputValue } from "@/lib/utils";
+import { DateTimeField } from "@/components/ui/datetime-field";
 
 export type LastFeedingDefaults = {
   preyType: string;
@@ -180,15 +180,11 @@ export function QuickLogButtons({
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log a feeding for {spiderName}
           </p>
-          <Field label="Date" htmlFor={`fd-${spiderId}`}>
-            <Input
-              id={`fd-${spiderId}`}
-              name="date"
-              type="date"
-              defaultValue={toDateInputValue(new Date())}
-              required
-            />
-          </Field>
+          <DateTimeField
+            id={`fd-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <Field label="Prey type" htmlFor={`prey-${spiderId}`}>
             <Select
               id={`prey-${spiderId}`}
@@ -252,15 +248,11 @@ export function QuickLogButtons({
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log hydration for {spiderName}
           </p>
-          <Field label="Date" htmlFor={`hd-${spiderId}`}>
-            <Input
-              id={`hd-${spiderId}`}
-              name="date"
-              type="date"
-              defaultValue={toDateInputValue(new Date())}
-              required
-            />
-          </Field>
+          <DateTimeField
+            id={`hd-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium text-[var(--midnight)]">
               How did you offer water?
@@ -305,15 +297,11 @@ export function QuickLogButtons({
             run(() => logMolt(spiderId, fd));
           }}
         >
-          <Field label="Molt date" htmlFor={`md-${spiderId}`}>
-            <Input
-              id={`md-${spiderId}`}
-              name="moltDate"
-              type="date"
-              defaultValue={toDateInputValue(new Date())}
-              required
-            />
-          </Field>
+          <DateTimeField
+            id={`md-${spiderId}`}
+            name="moltDate"
+            label="When"
+          />
           <div className="grid grid-cols-2 gap-2">
             <Field label="Previous instar" htmlFor={`pi-${spiderId}`}>
               <Input
@@ -357,15 +345,11 @@ export function QuickLogButtons({
             run(() => quickObservation(spiderId, fd));
           }}
         >
-          <Field label="Date" htmlFor={`od-${spiderId}`}>
-            <Input
-              id={`od-${spiderId}`}
-              name="date"
-              type="date"
-              defaultValue={toDateInputValue(new Date())}
-              required
-            />
-          </Field>
+          <DateTimeField
+            id={`od-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <Field label="What did you notice?" htmlFor={`ok-${spiderId}`}>
             <Select
               id={`ok-${spiderId}`}
