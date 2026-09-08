@@ -241,6 +241,7 @@ export async function updateSettingsAction(formData: FormData) {
     data: {
       name: String(formData.get("name") || user.name || ""),
       dateFormat: String(formData.get("dateFormat") || "MMM d, yyyy"),
+      timezone: String(formData.get("timezone") || "").trim(),
       measurement: String(formData.get("measurement") || "imperial"),
       theme: normalizeTheme(String(formData.get("theme") || "cosmic")),
       feedDefaultDays: Number(formData.get("feedDefaultDays") || 3),
@@ -252,6 +253,7 @@ export async function updateSettingsAction(formData: FormData) {
   revalidatePath("/", "layout");
   revalidatePath("/settings");
   revalidatePath("/home");
+  revalidatePath("/activity");
   redirect("/settings?saved=1");
 }
 
