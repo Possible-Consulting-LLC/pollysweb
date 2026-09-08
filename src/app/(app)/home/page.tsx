@@ -4,8 +4,8 @@ import { SpoodCareCard } from "@/components/spoods/spood-card";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
+import { formatDateTimeInZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
-import { format } from "date-fns";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -131,7 +131,10 @@ export default async function HomePage() {
                     ) : null}
                   </div>
                   <time className="shrink-0 text-xs text-[var(--midnight)]/45">
-                    {format(item.date, "MMM d")}
+                    {formatDateTimeInZone(item.date, defaults.timezone, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
                   </time>
                 </div>
               </Link>
