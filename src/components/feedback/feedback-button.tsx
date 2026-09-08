@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useEffect, useId, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { submitFeedbackAction } from "@/app/actions/feedback";
@@ -8,10 +8,59 @@ import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
+type ClientDiagnostics = {
+  userAgent: string;
+  platform: string;
+  language: string;
+  languages: string;
+  timezone: string;
+  screen: string;
+  viewport: string;
+  devicePixelRatio: string;
+  touchPoints: string;
+  online: string;
+  pageUrl: string;
+  referrer: string;
+};
+
+function collectClientDiagnostics(pathname: string): ClientDiagnostics {
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  const screenObj = typeof screen !== "undefined" ? screen : null;
+  return {
+    userAgent: nav?.userAgent || "",
+    platform: nav?.platform || "",
+    language: nav?.language || "",
+    languages: Array.isArray(nav?.languages) ? nav.languages.join(", ") : "",
+    timezone:
+      typeof Intl !== "undefined"
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+        : "",
+    screen: screenObj
+      ? `${screenObj.width}×${screenObj.height} (${screenObj.colorDepth}-bit)`
+      : "",
+    viewport:
+      typeof window !== "undefined"
+        ? `${window.innerWidth}×${window.innerHeight}`
+        : "",
+    devicePixelRatio:
+      typeof window !== "undefined" ? String(window.devicePixelRatio || "") : "",
+    touchPoints: nav ? String(nav.maxTouchPoints ?? "") : "",
+    online: nav ? String(nav.onLine) : "",
+    pageUrl:
+      typeof window !== "undefined"
+        ? window.location.href
+        : pathname || "",
+    referrer: typeof document !== "undefined" ? document.referrer || "" : "",
+  };
+}
+
 export function FeedbackButton() {
   const pathname = usePathname();
   const titleId = useId();
   const [open, setOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<ClientDiagnostics | null>(
+    null,
+  );
   const [state, action, pending] = useActionState(
     submitFeedbackAction,
     undefined as { error?: string; success?: string } | undefined,
@@ -19,6 +68,7 @@ export function FeedbackButton() {
 
   useEffect(() => {
     if (!open) return;
+    setDiagnostics(collectClientDiagnostics(pathname));
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKeyDown(event: KeyboardEvent) {
@@ -29,7 +79,7 @@ export function FeedbackButton() {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [open, pathname]);
 
   useEffect(() => {
     if (state?.success) {
@@ -37,6 +87,11 @@ export function FeedbackButton() {
       return () => window.clearTimeout(timer);
     }
   }, [state?.success]);
+
+  const diagnosticFields = useMemo(
+    () => diagnostics ?? collectClientDiagnostics(pathname),
+    [diagnostics, pathname],
+  );
 
   if (pathname === "/today") return null;
 
@@ -97,6 +152,25 @@ export function FeedbackButton() {
             </div>
 
             <form action={action} className="space-y-4" key={state?.success ? "sent" : "form"}>
+              {/* Diagnostics for the email only — not shown in the UI. */}
+              <input type="hidden" name="userAgent" value={diagnosticFields.userAgent} />
+              <input type="hidden" name="platform" value={diagnosticFields.platform} />
+              <input type="hidden" name="language" value={diagnosticFields.language} />
+              <input type="hidden" name="languages" value={diagnosticFields.languages} />
+              <input type="hidden" name="timezone" value={diagnosticFields.timezone} />
+              <input type="hidden" name="screen" value={diagnosticFields.screen} />
+              <input type="hidden" name="viewport" value={diagnosticFields.viewport} />
+              <input
+                type="hidden"
+                name="devicePixelRatio"
+                value={diagnosticFields.devicePixelRatio}
+              />
+              <input type="hidden" name="touchPoints" value={diagnosticFields.touchPoints} />
+              <input type="hidden" name="online" value={diagnosticFields.online} />
+              <input type="hidden" name="pageUrl" value={diagnosticFields.pageUrl} />
+              <input type="hidden" name="referrer" value={diagnosticFields.referrer} />
+              <input type="hidden" name="pathname" value={pathname || ""} />
+
               <Field label="Type" htmlFor="category">
                 <Select id="category" name="category" defaultValue="feedback" required>
                   <option value="feedback">Feedback</option>
