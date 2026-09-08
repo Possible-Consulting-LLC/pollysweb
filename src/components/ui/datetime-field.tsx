@@ -29,7 +29,8 @@ export function DateTimeField({
     [],
   );
   const [value] = useState(
-    () => defaultValue || toDateTimeLocalInputValue(new Date()),
+    () =>
+      defaultValue || toDateTimeLocalInputValue(new Date(), browserZone),
   );
 
   return (
@@ -73,8 +74,8 @@ export function TimezoneSelect({
     <Field
       label="Timezone"
       htmlFor={id}
-      hint={`Used when showing activity times. Logging still uses your device clock (${browserZone}).`}
-    >
+          hint={`Used when showing activity times. Defaults to this device (${browserZone}). Save settings once so logs keep showing the right clock.`}
+        >
       <Select id={id} name={name} defaultValue={initial}>
         {options.map((zone) => (
           <option key={zone} value={zone}>
