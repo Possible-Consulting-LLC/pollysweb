@@ -4,7 +4,7 @@ import { SpoodCareCard } from "@/components/spoods/spood-card";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
-import { formatDateTimeInZone } from "@/lib/utils";
+import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
 
 function greeting() {
@@ -19,6 +19,7 @@ export default async function HomePage() {
   const defaults = await getUserDefaults(user.id!);
   const views = await listSpidersForUser(user.id!);
   const activity = await getRecentActivity(user.id!);
+  const zone = await resolveDisplayTimeZone(defaults.timezone);
 
   const active = views.filter((v) => !v.spider.memorializedAt);
   const memorial = views.filter((v) => v.spider.memorializedAt);
@@ -131,7 +132,7 @@ export default async function HomePage() {
                     ) : null}
                   </div>
                   <time className="shrink-0 text-xs text-[var(--midnight)]/45">
-                    {formatDateTimeInZone(item.date, defaults.timezone, {
+                    {formatDateTimeInZone(item.date, zone, {
                       dateStyle: "medium",
                       timeStyle: "short",
                     })}
