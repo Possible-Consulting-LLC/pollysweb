@@ -1,1 +1,1 @@
-LOAD_FROM:/workspace/src/components/brand/logo-data.ts
+LOAD_FROM_FILE:/tmp/push-logo-mcp.json
