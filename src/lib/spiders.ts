@@ -3,6 +3,7 @@ import {
   deriveCareStatus,
   daysSince,
   isSuccessfulFeeding,
+  resolveSpiderStatus,
   type CareInputs,
 } from "@/lib/care";
 import type { CareStatus } from "@/lib/constants";
@@ -54,6 +55,28 @@ function latestDate(events: { date: Date }[]): Date | null {
   return events[0]?.date ?? null;
 }
 
+/** Persist expired Post-molt recovery → Normal so the DB matches what we show. */
+async function persistResolvedStatuses(
+  spiders: Array<{ id: string; status: string; molts: { moltDate: Date }[] }>,
+) {
+  const stale = spiders.flatMap((spider) => {
+    const lastMoltAt = spider.molts[0]?.moltDate ?? null;
+    const next = resolveSpiderStatus(spider.status, lastMoltAt);
+    if (next === spider.status) return [];
+    spider.status = next;
+    return [{ id: spider.id, status: next }];
+  });
+  if (stale.length === 0) return;
+  await Promise.all(
+    stale.map((row) =>
+      prisma.spider.update({
+        where: { id: row.id },
+        data: { status: row.status },
+      }),
+    ),
+  );
+}
+
 export function buildCareView(
   spider: SpiderWithRelations,
   defaults: Pick<User, "feedDefaultDays" | "mistDefaultDays">,
@@ -63,9 +86,12 @@ export function buildCareView(
   const lastSuccessfulFedAt = successful?.date ?? null;
   const lastMistedAt = latestDate(spider.mistings);
   const lastMoltAt = spider.molts[0]?.moltDate ?? null;
+  const status = resolveSpiderStatus(spider.status, lastMoltAt);
+  const viewSpider =
+    status === spider.status ? spider : { ...spider, status };
 
   const inputs: CareInputs = {
-    status: spider.status,
+    status,
     lastFedAt,
     lastSuccessfulFedAt,
     lastMistedAt,
@@ -75,7 +101,7 @@ export function buildCareView(
   };
 
   return {
-    spider,
+    spider: viewSpider,
     careStatus: deriveCareStatus(inputs),
     lastFedAt,
     lastSuccessfulFedAt,
@@ -141,6 +167,7 @@ export async function listSpidersForUser(userId: string, query?: {
   });
 
   const defaults = await getUserDefaults(userId);
+  await persistResolvedStatuses(spiders);
   return spiders
     .map((s) => buildCareView(s, defaults))
     .sort((a, b) => {
@@ -165,6 +192,7 @@ export async function getSpiderCare(userId: string, spiderId: string) {
     },
   });
   if (!spider) return null;
+  await persistResolvedStatuses([spider]);
   const defaults = await getUserDefaults(userId);
   return buildCareView(spider as SpiderWithRelations, defaults);
 }
