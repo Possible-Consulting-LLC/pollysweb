@@ -9,6 +9,14 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "6mb",
     },
   },
+  // Public brand PNGs get corrupted when synced via GitHub MCP — serve API embeds instead.
+  async rewrites() {
+    return [
+      { source: "/brand/spoodly-logo.png", destination: "/api/brand/hero" },
+      { source: "/brand/spoodly-logo-hero.png", destination: "/api/brand/hero" },
+      { source: "/brand/spoodly-logo-mark.png", destination: "/api/brand/mark" },
+    ];
+  },
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: "attachment",
@@ -17,6 +25,7 @@ const nextConfig: NextConfig = {
       { pathname: "/spoods/**" },
       { pathname: "/uploads/**" },
       { pathname: "/brand/**" },
+      { pathname: "/api/brand/**" },
     ],
   },
 };
