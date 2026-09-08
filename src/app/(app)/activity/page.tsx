@@ -8,7 +8,7 @@ import {
   getUserDefaults,
   listSpidersForUser,
 } from "@/lib/spiders";
-import { formatDateTimeInZone } from "@/lib/utils";
+import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
 
 export default async function ActivityPage({
@@ -26,6 +26,7 @@ export default async function ActivityPage({
     }),
     getUserDefaults(user.id!),
   ]);
+  const zone = await resolveDisplayTimeZone(defaults.timezone);
 
   return (
     <div className="space-y-6">
@@ -79,7 +80,7 @@ export default async function ActivityPage({
             spiderName: item.spiderName,
             title: item.title,
             detail: item.detail,
-            dateLabel: formatDateTimeInZone(item.date, defaults.timezone),
+            dateLabel: formatDateTimeInZone(item.date, zone),
             fields: item.fields,
           }))}
         />
