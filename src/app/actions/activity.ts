@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getActionUser } from "@/lib/session";
-import { requireFormDateTime } from "@/lib/utils";
 import { daysBetweenMolts, fastingDaysBeforeMolt } from "@/lib/care";
 import type { ActionResult } from "@/app/actions/care";
+import { resolveActivityDateTime } from "@/app/actions/care-shared";
 
 export type ActivityType =
   | "feeding"
@@ -119,7 +119,7 @@ export async function updateActivityAction(
     const owned = await resolveOwnedEvent(type, id, user.id);
     if (!owned) return { ok: false, error: "Activity not found." };
 
-    const date = requireFormDateTime(formData);
+    const date = await resolveActivityDateTime(user.id!, formData);
 
     switch (type) {
       case "feeding": {
