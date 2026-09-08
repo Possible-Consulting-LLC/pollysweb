@@ -6,11 +6,6 @@
       "permanent": false
     },
     {
-      "source": "/brand/spoodly-logo-mark.png",
-      "destination": "/api/brand/mark",
-      "permanent": false
-    },
-    {
       "source": "/brand/spoodly-logo-hero.png",
       "destination": "/api/brand/hero",
       "permanent": false
