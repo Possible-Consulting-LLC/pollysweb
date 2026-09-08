@@ -247,7 +247,9 @@ export function PhotoGallery({
         }
         return next;
       });
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
   }
 
@@ -261,7 +263,9 @@ export function PhotoGallery({
         return;
       }
       setCurrentProfileUrl(photo.url);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
   }
 
