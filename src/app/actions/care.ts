@@ -12,6 +12,7 @@ import {
   nextInstar,
 } from "@/lib/care";
 import { deleteStoredImage, saveImageUpload } from "@/lib/uploads";
+import { requireLocalDateInput } from "@/lib/utils";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
 
@@ -70,7 +71,9 @@ export async function quickFeed(
         outcome: data.outcome,
         notes: data.notes,
         preySize: data.preySize,
-        date: new Date(),
+        date: requireLocalDateInput(
+          formData ? String(formData.get("date") || "") : "",
+        ),
       },
     });
 
@@ -124,7 +127,9 @@ export async function quickMist(
         waterDroplet,
         methods: JSON.stringify(methods),
         notes,
-        date: new Date(),
+        date: requireLocalDateInput(
+          formData ? String(formData.get("date") || "") : "",
+        ),
       },
     });
 
@@ -157,7 +162,12 @@ export async function quickObservation(
     const notes = asOptionalString(formData.get("notes"));
 
     await prisma.observationEvent.create({
-      data: { spiderId, kind, notes, date: new Date() },
+      data: {
+        spiderId,
+        kind,
+        notes,
+        date: requireLocalDateInput(String(formData.get("date") || "")),
+      },
     });
 
     revalidateSpider(spiderId);
@@ -186,7 +196,12 @@ export async function logBodyCondition(
     const notes = asOptionalString(formData.get("notes"));
 
     await prisma.bodyConditionEvent.create({
-      data: { spiderId, condition, notes, date: new Date() },
+      data: {
+        spiderId,
+        condition,
+        notes,
+        date: requireLocalDateInput(String(formData.get("date") || "")),
+      },
     });
 
     revalidateSpider(spiderId);
@@ -216,8 +231,8 @@ export async function logMolt(
     const spider = await ownedSpider(spiderId, user.id!);
     if (!spider) return { ok: false, error: "Spider not found." };
 
-    const moltDate = new Date(
-      String(formData.get("moltDate") || new Date().toISOString()),
+    const moltDate = requireLocalDateInput(
+      String(formData.get("moltDate") || formData.get("date") || ""),
     );
     const previousInstar =
       asOptionalString(formData.get("previousInstar")) ||
@@ -228,7 +243,7 @@ export async function logMolt(
       nextInstar(previousInstar || spider.instar) ||
       undefined;
     const approximate = formData.get("approximate") === "on";
-    const successful = formData.get("successful") !== "off";
+    const successful = formData.get("successful") === "on";
     const notes = asOptionalString(formData.get("notes"));
 
     const prior = await prisma.moltEvent.findFirst({
@@ -332,7 +347,7 @@ export async function upsertEnclosure(
     if (spider.enclosure) {
       await prisma.enclosure.update({
         where: { id: spider.enclosure.id },
-        data,
+      data,
       });
     } else {
       await prisma.enclosure.create({
@@ -382,21 +397,22 @@ export async function logEnclosureMaintenance(
 
     const kind = String(formData.get("kind") || "cleaning");
     const notes = asOptionalString(formData.get("notes"));
+    const date = requireLocalDateInput(String(formData.get("date") || ""));
 
     await prisma.enclosureMaintenanceEvent.create({
       data: {
         enclosureId: spider.enclosure.id,
         kind,
         notes,
-        date: new Date(),
+        date,
       },
     });
 
     await prisma.enclosure.update({
       where: { id: spider.enclosure.id },
       data: {
-        ...(kind === "cleaning" ? { lastCleaned: new Date() } : {}),
-        ...(kind === "rehouse" ? { lastRehoused: new Date() } : {}),
+        ...(kind === "cleaning" ? { lastCleaned: date } : {}),
+        ...(kind === "rehouse" ? { lastRehoused: date } : {}),
       },
     });
 
