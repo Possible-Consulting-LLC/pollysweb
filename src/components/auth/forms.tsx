@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
+/** Login hero logo sized 3x prior max-width. */
 function AuthBrand({ eyebrow }: { eyebrow: string }) {
   return (
     <div className="mb-8 flex flex-col items-center text-center">
