@@ -1,5 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import {
+  normalizeTimeZone,
+  requireFormDateTime,
+} from "@/lib/utils";
 
 export type ActionResult =
   | { ok: true; message: string }
@@ -22,4 +26,46 @@ export function revalidateSpider(spiderId: string) {
 export function asOptionalString(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
   return text ? text : undefined;
+}
+
+/** Persist browser zone on first activity log so SSR displays match. */
+export async function rememberUserTimeZone(
+  userId: string,
+  formData?: FormData | null,
+) {
+  const fromForm = normalizeTimeZone(
+    String(formData?.get("clientTimeZone") || formData?.get("timeZone") || ""),
+  );
+  if (!fromForm) return;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  if (!user || normalizeTimeZone(user.timezone)) return;
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { timezone: fromForm },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/activity");
+  revalidatePath("/home");
+}
+
+export async function resolveActivityDateTime(
+  userId: string,
+  formData: FormData,
+  fieldName = "date",
+) {
+  await rememberUserTimeZone(userId, formData);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const fallback =
+    normalizeTimeZone(user?.timezone) ||
+    normalizeTimeZone(String(formData.get("clientTimeZone") || "")) ||
+    "UTC";
+  return requireFormDateTime(formData, fieldName, fallback);
 }
