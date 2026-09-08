@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getActionUser } from "@/lib/session";
 import { deleteStoredImage, saveImageUpload } from "@/lib/uploads";
-import { requireLocalDateInput } from "@/lib/utils";
+import { requireFormDateTime } from "@/lib/utils";
 import {
   ActionResult,
   ownedSpider,
@@ -90,7 +90,7 @@ export async function logEnclosureMaintenance(
 
     const kind = String(formData.get("kind") || "cleaning");
     const notes = asOptionalString(formData.get("notes"));
-    const date = requireLocalDateInput(String(formData.get("date") || ""));
+    const date = requireFormDateTime(formData);
 
     await prisma.enclosureMaintenanceEvent.create({
       data: {
@@ -146,6 +146,9 @@ export async function addSpiderPhoto(
 
     const caption = asOptionalString(formData.get("caption"));
     const setAsProfile = formData.get("setAsProfile") === "on";
+    const takenAt = formData.get("date")
+      ? requireFormDateTime(formData)
+      : new Date();
 
     await prisma.photo.create({
       data: {
@@ -153,7 +156,7 @@ export async function addSpiderPhoto(
         url,
         caption,
         kind: setAsProfile ? "profile" : "general",
-        takenAt: new Date(),
+        takenAt,
       },
     });
 
