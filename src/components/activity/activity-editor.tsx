@@ -10,6 +10,7 @@ import {
 import { useActionFeedback } from "@/components/spoods/profile-forms";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { DateTimeField } from "@/components/ui/datetime-field";
 import {
   BODY_CONDITIONS,
   FEEDING_OUTCOMES,
@@ -114,14 +115,11 @@ export function ActivityEditorRow({
             });
           }}
         >
-          <Field label="Date">
-            <Input
-              type="date"
-              name="date"
-              required
-              defaultValue={item.fields.date}
-            />
-          </Field>
+          <DateTimeField
+            name="date"
+            label="When"
+            defaultValue={item.fields.date}
+          />
 
           {item.type === "feeding" ? (
             <>
