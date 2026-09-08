@@ -8,12 +8,12 @@ import {
   fastingDaysBeforeMolt,
   nextInstar,
 } from "@/lib/care";
-import { requireFormDateTime } from "@/lib/utils";
 import {
   ActionResult,
   ownedSpider,
   revalidateSpider,
   asOptionalString,
+  resolveActivityDateTime,
 } from "@/app/actions/care-shared";
 
 export async function quickFeed(
@@ -53,7 +53,9 @@ export async function quickFeed(
         outcome: data.outcome,
         notes: data.notes,
         preySize: data.preySize,
-        date: formData ? requireFormDateTime(formData) : new Date(),
+        date: formData
+          ? await resolveActivityDateTime(user.id!, formData)
+          : new Date(),
       },
     });
 
@@ -107,7 +109,9 @@ export async function quickMist(
         waterDroplet,
         methods: JSON.stringify(methods),
         notes,
-        date: formData ? requireFormDateTime(formData) : new Date(),
+        date: formData
+          ? await resolveActivityDateTime(user.id!, formData)
+          : new Date(),
       },
     });
 
@@ -144,7 +148,7 @@ export async function quickObservation(
         spiderId,
         kind,
         notes,
-        date: requireFormDateTime(formData),
+        date: await resolveActivityDateTime(user.id!, formData),
       },
     });
 
@@ -178,7 +182,7 @@ export async function logBodyCondition(
         spiderId,
         condition,
         notes,
-        date: requireFormDateTime(formData),
+        date: await resolveActivityDateTime(user.id!, formData),
       },
     });
 
@@ -209,7 +213,8 @@ export async function logMolt(
     const spider = await ownedSpider(spiderId, user.id!);
     if (!spider) return { ok: false, error: "Spider not found." };
 
-    const moltDate = requireFormDateTime(
+    const moltDate = await resolveActivityDateTime(
+      user.id!,
       formData,
       formData.get("moltDate") ? "moltDate" : "date",
     );
