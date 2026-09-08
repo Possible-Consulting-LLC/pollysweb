@@ -2,22 +2,42 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
+import { ActivityEditorRow } from "@/components/activity/activity-editor";
 import { PhotoOpenButton } from "@/components/spoods/photo-gallery";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { toDateInputValue } from "@/lib/utils";
 import { getSpiderCare } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 import { daysBetweenMolts } from "@/lib/care";
+import { parseHydrationMethods } from "@/lib/utils";
 
 type StoryEvent = {
   id: string;
   date: Date;
-  kind: string;
+  kind: "acquired" | "molt" | "observation" | "feeding" | "photo" | "misting" | "body" | "maintenance";
   title: string;
   detail?: string | null;
   photo?: string | null;
   moltGap?: number | null;
   instarLabel?: string | null;
+  editable?: boolean;
+  fields?: {
+    date: string;
+    preyType?: string;
+    quantity?: number;
+    preySize?: string | null;
+    outcome?: string;
+    notes?: string | null;
+    methods?: string[];
+    previousInstar?: string | null;
+    newInstar?: string | null;
+    approximate?: boolean;
+    successful?: boolean;
+    kind?: string;
+    condition?: string;
+    caption?: string | null;
+  };
 };
 
 export default async function StoryPage({
@@ -56,6 +76,15 @@ export default async function StoryPage({
       photo: molt.postMoltPhoto || molt.moltPhoto,
       moltGap: molt.daysSincePriorMolt,
       instarLabel: molt.newInstar,
+      editable: true,
+      fields: {
+        date: toDateInputValue(molt.moltDate),
+        previousInstar: molt.previousInstar,
+        newInstar: molt.newInstar,
+        approximate: molt.approximate,
+        successful: molt.successful,
+        notes: molt.notes,
+      },
     });
   }
 
@@ -67,20 +96,93 @@ export default async function StoryPage({
       title: obs.kind,
       detail: obs.notes,
       photo: obs.photoUrl,
+      editable: true,
+      fields: {
+        date: toDateInputValue(obs.date),
+        kind: obs.kind,
+        notes: obs.notes,
+      },
     });
   }
 
-  for (const feed of spider.feedings.filter((f) =>
-    ["Ate normally", "Ate partially"].includes(f.outcome),
-  ).slice(0, 5)) {
+  for (const feed of spider.feedings) {
     events.push({
       id: feed.id,
       date: feed.date,
       kind: "feeding",
-      title: `Enjoyed ${feed.preyType}`,
+      title: `Fed ${feed.quantity}× ${feed.preyType}`,
       detail: feed.outcome,
       photo: feed.photoUrl,
+      editable: true,
+      fields: {
+        date: toDateInputValue(feed.date),
+        preyType: feed.preyType,
+        quantity: feed.quantity,
+        preySize: feed.preySize,
+        outcome: feed.outcome,
+        notes: feed.notes,
+      },
     });
+  }
+
+  for (const mist of spider.mistings) {
+    const methods = parseHydrationMethods(mist);
+    events.push({
+      id: mist.id,
+      date: mist.date,
+      kind: "misting",
+      title: "Hydration",
+      detail: methods.join(" · ") || mist.notes,
+      editable: true,
+      fields: {
+        date: toDateInputValue(mist.date),
+        methods,
+        notes: mist.notes,
+      },
+    });
+  }
+
+  for (const body of spider.bodyConditions) {
+    events.push({
+      id: body.id,
+      date: body.date,
+      kind: "body",
+      title: `Body condition: ${body.condition}`,
+      detail: body.notes,
+      editable: true,
+      fields: {
+        date: toDateInputValue(body.date),
+        condition: body.condition,
+        notes: body.notes,
+      },
+    });
+  }
+
+  if (spider.enclosure) {
+    const maintenance =
+      "maintenance" in spider.enclosure && Array.isArray(spider.enclosure.maintenance)
+        ? spider.enclosure.maintenance
+        : [];
+    for (const maint of maintenance as {
+      id: string;
+      date: Date;
+      kind: string;
+      notes: string | null;
+    }[]) {
+      events.push({
+        id: maint.id,
+        date: maint.date,
+        kind: "maintenance",
+        title: `Enclosure ${maint.kind}`,
+        detail: maint.notes,
+        editable: true,
+        fields: {
+          date: toDateInputValue(maint.date),
+          kind: maint.kind,
+          notes: maint.notes,
+        },
+      });
+    }
   }
 
   for (const photo of spider.photos) {
@@ -91,6 +193,11 @@ export default async function StoryPage({
       kind: "photo",
       title: photo.caption || "A captured moment",
       photo: photo.url,
+      editable: true,
+      fields: {
+        date: toDateInputValue(photo.takenAt),
+        caption: photo.caption,
+      },
     });
   }
 
@@ -122,7 +229,7 @@ export default async function StoryPage({
             {spider.name}&apos;s Story
           </h1>
           <p className="mt-1 text-sm text-[var(--midnight)]/60">
-            A scrapbook of little moments — not just a log.
+            A scrapbook of little moments — tap Edit on any entry to fix dates or details.
           </p>
         </div>
         <Link href={`/spoods/${spider.id}`}>
@@ -176,25 +283,53 @@ export default async function StoryPage({
                         />
                       </PhotoOpenButton>
                     ) : null}
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       {event.instarLabel ? (
                         <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--plum)]">
                           {event.instarLabel}
                         </p>
                       ) : null}
-                      <p className="font-semibold text-[var(--midnight)]">{event.title}</p>
-                      {event.detail ? (
-                        <p className="mt-0.5 text-sm text-[var(--midnight)]/60">
-                          {event.detail}
-                        </p>
-                      ) : null}
-                      <time className="mt-2 block text-xs text-[var(--midnight)]/45">
-                        {format(event.date, "MMMM d, yyyy")}
-                        {event.kind === "molt" &&
-                        spider.molts.find((m) => m.id === event.id)?.approximate
-                          ? " · approx."
-                          : ""}
-                      </time>
+                      {event.editable && event.fields ? (
+                        <ActivityEditorRow
+                          compact
+                          item={{
+                            id: event.id,
+                            type: event.kind as
+                              | "feeding"
+                              | "misting"
+                              | "molt"
+                              | "observation"
+                              | "body"
+                              | "maintenance"
+                              | "photo",
+                            spiderId: spider.id,
+                            spiderName: spider.name,
+                            title: event.title,
+                            detail: event.detail,
+                            dateLabel: `${format(event.date, "MMMM d, yyyy")}${
+                              event.kind === "molt" &&
+                              spider.molts.find((m) => m.id === event.id)?.approximate
+                                ? " · approx."
+                                : ""
+                            }`,
+                            fields: event.fields,
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <p className="font-semibold text-[var(--midnight)]">
+                            {event.title}
+                          </p>
+                          {event.detail ? (
+                            <p className="mt-0.5 text-sm text-[var(--midnight)]/60">
+                              {event.detail}
+                            </p>
+                          ) : null}
+                          <time className="mt-2 block text-xs text-[var(--midnight)]/45">
+                            {format(event.date, "MMMM d, yyyy")}
+                          </time>
+                        </>
+                      )}
                     </div>
                   </div>
                 </Card>
