@@ -1,1 +1,1 @@
-LOAD_FROM_FILE:/tmp/png-mark-upload.json:content
+LOAD_FROM:/workspace/mark_upload_args.js:content
