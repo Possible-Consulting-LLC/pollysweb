@@ -1,1 +1,1 @@
-LOAD_FROM:/tmp/mcp_content_0.txt
+LOAD_FROM:/workspace/src/components/spoods/profile-forms.tsx
