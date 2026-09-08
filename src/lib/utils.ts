@@ -27,7 +27,29 @@ export function toDateInputValue(date: Date | string | null | undefined): string
   if (!date) return "";
   const value = typeof date === "string" ? new Date(date) : date;
   if (Number.isNaN(value.getTime())) return "";
-  return value.toISOString().slice(0, 10);
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse `yyyy-MM-dd` as local noon to avoid UTC day-shift. */
+export function parseLocalDateInput(value: string | null | undefined): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const fallback = new Date(raw);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+  const parsed = new Date(`${raw}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function requireLocalDateInput(
+  value: string | null | undefined,
+  fallback = new Date(),
+) {
+  return parseLocalDateInput(value) ?? fallback;
 }
 
 export function formatShortDate(date: Date | string | null | undefined): string {
