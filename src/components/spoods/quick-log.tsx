@@ -80,6 +80,8 @@ export function QuickLogButtons({
       setError(null);
       setMessage(result.message);
       if (closePanel) setPanel(null);
+      // Refresh outside the pending transition so buttons unlock as soon as
+      // the save finishes; stats catch up in the background.
       router.refresh();
     } else {
       setMessage(null);
@@ -129,7 +131,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           className="w-full"
           aria-expanded={panel === "feed"}
           onClick={() => setPanel((p) => togglePanel(p, "feed"))}
@@ -140,7 +141,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           className="w-full"
           aria-expanded={panel === "hydrate"}
           onClick={() => setPanel((p) => togglePanel(p, "hydrate"))}
@@ -151,7 +151,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           onClick={() => setPanel((p) => togglePanel(p, "molt"))}
         >
           Molt
@@ -160,7 +159,6 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
-          disabled={pending}
           onClick={() => setPanel((p) => togglePanel(p, "note"))}
         >
           Observation

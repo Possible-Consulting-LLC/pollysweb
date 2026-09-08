@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   logBodyCondition,
@@ -55,28 +55,32 @@ function Feedback({
 
 export function useActionFeedback() {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function run(action: () => Promise<ActionResult>) {
     setError(null);
-    startTransition(async () => {
+    setPending(true);
+    void (async () => {
       try {
         const result = await action();
         if (result.ok) {
           setMessage(result.message);
           setError(null);
+          setPending(false);
           router.refresh();
         } else {
           setMessage(null);
           setError(result.error);
+          setPending(false);
         }
       } catch (err) {
         setMessage(null);
         setError(err instanceof Error ? err.message : "Something went wrong.");
+        setPending(false);
       }
-    });
+    })();
   }
 
   return { pending, message, error, run };
