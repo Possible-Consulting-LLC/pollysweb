@@ -1,1 +1,1 @@
-LOAD_FROM:/tmp/mark_content.bin:content
+LOAD_FROM:/tmp/push_mark_final.json:files.0.content
