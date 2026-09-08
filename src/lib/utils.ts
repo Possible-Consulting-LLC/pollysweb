@@ -42,17 +42,20 @@ export function toDateTimeLocalInputValue(
   const value = typeof date === "string" ? new Date(date) : date;
   if (Number.isNaN(value.getTime())) return "";
 
-  if (timeZone) {
-    const parts = zonedParts(value, timeZone);
+  const zone = normalizeTimeZone(timeZone);
+  if (zone) {
+    const parts = zonedParts(value, zone);
     if (!parts) return "";
     return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
   }
 
-  const y = value.getFullYear();
-  const m = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  const h = String(value.getHours()).padStart(2, "0");
-  const min = String(value.getMinutes()).padStart(2, "0");
+  // No zone available (should be rare) — use UTC so SSR doesn't shift to the
+  // host machine's local offset by accident.
+  const y = value.getUTCFullYear();
+  const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(value.getUTCDate()).padStart(2, "0");
+  const h = String(value.getUTCHours()).padStart(2, "0");
+  const min = String(value.getUTCMinutes()).padStart(2, "0");
   return `${y}-${m}-${day}T${h}:${min}`;
 }
 
@@ -154,16 +157,47 @@ export function formatDateTimeInZone(
   if (!date) return "—";
   const value = typeof date === "string" ? new Date(date) : date;
   if (Number.isNaN(value.getTime())) return "—";
-  const zone = normalizeTimeZone(timeZone);
+  const zone = normalizeTimeZone(timeZone) || "UTC";
   try {
     return new Intl.DateTimeFormat(undefined, {
-      timeZone: zone || undefined,
+      timeZone: zone,
       dateStyle: options?.dateStyle ?? "medium",
       timeStyle: options?.timeStyle ?? "short",
     }).format(value);
   } catch {
     return value.toLocaleString();
   }
+}
+
+function decodeCookieTimeZone(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const value = String(raw).trim();
+  // TimezoneSync may store encodeURIComponent(zone); slash becomes %2F.
+  try {
+    const decoded = normalizeTimeZone(decodeURIComponent(value));
+    if (decoded) return decoded;
+  } catch {
+    // ignore malformed escape sequences
+  }
+  return normalizeTimeZone(value);
+}
+
+/** Prefer saved timezone, then browser cookie, then UTC. */
+export async function resolveDisplayTimeZone(
+  savedTimeZone?: string | null,
+): Promise<string> {
+  const saved = normalizeTimeZone(savedTimeZone);
+  if (saved) return saved;
+  try {
+    const { cookies } = await import("next/headers");
+    const cookieZone = decodeCookieTimeZone(
+      (await cookies()).get("spoodly_tz")?.value,
+    );
+    if (cookieZone) return cookieZone;
+  } catch {
+    // cookies() unavailable outside a request
+  }
+  return "UTC";
 }
 
 export function daysBetween(from: Date, to: Date = new Date()): number {
