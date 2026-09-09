@@ -8,8 +8,18 @@ import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/sp
 import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
 
-function greeting() {
-  const hour = new Date().getHours();
+function greeting(timeZone: string) {
+  let hour = 12;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    hour = Number(parts.find((p) => p.type === "hour")?.value ?? 12);
+  } catch {
+    hour = new Date().getUTCHours();
+  }
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
@@ -30,7 +40,7 @@ export default async function HomePage() {
   return (
     <div className="space-y-8">
       <AppHeader
-        title={`${greeting()}, ${name}.`}
+        title={`${greeting(zone)}, ${name}.`}
         subtitle="Here’s what your little corner needs today."
       />
 
