@@ -9,12 +9,17 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "6mb",
     },
   },
-  // Public hero PNGs get corrupted when synced via GitHub MCP — serve API embeds instead.
-  // Mark path `/brand/spoodly-logo-mark.png` is served as a real static file.
+  // Keep legacy brand URLs pointed at the canonical logo asset.
   async rewrites() {
     return [
-      { source: "/brand/spoodly-logo.png", destination: "/api/brand/hero" },
-      { source: "/brand/spoodly-logo-hero.png", destination: "/api/brand/hero" },
+      {
+        source: "/brand/spoodly-logo.png",
+        destination: "/brand/spoodly-logo-mark.png",
+      },
+      {
+        source: "/brand/spoodly-logo-hero.png",
+        destination: "/brand/spoodly-logo-mark.png",
+      },
     ];
   },
   images: {

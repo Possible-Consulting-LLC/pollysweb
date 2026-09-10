@@ -19,7 +19,6 @@ export default async function AppLayout({
           href="/home"
           size="header"
           priority
-          src="/brand/spoodly-logo-mark.png"
         />
       </div>
       {children}

@@ -1,29 +1,24 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { LOGO_HERO, LOGO_MARK } from "@/components/brand/logo-data";
 
 export function BrandLogo({
   href = "/home",
   size = "header",
   className,
   priority = false,
-  src,
 }: {
   href?: string | null;
   size?: "header" | "hero";
   className?: string;
   priority?: boolean;
-  /** Optional image URL override (e.g. `/brand/spoodly-logo-mark.png`). */
-  src?: string;
 }) {
-  const asset = size === "hero" ? LOGO_HERO : LOGO_MARK;
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src ?? asset.src}
+      src="/brand/spoodly-logo-mark.png"
       alt="Spoodly Space"
-      width={asset.width}
-      height={asset.height}
+      width={240}
+      height={240}
       decoding="async"
       // eslint-disable-next-line react/no-unknown-property
       fetchPriority={priority ? "high" : "auto"}
