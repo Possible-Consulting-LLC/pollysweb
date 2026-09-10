@@ -211,17 +211,23 @@ export function PhotoGallery({
   const router = useRouter();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [items, setItems] = useState(photos);
+  const [prevPhotos, setPrevPhotos] = useState(photos);
   const [currentProfileUrl, setCurrentProfileUrl] = useState(profilePhotoUrl ?? null);
+  const [prevProfilePhotoUrl, setPrevProfilePhotoUrl] = useState(
+    profilePhotoUrl ?? null,
+  );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  if (photos !== prevPhotos) {
+    setPrevPhotos(photos);
     setItems(photos);
-  }, [photos]);
+  }
 
-  useEffect(() => {
+  if ((profilePhotoUrl ?? null) !== prevProfilePhotoUrl) {
+    setPrevProfilePhotoUrl(profilePhotoUrl ?? null);
     setCurrentProfileUrl(profilePhotoUrl ?? null);
-  }, [profilePhotoUrl]);
+  }
 
   function remove(photo: GalleryPhoto) {
     const label = photo.caption?.trim() || "this photo";
