@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { BRAND_LOGO_SRC } from "@/lib/brand";
 
 export function BrandLogo({
   href = "/home",
@@ -15,7 +16,7 @@ export function BrandLogo({
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/brand/spoodly-logo-mark.png"
+      src={BRAND_LOGO_SRC}
       alt="Spoodly Space"
       width={240}
       height={240}

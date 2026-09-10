@@ -12,6 +12,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { redirect } from "next/navigation";
+import { BRAND_LOGO_SRC } from "@/lib/brand";
 import { getSessionUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -78,7 +79,7 @@ export default async function RootPage() {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/spoodly-logo-mark.png"
+            src={BRAND_LOGO_SRC}
             alt=""
             width={56}
             height={56}

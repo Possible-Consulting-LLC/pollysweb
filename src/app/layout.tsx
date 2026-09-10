@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { auth } from "@/lib/auth";
+import { BRAND_LOGO_SRC } from "@/lib/brand";
 import { prisma } from "@/lib/db";
 import { normalizeTheme } from "@/lib/constants";
 import "./globals.css";
@@ -23,8 +24,8 @@ export const metadata: Metadata = {
   description: "Your little corner of the web. Track. Care. Celebrate.",
   applicationName: "Spoodly Space",
   icons: {
-    icon: [{ url: "/brand/spoodly-logo-mark.png", type: "image/png" }],
-    apple: [{ url: "/brand/spoodly-logo-mark.png" }],
+    icon: [{ url: BRAND_LOGO_SRC, type: "image/png" }],
+    apple: [{ url: BRAND_LOGO_SRC }],
   },
   appleWebApp: {
     capable: true,
