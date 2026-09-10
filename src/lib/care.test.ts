@@ -7,7 +7,9 @@ import {
   fastingDaysBeforeMolt,
   isSuccessfulFeeding,
   nextInstar,
+  resolveSpiderStatus,
   shouldSuppressFeedingReminder,
+  statusAfterSuccessfulMolt,
 } from "./care";
 
 describe("isSuccessfulFeeding", () => {
@@ -112,6 +114,61 @@ describe("reminder suppression and care status", () => {
         lastMistedAt: new Date("2026-09-05"),
       }),
       "All good",
+    );
+  });
+
+  it("keeps post-molt recovery for a few days after the molt", () => {
+    assert.equal(
+      deriveCareStatus({
+        ...base,
+        status: "Post-molt recovery",
+        lastMoltAt: new Date("2026-09-02"),
+        lastMistedAt: new Date("2026-09-05"),
+        lastSuccessfulFedAt: new Date("2026-09-04"),
+        lastFedAt: new Date("2026-09-04"),
+        now: new Date("2026-09-05"),
+      }),
+      "Post-molt recovery",
+    );
+  });
+
+  it("clears stale post-molt recovery after about 5 days", () => {
+    assert.equal(
+      resolveSpiderStatus(
+        "Post-molt recovery",
+        new Date("2026-08-26"),
+        new Date("2026-09-05"),
+      ),
+      "Normal",
+    );
+    assert.equal(
+      deriveCareStatus({
+        ...base,
+        status: "Post-molt recovery",
+        lastMoltAt: new Date("2026-08-26"),
+        lastMistedAt: new Date("2026-09-05"),
+        lastSuccessfulFedAt: new Date("2026-09-04"),
+        lastFedAt: new Date("2026-09-04"),
+        now: new Date("2026-09-05"),
+      }),
+      "All good",
+    );
+  });
+
+  it("sets recovery only while the molt is still recent", () => {
+    assert.equal(
+      statusAfterSuccessfulMolt(
+        new Date("2026-09-04"),
+        new Date("2026-09-05"),
+      ),
+      "Post-molt recovery",
+    );
+    assert.equal(
+      statusAfterSuccessfulMolt(
+        new Date("2026-08-20"),
+        new Date("2026-09-05"),
+      ),
+      "Normal",
     );
   });
 });

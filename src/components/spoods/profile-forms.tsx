@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   logBodyCondition,
@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { BODY_CONDITIONS, ENCLOSURE_TYPES } from "@/lib/constants";
+import { DateTimeField } from "@/components/ui/datetime-field";
 import { formatShortDate, toDateInputValue } from "@/lib/utils";
 
 const bodyIcons: Record<string, string> = {
@@ -52,30 +53,36 @@ function Feedback({
   return null;
 }
 
-function useActionFeedback() {
+export function useActionFeedback() {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function run(action: () => Promise<ActionResult>) {
     setError(null);
-    startTransition(async () => {
+    setPending(true);
+    void (async () => {
       try {
         const result = await action();
         if (result.ok) {
           setMessage(result.message);
           setError(null);
-          router.refresh();
+          setPending(false);
+          startTransition(() => {
+            router.refresh();
+          });
         } else {
           setMessage(null);
           setError(result.error);
+          setPending(false);
         }
       } catch (err) {
         setMessage(null);
         setError(err instanceof Error ? err.message : "Something went wrong.");
+        setPending(false);
       }
-    });
+    })();
   }
 
   return { pending, message, error, run };
@@ -114,6 +121,7 @@ export function BodyConditionForm({
           ))}
         </Select>
       </Field>
+      <DateTimeField id="bc-date" name="date" label="When" />
       <p className="text-xs text-[var(--midnight)]/50">
         A visual observation — not a medical diagnosis.
       </p>
@@ -259,6 +267,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
           <option value="maintenance">Maintenance</option>
         </Select>
       </Field>
+      <DateTimeField id="maint-date" name="date" label="When" />
       <Field label="Notes" htmlFor="maint-notes">
         <Textarea id="maint-notes" name="notes" />
       </Field>
@@ -301,6 +310,7 @@ export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
       <Field label="Caption (optional)" htmlFor="caption">
         <Input id="caption" name="caption" placeholder="Fresh hammock view" />
       </Field>
+      <DateTimeField id="photo-taken" name="date" label="Taken at" />
       <label className="flex items-center gap-2 text-sm text-[var(--midnight)]/80">
         <input type="checkbox" name="setAsProfile" className="rounded" />
         Set as profile photo

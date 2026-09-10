@@ -6,6 +6,9 @@ import {
 } from "./constants";
 import { daysBetween } from "./utils";
 
+/** Calendar days after a molt before Post-molt recovery returns to Normal. */
+export const POST_MOLT_RECOVERY_DAYS = 5;
+
 export function isSuccessfulFeeding(outcome: string): boolean {
   return (SUCCESSFUL_FEEDING_OUTCOMES as readonly string[]).includes(outcome);
 }
@@ -16,6 +19,31 @@ export function isPremoltLike(status: string): boolean {
     status === "Premolt" ||
     status === "Molting"
   );
+}
+
+/**
+ * Post-molt recovery is temporary (about 3–5 days). After that window — or if
+ * there is no molt date — treat the spider as Normal again.
+ */
+export function resolveSpiderStatus(
+  status: string,
+  lastMoltAt: Date | null | undefined,
+  now = new Date(),
+): string {
+  if (status !== "Post-molt recovery") return status;
+  const elapsed = daysSince(lastMoltAt, now);
+  if (elapsed === null || elapsed >= POST_MOLT_RECOVERY_DAYS) {
+    return "Normal";
+  }
+  return status;
+}
+
+/** Status to store after logging a successful molt on `moltDate`. */
+export function statusAfterSuccessfulMolt(
+  moltDate: Date,
+  now = new Date(),
+): string {
+  return resolveSpiderStatus("Post-molt recovery", moltDate, now);
 }
 
 export function shouldSuppressFeedingReminder(status: string): boolean {
@@ -55,7 +83,11 @@ export type CareInputs = {
 
 export function deriveCareStatus(input: CareInputs): CareStatus {
   const now = input.now ?? new Date();
-  const status = input.status as PremoltStatus;
+  const status = resolveSpiderStatus(
+    input.status,
+    input.lastMoltAt,
+    now,
+  ) as PremoltStatus;
 
   if (status === "Post-molt recovery") return "Post-molt recovery";
   if (status === "Premolt" || status === "Molting") return "In premolt";

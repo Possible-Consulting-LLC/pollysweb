@@ -3,18 +3,18 @@
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { z } from "zod";
 import { signIn, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, getActionUser } from "@/lib/session";
 import {
   DEFAULT_SPOOOD_AVATAR_SRC,
   isDefaultSpoodAvatar,
   normalizeTheme,
 } from "@/lib/constants";
+import { saveImageUpload } from "@/lib/uploads";
 import { revalidatePath } from "next/cache";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 const authSchema = z.object({
   email: z.string().email(),
@@ -22,10 +22,20 @@ const authSchema = z.object({
   name: z.string().optional(),
 });
 
+function missingDatabaseHint() {
+  if (!process.env.DATABASE_URL) {
+    return "Database isn’t configured on this deploy. Add DATABASE_URL (and DIRECT_URL) in Vercel → Settings → Environment Variables, then Redeploy.";
+  }
+  return null;
+}
+
 export async function registerAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ) {
+  const dbHint = missingDatabaseHint();
+  if (dbHint) return { error: dbHint };
+
   const parsed = authSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -36,17 +46,26 @@ export async function registerAction(
   }
 
   const email = parsed.data.email.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return { error: "An account with that email already exists." };
 
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      name: parsed.data.name || email.split("@")[0],
-    },
-  });
+  try {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return { error: "An account with that email already exists." };
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: parsed.data.name || email.split("@")[0],
+      },
+    });
+  } catch (error) {
+    console.error("[register] database error", error);
+    return {
+      error:
+        "Couldn’t save your account to the database. Check DATABASE_URL on Vercel and that the User table exists.",
+    };
+  }
 
   try {
     await signIn("credentials", {
@@ -66,6 +85,9 @@ export async function loginAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ) {
+  const dbHint = missingDatabaseHint();
+  if (dbHint) return { error: dbHint };
+
   const parsed = authSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -92,11 +114,23 @@ export async function logoutAction() {
   await signOut({ redirectTo: "/login" });
 }
 
-export async function createSpiderAction(formData: FormData) {
-  const user = await requireUser();
+export async function createSpiderAction(
+  _prev: { error?: string } | undefined,
+  formData: FormData,
+): Promise<{ error?: string }> {
+  const user = await getActionUser();
+  if (!user?.id) return { error: "Please sign in again." };
+
+  const { getBillingProfile } = await import("@/lib/stripe");
+  const billing = await getBillingProfile(user.id);
+  if (!billing.canAddSpider) {
+    return {
+      error: `Free accounts include ${billing.freeLimit} active spood. Upgrade to Pro to add more — or memorialize a passed spood to free a slot.`,
+    };
+  }
 
   const name = String(formData.get("name") || "").trim();
-  if (!name) throw new Error("Name is required");
+  if (!name) return { error: "Name is required." };
 
   const sex = String(formData.get("sex") || "Unknown");
   const species = (formData.get("species") as string) || undefined;
@@ -104,13 +138,17 @@ export async function createSpiderAction(formData: FormData) {
   const instar = (formData.get("instar") as string) || undefined;
   const source = (formData.get("source") as string) || undefined;
   const notes = (formData.get("notes") as string) || undefined;
-  const hatchDateRaw = formData.get("hatchDate") as string;
-  const acquisitionDateRaw = formData.get("acquisitionDate") as string;
+  const hatchDateRaw = String(formData.get("hatchDate") || "").trim();
+  const acquisitionDateRaw = String(
+    formData.get("acquisitionDate") || "",
+  ).trim();
 
-  const enclosureName = (formData.get("enclosureName") as string) || undefined;
-  const enclosureType = (formData.get("enclosureType") as string) || undefined;
+  const enclosureName =
+    String(formData.get("enclosureName") || "").trim() || undefined;
+  const enclosureType =
+    String(formData.get("enclosureType") || "").trim() || undefined;
   const enclosureDimensions =
-    (formData.get("enclosureDimensions") as string) || undefined;
+    String(formData.get("enclosureDimensions") || "").trim() || undefined;
 
   let profilePhoto = String(formData.get("profilePhoto") || "").trim();
   if (!isDefaultSpoodAvatar(profilePhoto)) {
@@ -119,81 +157,93 @@ export async function createSpiderAction(formData: FormData) {
   let uploadedUrl: string | null = null;
 
   const file = formData.get("photo");
+  let photoSkipped = false;
   if (file instanceof File && file.size > 0) {
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error("Photo must be under 5MB.");
+    const saved = await saveImageUpload(file, user.id);
+    if ("error" in saved) {
+      // Still create the spood — don't block the whole welcome on Storage hiccups.
+      console.warn("[createSpider] photo upload failed; using default portrait", saved.error);
+      photoSkipped = true;
+      profilePhoto = DEFAULT_SPOOOD_AVATAR_SRC;
+      uploadedUrl = null;
+    } else {
+      uploadedUrl = saved.url;
+      profilePhoto = saved.url;
     }
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const safeExt = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext)
-      ? ext
-      : "jpg";
-    const filename = `${user.id}-${Date.now()}.${safeExt}`;
-    const dir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, filename), bytes);
-    uploadedUrl = `/uploads/${filename}`;
-    profilePhoto = uploadedUrl;
   }
 
-  const spider = await prisma.spider.create({
-    data: {
-      userId: user.id!,
-      name,
-      sex,
-      species,
-      commonName,
-      instar,
-      source,
-      notes,
-      hatchDate: hatchDateRaw ? new Date(hatchDateRaw) : undefined,
-      acquisitionDate: acquisitionDateRaw
-        ? new Date(acquisitionDateRaw)
-        : new Date(),
-      profilePhoto,
-      enclosure: enclosureName
-        ? {
-            create: {
-              name: enclosureName,
-              type: enclosureType,
-              dimensions: enclosureDimensions,
-              setupDate: new Date(),
-            },
-          }
-        : undefined,
-      reminders: {
-        create: [
-          { userId: user.id!, kind: "feeding", intervalDays: 3 },
-          { userId: user.id!, kind: "misting", intervalDays: 1 },
-          { userId: user.id!, kind: "cleaning", intervalDays: 14 },
-        ],
+  try {
+    const spider = await prisma.spider.create({
+      data: {
+        userId: user.id,
+        name,
+        sex,
+        species,
+        commonName,
+        instar,
+        source,
+        notes,
+        hatchDate: hatchDateRaw ? new Date(hatchDateRaw) : undefined,
+        acquisitionDate: acquisitionDateRaw
+          ? new Date(acquisitionDateRaw)
+          : new Date(),
+        profilePhoto,
+        enclosure: enclosureName
+          ? {
+              create: {
+                name: enclosureName,
+                type: enclosureType,
+                dimensions: enclosureDimensions,
+                setupDate: new Date(),
+              },
+            }
+          : undefined,
+        reminders: {
+          create: [
+            { userId: user.id, kind: "feeding", intervalDays: 3 },
+            { userId: user.id, kind: "misting", intervalDays: 1 },
+            { userId: user.id, kind: "cleaning", intervalDays: 14 },
+          ],
+        },
+        photos: uploadedUrl
+          ? {
+              create: {
+                url: uploadedUrl,
+                kind: "profile",
+                caption: `${name}'s welcome photo`,
+                takenAt: new Date(),
+              },
+            }
+          : undefined,
       },
-      photos: uploadedUrl
-        ? {
-            create: {
-              url: uploadedUrl,
-              kind: "profile",
-              caption: `${name}'s welcome photo`,
-              takenAt: new Date(),
-            },
-          }
-        : undefined,
-    },
-  });
+    });
 
-  revalidatePath("/home");
-  revalidatePath("/spoods");
-  redirect(`/spoods/${spider.id}`);
+    revalidatePath("/home");
+    revalidatePath("/spoods");
+    redirect(
+      `/spoods/${spider.id}${photoSkipped ? "?photo=skipped" : ""}`,
+    );
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    console.error("[createSpider] failed", error);
+    return {
+      error:
+        "Couldn’t save that spood. Please try again — if you uploaded a photo, try a default portrait first.",
+    };
+  }
 }
 
 export async function updateSettingsAction(formData: FormData) {
   const user = await requireUser();
+  const { normalizeTimeZone } = await import("@/lib/utils");
+  const timezone = normalizeTimeZone(String(formData.get("timezone") || ""));
 
   await prisma.user.update({
     where: { id: user.id! },
     data: {
       name: String(formData.get("name") || user.name || ""),
       dateFormat: String(formData.get("dateFormat") || "MMM d, yyyy"),
+      timezone,
       measurement: String(formData.get("measurement") || "imperial"),
       theme: normalizeTheme(String(formData.get("theme") || "cosmic")),
       feedDefaultDays: Number(formData.get("feedDefaultDays") || 3),
@@ -205,5 +255,50 @@ export async function updateSettingsAction(formData: FormData) {
   revalidatePath("/", "layout");
   revalidatePath("/settings");
   revalidatePath("/home");
+  revalidatePath("/activity");
   redirect("/settings?saved=1");
+}
+
+export async function updatePasswordAction(
+  _prev: { error?: string; success?: string } | undefined,
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  const user = await getActionUser();
+  if (!user?.id) return { error: "Please sign in again." };
+
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (currentPassword.length < 6 || newPassword.length < 6) {
+    return { error: "Passwords must be at least 6 characters." };
+  }
+  if (newPassword !== confirmPassword) {
+    return { error: "New passwords don’t match." };
+  }
+  if (currentPassword === newPassword) {
+    return { error: "Pick a new password that’s different from the current one." };
+  }
+
+  try {
+    const record = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { passwordHash: true },
+    });
+    if (!record) return { error: "Account not found." };
+
+    const valid = await bcrypt.compare(currentPassword, record.passwordHash);
+    if (!valid) return { error: "Current password is incorrect." };
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    return { success: "Password updated." };
+  } catch (error) {
+    console.error("[updatePassword] failed", error);
+    return { error: "Couldn’t update your password. Try again." };
+  }
 }

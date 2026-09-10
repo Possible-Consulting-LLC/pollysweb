@@ -16,6 +16,9 @@ const links = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Immersive sketch hub owns the full viewport when visited directly.
+  if (pathname === "/today") return null;
+
   return (
     <nav
       aria-label="Primary"
@@ -33,6 +36,8 @@ export function BottomNav() {
             <li key={href} className="flex-1">
               <Link
                 href={href}
+                prefetch
+                // Navigation must stay tappable even while a save/refresh runs.
                 className={cn(
                   "flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold transition",
                   active
@@ -70,10 +75,7 @@ export function AppHeader({
 }) {
   return (
     <header className="mb-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--plum)]/70">
-        Spoodly Space
-      </p>
-      <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-tight text-[var(--midnight)]">
+      <h1 className="font-[family-name:var(--font-display)] text-3xl leading-tight text-[var(--midnight)]">
         {title ?? "Your little corner of the web."}
       </h1>
       {subtitle ? (

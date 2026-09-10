@@ -1,14 +1,25 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodCareCard } from "@/components/spoods/spood-card";
+import { SpoodImage } from "@/components/spoods/spood-image";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
+import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
-import { format } from "date-fns";
 
-function greeting() {
-  const hour = new Date().getHours();
+function greeting(timeZone: string) {
+  let hour = 12;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    hour = Number(parts.find((p) => p.type === "hour")?.value ?? 12);
+  } catch {
+    hour = new Date().getUTCHours();
+  }
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
@@ -19,14 +30,17 @@ export default async function HomePage() {
   const defaults = await getUserDefaults(user.id!);
   const views = await listSpidersForUser(user.id!);
   const activity = await getRecentActivity(user.id!);
+  const zone = await resolveDisplayTimeZone(defaults.timezone);
 
-  const needing = views.filter((v) => v.careStatus !== "All good");
+  const active = views.filter((v) => !v.spider.memorializedAt);
+  const memorial = views.filter((v) => v.spider.memorializedAt);
+  const needing = active.filter((v) => v.careStatus !== "All good");
   const name = defaults.name || "keeper";
 
   return (
     <div className="space-y-8">
       <AppHeader
-        title={`${greeting()}, ${name}.`}
+        title={`${greeting(zone)}, ${name}.`}
         subtitle="Here’s what your little corner needs today."
       />
 
@@ -46,7 +60,7 @@ export default async function HomePage() {
             </Link>
           }
         />
-        {views.length === 0 ? (
+        {active.length === 0 && memorial.length === 0 ? (
           <EmptyState
             title="No spoods yet"
             body="Your little corner of the web is looking pretty empty."
@@ -75,16 +89,28 @@ export default async function HomePage() {
       </section>
 
       <section>
-        <SectionHeader title="All spoods" subtitle={`${views.length} in your web`} />
+        <SectionHeader
+          title="All spoods"
+          subtitle={`${active.length} active${memorial.length ? ` · ${memorial.length} in memory` : ""}`}
+        />
         <div className="flex flex-wrap gap-2">
           {views.map((v) => (
             <Link
               key={v.spider.id}
               href={`/spoods/${v.spider.id}`}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--plum)]/15 bg-[var(--card)] px-3 py-2 text-sm transition hover:border-[var(--plum)]/30 hover:bg-[var(--hover-strong)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--plum)]/15 bg-[var(--card)] py-1.5 pl-1.5 pr-3 text-sm transition hover:border-[var(--plum)]/30 hover:bg-[var(--hover-strong)]"
             >
+              <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--lavender)] ring-1 ring-[var(--plum)]/10">
+                <SpoodImage
+                  src={v.spider.profilePhoto}
+                  alt=""
+                  className="h-full w-full"
+                />
+              </span>
               <span className="font-semibold text-[var(--midnight)]">{v.spider.name}</span>
-              <StatusPill status={v.careStatus} />
+              <StatusPill
+                status={v.spider.memorializedAt ? "In memory" : v.careStatus}
+              />
             </Link>
           ))}
         </div>
@@ -124,7 +150,10 @@ export default async function HomePage() {
                     ) : null}
                   </div>
                   <time className="shrink-0 text-xs text-[var(--midnight)]/45">
-                    {format(item.date, "MMM d")}
+                    {formatDateTimeInZone(item.date, zone, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
                   </time>
                 </div>
               </Link>

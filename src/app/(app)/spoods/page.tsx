@@ -20,6 +20,8 @@ export default async function SpoodsPage({
     status: params.status,
     sex: params.sex,
   });
+  const activeCount = views.filter((v) => !v.spider.memorializedAt).length;
+  const memorialCount = views.length - activeCount;
 
   return (
     <div className="space-y-6">
@@ -57,7 +59,12 @@ export default async function SpoodsPage({
       </form>
 
       <SectionHeader
-        title={`${views.length} spood${views.length === 1 ? "" : "s"}`}
+        title={`${activeCount} active`}
+        subtitle={
+          memorialCount
+            ? `${memorialCount} in memory`
+            : `${views.length} spood${views.length === 1 ? "" : "s"}`
+        }
         action={
           <Link href="/spoods/new">
             <Button size="sm">Add a Spood</Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import {
   HYDRATION_METHODS,
   PREY_TYPES,
 } from "@/lib/constants";
+import { DateTimeField } from "@/components/ui/datetime-field";
 
 export type LastFeedingDefaults = {
   preyType: string;
@@ -34,6 +35,13 @@ function togglePanel<T extends string>(
   return current === next ? null : next;
 }
 
+function softRefresh(router: ReturnType<typeof useRouter>) {
+  // Keep this low-priority so Home / Settings taps aren't queued behind it.
+  startTransition(() => {
+    router.refresh();
+  });
+}
+
 export function QuickLogButtons({
   spiderId,
   spiderName,
@@ -46,7 +54,7 @@ export function QuickLogButtons({
   lastHydration?: LastHydrationDefaults | null;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [panel, setPanel] = useState<
     "feed" | "hydrate" | "molt" | "note" | null
   >(null);
@@ -74,30 +82,25 @@ export function QuickLogButtons({
   const hydrationDefaults =
     defaultMethods.length > 0 ? defaultMethods : [HYDRATION_METHODS[0]];
 
-  function applyResult(result: ActionResult, closePanel = true) {
-    if (result.ok) {
-      setError(null);
-      setMessage(result.message);
-      if (closePanel) setPanel(null);
-      router.refresh();
-    } else {
-      setMessage(null);
-      setError(result.error);
-    }
-  }
-
-  function run(action: () => Promise<ActionResult>, closePanel = true) {
+  async function run(action: () => Promise<ActionResult>, closePanel = true) {
     setError(null);
     setMessage(null);
-    startTransition(async () => {
-      try {
-        const result = await action();
-        applyResult(result, closePanel);
-      } catch (err) {
-        setMessage(null);
-        setError(err instanceof Error ? err.message : "Something went wrong.");
+    setSaving(true);
+    try {
+      const result = await action();
+      if (result.ok) {
+        setMessage(result.message);
+        if (closePanel) setPanel(null);
+        setSaving(false);
+        softRefresh(router);
+      } else {
+        setError(result.error);
+        setSaving(false);
       }
-    });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -128,7 +131,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           className="w-full"
           aria-expanded={panel === "feed"}
           onClick={() => setPanel((p) => togglePanel(p, "feed"))}
@@ -139,7 +141,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           className="w-full"
           aria-expanded={panel === "hydrate"}
           onClick={() => setPanel((p) => togglePanel(p, "hydrate"))}
@@ -150,7 +151,6 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          disabled={pending}
           onClick={() => setPanel((p) => togglePanel(p, "molt"))}
         >
           Molt
@@ -159,7 +159,6 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
-          disabled={pending}
           onClick={() => setPanel((p) => togglePanel(p, "note"))}
         >
           Observation
@@ -173,12 +172,17 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickFeed(spiderId, fd));
+            void run(() => quickFeed(spiderId, fd));
           }}
         >
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log a feeding for {spiderName}
           </p>
+          <DateTimeField
+            id={`fd-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <Field label="Prey type" htmlFor={`prey-${spiderId}`}>
             <Select
               id={`prey-${spiderId}`}
@@ -223,8 +227,8 @@ export function QuickLogButtons({
               placeholder="Optional note"
             />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save feeding"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save feeding"}
           </Button>
         </form>
       ) : null}
@@ -236,12 +240,17 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickMist(spiderId, fd));
+            void run(() => quickMist(spiderId, fd));
           }}
         >
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log hydration for {spiderName}
           </p>
+          <DateTimeField
+            id={`hd-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium text-[var(--midnight)]">
               How did you offer water?
@@ -271,8 +280,8 @@ export function QuickLogButtons({
               placeholder="Optional note"
             />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save hydration"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save hydration"}
           </Button>
         </form>
       ) : null}
@@ -283,18 +292,14 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => logMolt(spiderId, fd));
+            void run(() => logMolt(spiderId, fd));
           }}
         >
-          <Field label="Molt date" htmlFor={`md-${spiderId}`}>
-            <Input
-              id={`md-${spiderId}`}
-              name="moltDate"
-              type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
-              required
-            />
-          </Field>
+          <DateTimeField
+            id={`md-${spiderId}`}
+            name="moltDate"
+            label="When"
+          />
           <div className="grid grid-cols-2 gap-2">
             <Field label="Previous instar" htmlFor={`pi-${spiderId}`}>
               <Input
@@ -323,8 +328,8 @@ export function QuickLogButtons({
           <Field label="Notes" htmlFor={`mn-${spiderId}`}>
             <Textarea id={`mn-${spiderId}`} name="notes" />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save molt"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save molt"}
           </Button>
         </form>
       ) : null}
@@ -335,9 +340,14 @@ export function QuickLogButtons({
           onSubmit={(event) => {
             event.preventDefault();
             const fd = new FormData(event.currentTarget);
-            run(() => quickObservation(spiderId, fd));
+            void run(() => quickObservation(spiderId, fd));
           }}
         >
+          <DateTimeField
+            id={`od-${spiderId}`}
+            name="date"
+            label="When"
+          />
           <Field label="What did you notice?" htmlFor={`ok-${spiderId}`}>
             <Select
               id={`ok-${spiderId}`}
@@ -360,15 +370,15 @@ export function QuickLogButtons({
           <Field label="Notes" htmlFor={`on-${spiderId}`}>
             <Textarea id={`on-${spiderId}`} name="notes" />
           </Field>
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Saving…" : "Save observation"}
+          <Button type="submit" disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save observation"}
           </Button>
         </form>
       ) : null}
 
       <p className="text-xs text-[var(--midnight)]/45">
-        Fed and Hydration open a short form — defaults match what you logged
-        last time for {spiderName}.
+        Fed and Hydration open a short form — tap Save when you’re ready.
+        Defaults match what you logged last time for {spiderName}.
       </p>
     </div>
   );

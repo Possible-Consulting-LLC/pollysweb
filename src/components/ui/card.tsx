@@ -4,7 +4,10 @@ import type { CareStatus } from "@/lib/constants";
 import { careStatusTone } from "@/lib/care";
 
 export function StatusPill({ status }: { status: CareStatus | string }) {
-  const tone = careStatusTone(status as CareStatus);
+  const tone =
+    status === "In memory"
+      ? "calm"
+      : careStatusTone(status as CareStatus);
   return (
     <span
       className={cn(

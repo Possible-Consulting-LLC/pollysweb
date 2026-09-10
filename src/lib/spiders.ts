@@ -3,6 +3,7 @@ import {
   deriveCareStatus,
   daysSince,
   isSuccessfulFeeding,
+  resolveSpiderStatus,
   type CareInputs,
 } from "@/lib/care";
 import type { CareStatus } from "@/lib/constants";
@@ -54,6 +55,28 @@ function latestDate(events: { date: Date }[]): Date | null {
   return events[0]?.date ?? null;
 }
 
+/** Persist expired Post-molt recovery → Normal so the DB matches what we show. */
+async function persistResolvedStatuses(
+  spiders: Array<{ id: string; status: string; molts: { moltDate: Date }[] }>,
+) {
+  const stale = spiders.flatMap((spider) => {
+    const lastMoltAt = spider.molts[0]?.moltDate ?? null;
+    const next = resolveSpiderStatus(spider.status, lastMoltAt);
+    if (next === spider.status) return [];
+    spider.status = next;
+    return [{ id: spider.id, status: next }];
+  });
+  if (stale.length === 0) return;
+  await Promise.all(
+    stale.map((row) =>
+      prisma.spider.update({
+        where: { id: row.id },
+        data: { status: row.status },
+      }),
+    ),
+  );
+}
+
 export function buildCareView(
   spider: SpiderWithRelations,
   defaults: Pick<User, "feedDefaultDays" | "mistDefaultDays">,
@@ -63,9 +86,12 @@ export function buildCareView(
   const lastSuccessfulFedAt = successful?.date ?? null;
   const lastMistedAt = latestDate(spider.mistings);
   const lastMoltAt = spider.molts[0]?.moltDate ?? null;
+  const status = resolveSpiderStatus(spider.status, lastMoltAt);
+  const viewSpider =
+    status === spider.status ? spider : { ...spider, status };
 
   const inputs: CareInputs = {
-    status: spider.status,
+    status,
     lastFedAt,
     lastSuccessfulFedAt,
     lastMistedAt,
@@ -75,7 +101,7 @@ export function buildCareView(
   };
 
   return {
-    spider,
+    spider: viewSpider,
     careStatus: deriveCareStatus(inputs),
     lastFedAt,
     lastSuccessfulFedAt,
@@ -107,6 +133,7 @@ export async function getUserDefaults(userId: string) {
       mistDefaultDays: true,
       cleanDefaultDays: true,
       dateFormat: true,
+      timezone: true,
       measurement: true,
       theme: true,
       name: true,
@@ -140,7 +167,15 @@ export async function listSpidersForUser(userId: string, query?: {
   });
 
   const defaults = await getUserDefaults(userId);
-  return spiders.map((s) => buildCareView(s, defaults));
+  await persistResolvedStatuses(spiders);
+  return spiders
+    .map((s) => buildCareView(s, defaults))
+    .sort((a, b) => {
+      const am = a.spider.memorializedAt ? 1 : 0;
+      const bm = b.spider.memorializedAt ? 1 : 0;
+      if (am !== bm) return am - bm;
+      return a.spider.name.localeCompare(b.spider.name);
+    });
 }
 
 export async function getSpiderCare(userId: string, spiderId: string) {
@@ -157,36 +192,76 @@ export async function getSpiderCare(userId: string, spiderId: string) {
     },
   });
   if (!spider) return null;
+  await persistResolvedStatuses([spider]);
   const defaults = await getUserDefaults(userId);
   return buildCareView(spider as SpiderWithRelations, defaults);
 }
 
+export type ActivityType =
+  | "feeding"
+  | "misting"
+  | "molt"
+  | "observation"
+  | "body"
+  | "maintenance";
+
 export type ActivityItem = {
   id: string;
-  type: "feeding" | "misting" | "molt" | "observation" | "body" | "maintenance";
+  type: ActivityType;
   spiderId: string;
   spiderName: string;
   date: Date;
   title: string;
   detail?: string | null;
+  /** Serializable fields for the edit form (dates as yyyy-MM-dd). */
+  fields: {
+    date: string;
+    preyType?: string;
+    quantity?: number;
+    preySize?: string | null;
+    outcome?: string;
+    notes?: string | null;
+    methods?: string[];
+    previousInstar?: string | null;
+    newInstar?: string | null;
+    approximate?: boolean;
+    successful?: boolean;
+    kind?: string;
+    condition?: string;
+  };
 };
+
+function parseMethods(raw: string | null | undefined): string[] {
+  try {
+    const parsed = JSON.parse(raw || "[]") as unknown;
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
 
 export async function getRecentActivity(
   userId: string,
   filters?: { spiderId?: string; type?: string },
 ): Promise<ActivityItem[]> {
+  const defaults = await getUserDefaults(userId);
+  const { toDateTimeLocalInputValue, resolveDisplayTimeZone } = await import(
+    "@/lib/utils"
+  );
+  const displayZone = await resolveDisplayTimeZone(defaults.timezone);
   const spiders = await prisma.spider.findMany({
     where: { userId, ...(filters?.spiderId ? { id: filters.spiderId } : {}) },
     select: {
       id: true,
       name: true,
-      feedings: { orderBy: { date: "desc" }, take: 30 },
-      mistings: { orderBy: { date: "desc" }, take: 30 },
-      molts: { orderBy: { moltDate: "desc" }, take: 30 },
-      observations: { orderBy: { date: "desc" }, take: 30 },
-      bodyConditions: { orderBy: { date: "desc" }, take: 20 },
+      feedings: { orderBy: { date: "desc" }, take: 40 },
+      mistings: { orderBy: { date: "desc" }, take: 40 },
+      molts: { orderBy: { moltDate: "desc" }, take: 40 },
+      observations: { orderBy: { date: "desc" }, take: 40 },
+      bodyConditions: { orderBy: { date: "desc" }, take: 30 },
       enclosure: {
-        include: { maintenance: { orderBy: { date: "desc" }, take: 20 } },
+        include: { maintenance: { orderBy: { date: "desc" }, take: 30 } },
       },
     },
   });
@@ -203,25 +278,23 @@ export async function getRecentActivity(
         date: f.date,
         title: `Fed ${spider.name}`,
         detail: `${f.quantity}× ${f.preyType} — ${f.outcome}`,
+        fields: {
+          date: toDateTimeLocalInputValue(f.date, displayZone),
+          preyType: f.preyType,
+          quantity: f.quantity,
+          preySize: f.preySize,
+          outcome: f.outcome,
+          notes: f.notes,
+        },
       });
     }
     for (const m of spider.mistings) {
-      let methodDetail = "";
-      try {
-        const parsed = JSON.parse(m.methods || "[]") as unknown;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          methodDetail = parsed.map(String).join(" · ");
-        }
-      } catch {
-        methodDetail = "";
-      }
-      if (!methodDetail) {
-        methodDetail = [
+      let methods = parseMethods(m.methods);
+      if (methods.length === 0) {
+        methods = [
           m.mistedEnclosure ? "Misted enclosure" : null,
           m.waterDroplet ? "Water droplet on glass" : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
+        ].filter(Boolean) as string[];
       }
       items.push({
         id: m.id,
@@ -230,7 +303,12 @@ export async function getRecentActivity(
         spiderName: spider.name,
         date: m.date,
         title: `Hydrated ${spider.name}`,
-        detail: methodDetail,
+        detail: methods.join(" · "),
+        fields: {
+          date: toDateTimeLocalInputValue(m.date, displayZone),
+          methods,
+          notes: m.notes,
+        },
       });
     }
     for (const molt of spider.molts) {
@@ -242,6 +320,14 @@ export async function getRecentActivity(
         date: molt.moltDate,
         title: `${spider.name} molted`,
         detail: [molt.previousInstar, molt.newInstar].filter(Boolean).join(" → "),
+        fields: {
+          date: toDateTimeLocalInputValue(molt.moltDate, displayZone),
+          previousInstar: molt.previousInstar,
+          newInstar: molt.newInstar,
+          approximate: molt.approximate,
+          successful: molt.successful,
+          notes: molt.notes,
+        },
       });
     }
     for (const o of spider.observations) {
@@ -253,6 +339,11 @@ export async function getRecentActivity(
         date: o.date,
         title: `${spider.name}: ${o.kind}`,
         detail: o.notes,
+        fields: {
+          date: toDateTimeLocalInputValue(o.date, displayZone),
+          kind: o.kind,
+          notes: o.notes,
+        },
       });
     }
     for (const b of spider.bodyConditions) {
@@ -264,6 +355,11 @@ export async function getRecentActivity(
         date: b.date,
         title: `${spider.name} body condition`,
         detail: b.condition,
+        fields: {
+          date: toDateTimeLocalInputValue(b.date, displayZone),
+          condition: b.condition,
+          notes: b.notes,
+        },
       });
     }
     if (spider.enclosure) {
@@ -276,6 +372,11 @@ export async function getRecentActivity(
           date: maint.date,
           title: `${spider.name} enclosure ${maint.kind}`,
           detail: maint.notes,
+          fields: {
+            date: toDateTimeLocalInputValue(maint.date, displayZone),
+            kind: maint.kind,
+            notes: maint.notes,
+          },
         });
       }
     }
@@ -286,5 +387,5 @@ export async function getRecentActivity(
     filtered = items.filter((i) => i.type === filters.type);
   }
 
-  return filtered.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 80);
+  return filtered.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 100);
 }

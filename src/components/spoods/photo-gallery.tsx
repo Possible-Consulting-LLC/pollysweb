@@ -8,12 +8,12 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Trash2, UserRound, X } from "lucide-react";
 import { format } from "date-fns";
 import { deleteSpiderPhoto, setSpiderProfilePhoto } from "@/app/actions/care";
 import { Button } from "@/components/ui/button";
+import { SpoodImage } from "@/components/spoods/spood-image";
 import { cn } from "@/lib/utils";
 
 export type GalleryPhoto = {
@@ -171,12 +171,10 @@ export function PhotoLightbox({
           ) : null}
 
           <div className="relative h-[min(70dvh,720px)] w-full">
-            <Image
+            <SpoodImage
               src={photo.url}
               alt={photo.caption || "Spider photo"}
-              fill
-              className="object-contain"
-              sizes="(max-width: 768px) 100vw, 768px"
+              className="h-full w-full object-contain"
               priority
             />
           </div>
@@ -249,7 +247,9 @@ export function PhotoGallery({
         }
         return next;
       });
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
   }
 
@@ -263,7 +263,9 @@ export function PhotoGallery({
         return;
       }
       setCurrentProfileUrl(photo.url);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
   }
 
@@ -296,12 +298,10 @@ export function PhotoGallery({
               }}
               aria-label={`Open photo${photo.caption ? `: ${photo.caption}` : ""}`}
             >
-              <Image
+              <SpoodImage
                 src={photo.url}
                 alt={photo.caption || "Photo"}
-                fill
-                className="object-cover transition duration-300 group-hover:scale-[1.04]"
-                sizes="(max-width: 640px) 33vw, 160px"
+                className="h-full w-full transition duration-300 group-hover:scale-[1.04]"
               />
               <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--midnight)]/35 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
             </button>

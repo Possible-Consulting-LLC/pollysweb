@@ -1,0 +1,14 @@
+{
+  "redirects": [
+    {
+      "source": "/brand/spoodly-logo.png",
+      "destination": "/api/brand/hero",
+      "permanent": false
+    },
+    {
+      "source": "/brand/spoodly-logo-hero.png",
+      "destination": "/api/brand/hero",
+      "permanent": false
+    }
+  ]
+}
