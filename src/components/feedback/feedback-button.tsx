@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useMemo, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { submitFeedbackAction } from "@/app/actions/feedback";
@@ -58,8 +58,8 @@ export function FeedbackButton() {
   const pathname = usePathname();
   const titleId = useId();
   const [open, setOpen] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<ClientDiagnostics | null>(
-    null,
+  const [diagnostics, setDiagnostics] = useState<ClientDiagnostics>(() =>
+    collectClientDiagnostics(pathname),
   );
   const [state, action, pending] = useActionState(
     submitFeedbackAction,
@@ -68,7 +68,6 @@ export function FeedbackButton() {
 
   useEffect(() => {
     if (!open) return;
-    setDiagnostics(collectClientDiagnostics(pathname));
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKeyDown(event: KeyboardEvent) {
@@ -79,7 +78,7 @@ export function FeedbackButton() {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [open, pathname]);
+  }, [open]);
 
   useEffect(() => {
     if (state?.success) {
@@ -88,18 +87,16 @@ export function FeedbackButton() {
     }
   }, [state?.success]);
 
-  const diagnosticFields = useMemo(
-    () => diagnostics ?? collectClientDiagnostics(pathname),
-    [diagnostics, pathname],
-  );
-
   if (pathname === "/today") return null;
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setDiagnostics(collectClientDiagnostics(pathname));
+          setOpen(true);
+        }}
         className={cn(
           "fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-40",
           "inline-flex h-12 items-center gap-2 rounded-2xl border border-[var(--plum)]/15",
@@ -153,22 +150,22 @@ export function FeedbackButton() {
 
             <form action={action} className="space-y-4" key={state?.success ? "sent" : "form"}>
               {/* Diagnostics for the email only — not shown in the UI. */}
-              <input type="hidden" name="userAgent" value={diagnosticFields.userAgent} />
-              <input type="hidden" name="platform" value={diagnosticFields.platform} />
-              <input type="hidden" name="language" value={diagnosticFields.language} />
-              <input type="hidden" name="languages" value={diagnosticFields.languages} />
-              <input type="hidden" name="timezone" value={diagnosticFields.timezone} />
-              <input type="hidden" name="screen" value={diagnosticFields.screen} />
-              <input type="hidden" name="viewport" value={diagnosticFields.viewport} />
+              <input type="hidden" name="userAgent" value={diagnostics.userAgent} />
+              <input type="hidden" name="platform" value={diagnostics.platform} />
+              <input type="hidden" name="language" value={diagnostics.language} />
+              <input type="hidden" name="languages" value={diagnostics.languages} />
+              <input type="hidden" name="timezone" value={diagnostics.timezone} />
+              <input type="hidden" name="screen" value={diagnostics.screen} />
+              <input type="hidden" name="viewport" value={diagnostics.viewport} />
               <input
                 type="hidden"
                 name="devicePixelRatio"
-                value={diagnosticFields.devicePixelRatio}
+                value={diagnostics.devicePixelRatio}
               />
-              <input type="hidden" name="touchPoints" value={diagnosticFields.touchPoints} />
-              <input type="hidden" name="online" value={diagnosticFields.online} />
-              <input type="hidden" name="pageUrl" value={diagnosticFields.pageUrl} />
-              <input type="hidden" name="referrer" value={diagnosticFields.referrer} />
+              <input type="hidden" name="touchPoints" value={diagnostics.touchPoints} />
+              <input type="hidden" name="online" value={diagnostics.online} />
+              <input type="hidden" name="pageUrl" value={diagnostics.pageUrl} />
+              <input type="hidden" name="referrer" value={diagnostics.referrer} />
               <input type="hidden" name="pathname" value={pathname || ""} />
 
               <Field label="Type" htmlFor="category">
