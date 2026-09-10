@@ -21,7 +21,6 @@ export function BrandLogo({
       width={240}
       height={240}
       decoding="async"
-      // eslint-disable-next-line react/no-unknown-property
       fetchPriority={priority ? "high" : "auto"}
       className={cn(
         "h-auto w-full select-none",

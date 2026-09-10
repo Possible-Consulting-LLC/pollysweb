@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, startTransition } from "react";
+import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updatePremoltStatus } from "@/app/actions/care";
 import { PREMOLT_STATUSES } from "@/lib/constants";
@@ -16,14 +16,16 @@ export function PremoltToggle({
 }) {
   const router = useRouter();
   const [value, setValue] = useState(status);
+  const [prevStatus, setPrevStatus] = useState(status);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dirty = value !== status;
 
-  useEffect(() => {
+  if (status !== prevStatus) {
+    setPrevStatus(status);
     setValue(status);
-  }, [status]);
+  }
 
   return (
     <form

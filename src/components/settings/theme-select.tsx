@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Select } from "@/components/ui/field";
 import {
   THEME_OPTIONS,
@@ -17,12 +17,13 @@ export function ThemeSelect({
   id?: string;
   name?: string;
 }) {
-  const initial = normalizeTheme(theme);
-  const [value, setValue] = useState<AppTheme>(initial);
+  const [value, setValue] = useState<AppTheme>(() => normalizeTheme(theme));
+  const [prevTheme, setPrevTheme] = useState(theme);
 
-  useEffect(() => {
+  if (theme !== prevTheme) {
+    setPrevTheme(theme);
     setValue(normalizeTheme(theme));
-  }, [theme]);
+  }
 
   return (
     <Select
