@@ -12,7 +12,7 @@ function AuthBrand({ eyebrow }: { eyebrow: string }) {
   return (
     <div className="mb-8 flex flex-col items-center text-center">
       <BrandLogo
-        href={null}
+        href="/"
         size="hero"
         priority
         className="max-w-[22.5rem] sm:max-w-[25.5rem]"
