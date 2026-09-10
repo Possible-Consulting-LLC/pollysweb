@@ -7,7 +7,7 @@ import { BrandLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
-/** Login hero logo sized 3x prior max-width. */
+/** Login/register hero logo — half the previous oversized max-width. */
 function AuthBrand({ eyebrow }: { eyebrow: string }) {
   return (
     <div className="mb-8 flex flex-col items-center text-center">
@@ -15,7 +15,7 @@ function AuthBrand({ eyebrow }: { eyebrow: string }) {
         href={null}
         size="hero"
         priority
-        className="max-w-[45rem] sm:max-w-[51rem]"
+        className="max-w-[22.5rem] sm:max-w-[25.5rem]"
       />
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--plum)]/70">
         {eyebrow}
