@@ -15,6 +15,12 @@ function RewardTile({
   children?: React.ReactNode;
 }) {
   const earned = Boolean(earnedAt);
+  const lockedOverlay = earned ? null : (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] bg-[var(--background)]/50"
+    />
+  );
   const content = (
     <>
       <Art symbol={symbol} earned={earned} />
@@ -24,12 +30,16 @@ function RewardTile({
     </>
   );
   return earned && children ? (
-    <details className="group rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4 text-center">
+    <details className="group relative overflow-hidden rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4 text-center">
       <summary className="flex cursor-pointer list-none flex-col items-center marker:hidden">{content}</summary>
       <div className="mt-3 border-t border-[var(--plum)]/15 pt-3 text-left text-sm text-[var(--midnight)]">{children}</div>
+      {lockedOverlay}
     </details>
   ) : (
-    <div className="flex flex-col items-center rounded-3xl border border-[var(--plum)]/10 bg-[var(--card)] p-4 text-center">{content}</div>
+    <div className="relative flex flex-col items-center overflow-hidden rounded-3xl border border-[var(--plum)]/10 bg-[var(--card)] p-4 text-center">
+      {content}
+      {lockedOverlay}
+    </div>
   );
 }
 
