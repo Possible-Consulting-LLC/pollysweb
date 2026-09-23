@@ -61,10 +61,18 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
-      <AppHeader
-        title={`${greeting(zone)}, ${name}.`}
-        subtitle="Here’s what your little corner needs today."
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between [&>header]:mb-0">
+        <AppHeader
+          title={`${greeting(zone)}, ${name}.`}
+          subtitle="Here’s what your little corner needs today."
+        />
+        <Link
+          href="/spoods/new"
+          className={buttonVariants({ variant: "gold", size: "sm", className: "shrink-0" })}
+        >
+          Add spood
+        </Link>
+      </div>
 
       {verificationDeadline ? <EmailVerificationNotice deadline={new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "long", timeStyle: "short" }).format(verificationDeadline) + " UTC"} /> : null}
 
@@ -83,9 +91,6 @@ export default async function HomePage() {
             needing.length
               ? `${needing.length} spood${needing.length === 1 ? "" : "s"} could use a moment`
               : "Everyone looks cozy"
-          }
-          action={
-            <Link href="/spoods/new" className={buttonVariants({ size: "sm" })}>Add a Spood</Link>
           }
         />
         {active.length === 0 && memorial.length === 0 ? (

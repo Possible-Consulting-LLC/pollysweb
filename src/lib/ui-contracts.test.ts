@@ -28,3 +28,17 @@ test('read-only profile and filtered collection empty states remain truthful', (
   assert.match(listing, /No matching spoods/);
   assert.match(listing, /allViews/);
 });
+
+test('home presents structured care actions and a clear journey entry point', () => {
+  const home = source('app/(app)/home/page.tsx');
+  const card = source('components/spoods/spood-card.tsx');
+  const streak = source('components/constellation/streak-card.tsx');
+
+  assert.match(home, /Add spood/);
+  assert.match(streak, /Your care journey/);
+  assert.match(streak, /View journey/);
+  assert.match(card, /Care status/);
+  assert.match(card, /Log care/);
+  assert.match(card, /CareStatusGrid/);
+  assert.doesNotMatch(card, />Last molt</);
+});

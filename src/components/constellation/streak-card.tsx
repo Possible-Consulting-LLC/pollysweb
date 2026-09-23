@@ -21,7 +21,7 @@ export function StreakCard({
         <Sparkles aria-hidden className="h-7 w-7" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-[var(--on-panel)]">Care Constellation</p>
+        <p className="text-sm font-semibold text-[var(--on-panel)]">Your care journey</p>
         <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--on-panel)]">
           {streak.current} day{streak.current === 1 ? "" : "s"} together
         </p>
@@ -33,7 +33,12 @@ export function StreakCard({
               : `${caredCount ?? 0} of ${activeCount} spoods cared for today.`}
         </p>
       </div>
-      {compact ? <ArrowRight aria-hidden className="h-5 w-5 shrink-0 text-[var(--gold)]" /> : null}
+      {compact ? (
+        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[var(--gold)]">
+          View journey
+          <ArrowRight aria-hidden className="h-5 w-5" />
+        </span>
+      ) : null}
     </div>
   );
   if (!compact) return <div className="rounded-3xl bg-[var(--panel)] p-5">{content}</div>;
