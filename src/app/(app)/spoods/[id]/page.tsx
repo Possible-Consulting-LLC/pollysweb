@@ -14,6 +14,7 @@ import { PhotoGallery } from "@/components/spoods/photo-gallery";
 import { SpoodImage } from "@/components/spoods/spood-image";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, SectionHeader, StatusPill } from "@/components/ui/card";
+import { DisclosureCard } from "@/components/ui/disclosure-card";
 import { Field } from "@/components/ui/field";
 import { formatCareWhen, parseHydrationMethods } from "@/lib/utils";
 import { getSpiderCare } from "@/lib/spiders";
@@ -192,17 +193,19 @@ export default async function SpiderProfilePage({
             /> : null}
           </Card>
 
-          {writable ? <Card className="space-y-3">
-            <SectionHeader title="Molt phase" />
+          {writable ? <DisclosureCard title="Molt phase" defaultOpen={false}>
             <Field label="Current phase">
               <PremoltToggle spiderId={spider.id} status={spider.status} />
             </Field>
-          </Card> : null}
+          </DisclosureCard> : null}
         </>
       ) : null}
 
-      <Card className="space-y-2">
-        <SectionHeader title="About" subtitle="Name, species, dates, and notes" />
+      <DisclosureCard
+        title="About"
+        subtitle="Name, species, dates, and notes"
+        defaultOpen={false}
+      >
         {writable ? <AboutForm
           spiderId={spider.id}
           about={{
@@ -228,28 +231,27 @@ export default async function SpiderProfilePage({
             <div><dt className="text-[var(--midnight)]/60">Notes</dt><dd>{spider.notes || "—"}</dd></div>
           </dl>
         )}
-      </Card>
+      </DisclosureCard>
 
       {!memorialized && writable ? (
-        <Card>
-          <SectionHeader title="Body condition observation" />
+        <DisclosureCard title="Body condition observation" defaultOpen={false}>
           <BodyConditionForm
             spiderId={spider.id}
             currentCondition={view.latestBodyCondition}
           />
-        </Card>
+        </DisclosureCard>
       ) : null}
 
       {!memorialized ? (
-        <Card className="space-y-3">
-          <SectionHeader
-            title="Enclosure"
-            subtitle={
-              spider.enclosure
-                ? "View, edit, or log cleaning"
-                : "Add a home for this spood"
-            }
-          />
+        <DisclosureCard
+          title="Enclosure"
+          subtitle={
+            spider.enclosure
+              ? "View, edit, or log cleaning"
+              : "Add a home for this spood"
+          }
+          defaultOpen={false}
+        >
           {writable ? <EnclosureForm
             spiderId={spider.id}
             timeZone={view.timeZone}
@@ -279,18 +281,18 @@ export default async function SpiderProfilePage({
             </p>
           )}
           {writable && spider.enclosure ? <MaintenanceForm spiderId={spider.id} /> : null}
-        </Card>
+        </DisclosureCard>
       ) : null}
 
-      <Card className="space-y-3">
-        <SectionHeader
-          title="Photos"
-          subtitle={
-            memorialized
-              ? "Moments from their story"
-              : writable ? "Add moments to their story" : "Moments from their story"
-          }
-        />
+      <DisclosureCard
+        title="Photos"
+        subtitle={
+          memorialized
+            ? "Moments from their story"
+            : writable ? "Add moments to their story" : "Moments from their story"
+        }
+        defaultOpen={false}
+      >
         {memorialized || !writable ? null : <PhotoUploadForm spiderId={spider.id} />}
         <PhotoGallery
           photos={spider.photos.map((photo) => ({
@@ -307,14 +309,14 @@ export default async function SpiderProfilePage({
               : !writable ? "No photos yet." : "No photos yet — add one above."
           }
         />
-      </Card>
+      </DisclosureCard>
 
       {!memorialized && writable ? (
-        <Card className="space-y-2">
-          <SectionHeader
-            title="Memorial"
-            subtitle="Keep their story without using a free plan slot"
-          />
+        <DisclosureCard
+          title="Memorial"
+          subtitle="Keep their story without using a free plan slot"
+          defaultOpen={false}
+        >
           <MemorialPanel
             spiderId={spider.id}
             spiderName={spider.name}
@@ -322,7 +324,7 @@ export default async function SpiderProfilePage({
             passedOn={null}
             memorialNote={null}
           />
-        </Card>
+        </DisclosureCard>
       ) : null}
     </div>
   );

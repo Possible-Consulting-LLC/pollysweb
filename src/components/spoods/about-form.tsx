@@ -75,45 +75,48 @@ export function AboutForm({
   if (!editing) {
     return (
       <div className="space-y-3 text-sm">
-        <p>
-          <span className="text-[var(--midnight)]/55">Name: </span>
-          {about.name}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Common name: </span>
-          {about.commonName || "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Species: </span>
-          {about.species || "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Sex: </span>
-          {about.sex || "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Life Stage: </span>
-          {about.instar || "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Acquired: </span>
-          {about.acquisitionDate
-            ? formatShortDate(about.acquisitionDate)
-            : "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Hatch: </span>
-          {about.hatchDate ? formatShortDate(about.hatchDate) : "Unknown"}
-        </p>
-        <p>
-          <span className="text-[var(--midnight)]/55">Source: </span>
-          {about.source || "Unknown"}
-        </p>
-        {about.notes ? (
-          <p className="rounded-2xl bg-[var(--cream-deep)]/50 p-3 text-[var(--midnight)]/80">
-            {about.notes}
-          </p>
-        ) : null}
+        <dl className="grid gap-x-5 gap-y-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-[var(--midnight)]/55">Name</dt>
+            <dd>{about.name}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Common name</dt>
+            <dd>{about.commonName || "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Species</dt>
+            <dd>{about.species || "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Sex</dt>
+            <dd>{about.sex || "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Life stage</dt>
+            <dd>{about.instar || "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Acquired</dt>
+            <dd>{about.acquisitionDate ? formatShortDate(about.acquisitionDate) : "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Hatch</dt>
+            <dd>{about.hatchDate ? formatShortDate(about.hatchDate) : "Unknown"}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--midnight)]/55">Source</dt>
+            <dd>{about.source || "Unknown"}</dd>
+          </div>
+          {about.notes ? (
+            <div className="sm:col-span-2">
+              <dt className="text-[var(--midnight)]/55">Notes</dt>
+              <dd className="mt-1 rounded-2xl bg-[var(--cream-deep)]/50 p-3 text-[var(--midnight)]/80">
+                {about.notes}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
         <Feedback message={message} error={error} />
         <Button
           type="button"

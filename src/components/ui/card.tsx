@@ -3,6 +3,9 @@ import { cn } from "@/lib/utils";
 import type { CareStatus } from "@/lib/constants";
 import { careStatusTone } from "@/lib/care";
 
+export const cardClassName =
+  "rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4 shadow-[0_8px_30px_var(--shadow)] backdrop-blur-sm";
+
 export function StatusPill({ status }: { status: CareStatus | string }) {
   const tone =
     status === "In memory"
@@ -32,7 +35,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4 shadow-[0_8px_30px_var(--shadow)] backdrop-blur-sm",
+        cardClassName,
         className,
       )}
     >

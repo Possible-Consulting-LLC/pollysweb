@@ -62,3 +62,22 @@ test("My Spoods uses a controlled semantic accordion", () => {
   assert.match(page, /showProfileLink/);
   assert.doesNotMatch(page, /<SpoodCareCard/);
 });
+
+test("profile details are mounted in accessible disclosures", () => {
+  const disclosure = source("components/ui/disclosure-card.tsx");
+  assert.match(disclosure, /<details/);
+  assert.match(disclosure, /<summary/);
+  assert.doesNotMatch(disclosure, /useState/);
+
+  const profile = source("app/(app)/spoods/[id]/page.tsx");
+  for (const title of ["Molt phase", "About", "Body condition observation", "Enclosure", "Photos", "Memorial"]) {
+    assert.match(profile, new RegExp(`title="${title}"`));
+  }
+  assert.match(profile, /<Card className="space-y-3">\s*<SectionHeader title="Current care"/);
+});
+
+test("About read view supports two columns without splitting notes", () => {
+  const about = source("components/spoods/about-form.tsx");
+  assert.match(about, /sm:grid-cols-2/);
+  assert.match(about, /sm:col-span-2/);
+});
