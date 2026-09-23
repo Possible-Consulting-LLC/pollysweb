@@ -321,7 +321,7 @@ export async function deleteActivityAction(
       revalidateSpider(owned.spiderId);
       return {
         ok: true,
-        message: `Removed that ${type} log.${storageCleanupPending ? ' Secure storage cleanup is pending and has been recorded for administrator recovery.' : ''}${rewardRefreshPending ? ' Reload Badges to refresh your rewards.' : ''}`,
+        message: `Removed that ${type} log.${storageCleanupPending ? ' Secure storage cleanup is pending and has been recorded for administrator recovery.' : ''}${rewardRefreshPending ? ' Reload Journey to refresh your rewards.' : ''}`,
       };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;

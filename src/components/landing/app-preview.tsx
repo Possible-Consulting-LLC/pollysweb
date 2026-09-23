@@ -14,7 +14,7 @@ const actions = ["Fed", "Hydration", "Molt", "Observation", "Play"];
 const navigation = [
   { label: "Home", icon: Home, active: true },
   { label: "My Spoods", icon: null, active: false },
-  { label: "Badges", icon: Award, active: false },
+  { label: "Journey", icon: Award, active: false },
   { label: "Activity", icon: History, active: false },
   { label: "Settings", icon: Settings, active: false },
 ];
@@ -25,7 +25,7 @@ export function LandingAppPreview() {
     <div
       data-theme="midnight"
       role="img"
-      aria-label="Illustrative Midnight theme preview of the Home page, showing a shared care streak, a spood needing misting while molting, quick log actions, and the Badges tab."
+      aria-label="Illustrative Midnight theme preview of the Home page, showing a shared care streak, a spood needing misting while molting, quick log actions, and the Journey tab."
       className="overflow-hidden rounded-[2rem] border border-[var(--lavender)]/30 bg-[var(--cream)] text-[var(--midnight)] shadow-[0_24px_70px_rgba(30,36,66,0.24)]"
     >
       <div className="p-5 sm:p-6">

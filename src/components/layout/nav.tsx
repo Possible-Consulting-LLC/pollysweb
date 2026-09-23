@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Award, Home, Icon, History, Settings } from "lucide-react";
 import { spider } from "@lucide/lab";
+import { isAppNavActive } from "@/lib/app-navigation";
 import { cn } from "@/lib/utils";
 
 function SpiderIcon(props: { className?: string; "aria-hidden"?: boolean }) {
@@ -13,7 +14,7 @@ function SpiderIcon(props: { className?: string; "aria-hidden"?: boolean }) {
 const links = [
   { href: "/home", label: "Home", icon: Home },
   { href: "/spoods", label: "My Spoods", icon: SpiderIcon },
-  { href: "/constellation", label: "Badges", icon: Award },
+  { href: "/constellation", label: "Journey", icon: Award },
   { href: "/activity", label: "Activity", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -31,12 +32,7 @@ export function BottomNav() {
     >
       <ul className="mx-auto flex max-w-lg items-stretch justify-between px-2">
         {links.map(({ href, label, icon: Icon }) => {
-          const active =
-            href === "/spoods"
-              ? pathname === "/spoods" ||
-                pathname.startsWith("/spoods/")
-              : pathname === href || pathname.startsWith(`${href}/`);
-          const isBadge = href === "/constellation";
+          const active = isAppNavActive(pathname, href);
           return (
             <li key={href} className="flex-1">
               <Link
@@ -48,16 +44,15 @@ export function BottomNav() {
                   active
                     ? "text-[var(--plum)]"
                     : "text-[var(--midnight)]/45 hover:text-[var(--plum)]",
-                  isBadge && "relative",
                 )}
                 aria-current={active ? "page" : undefined}
               >
                 <span
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-2xl",
-                    isBadge &&
-                      "bg-[var(--plum)] text-[var(--on-accent)] shadow-md shadow-[var(--plum)]/25",
-                    active && !isBadge && "bg-[var(--lavender)]/70",
+                    "flex h-9 w-9 items-center justify-center rounded-2xl transition",
+                    active
+                      ? "bg-[var(--lavender)]/70 text-[var(--plum)]"
+                      : "text-[var(--midnight)]/45",
                   )}
                 >
                   <Icon className="h-5 w-5" aria-hidden />
