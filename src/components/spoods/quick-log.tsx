@@ -1,5 +1,8 @@
 "use client";
 
+import { MutationContextInput } from '@/components/mutation-context';
+import { celebrateCare } from "@/components/constellation/celebrations";
+
 import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -7,6 +10,7 @@ import {
   quickFeed,
   quickMist,
   quickObservation,
+  quickInteraction,
   logMolt,
   type ActionResult,
 } from "@/app/actions/care";
@@ -15,8 +19,12 @@ import {
   FEEDING_OUTCOMES,
   HYDRATION_METHODS,
   PREY_TYPES,
+  OBSERVATION_KINDS,
+  observationLabel,
 } from "@/lib/constants";
 import { DateTimeField } from "@/components/ui/datetime-field";
+import { MoltStageFields } from "@/components/spoods/molt-stage-fields";
+import { INTERACTION_METHODS } from "@/lib/interaction";
 
 export type LastFeedingDefaults = {
   preyType: string;
@@ -45,19 +53,22 @@ function softRefresh(router: ReturnType<typeof useRouter>) {
 export function QuickLogButtons({
   spiderId,
   spiderName,
+  currentLifeStage,
   lastFeeding,
   lastHydration,
 }: {
   spiderId: string;
   spiderName: string;
+  currentLifeStage?: string | null;
   lastFeeding?: LastFeedingDefaults | null;
   lastHydration?: LastHydrationDefaults | null;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [panel, setPanel] = useState<
-    "feed" | "hydrate" | "molt" | "note" | null
+    "feed" | "hydrate" | "molt" | "note" | "play" | null
   >(null);
+  const [interactionMethod, setInteractionMethod] = useState<string>(INTERACTION_METHODS[0]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +100,7 @@ export function QuickLogButtons({
     try {
       const result = await action();
       if (result.ok) {
+          celebrateCare(result.message, result.celebrations);
         setMessage(result.message);
         if (closePanel) setPanel(null);
         setSaving(false);
@@ -126,7 +138,7 @@ export function QuickLogButtons({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Button
           type="button"
           variant="secondary"
@@ -151,6 +163,7 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
+          aria-expanded={panel === "molt"}
           onClick={() => setPanel((p) => togglePanel(p, "molt"))}
         >
           Molt
@@ -159,11 +172,50 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
+          aria-expanded={panel === "note"}
           onClick={() => setPanel((p) => togglePanel(p, "note"))}
         >
           Observation
         </Button>
+        <Button
+          type="button"
+          variant="soft"
+          size="lg"
+          className="col-span-2 sm:col-span-1"
+          aria-expanded={panel === "play"}
+          onClick={() => setPanel((p) => togglePanel(p, "play"))}
+        >
+          Play
+        </Button>
       </div>
+
+      {panel === "play" ? (
+        <form
+          className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(() => quickInteraction(spiderId, new FormData(event.currentTarget)));
+          }}
+        ><MutationContextInput />
+          <p className="text-sm font-semibold text-[var(--midnight)]">Play & interaction with {spiderName}</p>
+          <p className="text-sm text-[var(--midnight)]/70">Only log this if it happened. Physical contact is never required.</p>
+          <DateTimeField id={`pd-${spiderId}`} name="date" label="When" />
+          <Field label="How did you interact?" htmlFor={`pm-${spiderId}`}>
+            <Select id={`pm-${spiderId}`} name="method" value={interactionMethod} onChange={(event) => setInteractionMethod(event.target.value)}>
+              {INTERACTION_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
+            </Select>
+          </Field>
+          {interactionMethod === "Other" ? (
+            <Field label="Describe how" htmlFor={`po-${spiderId}`}>
+              <Input id={`po-${spiderId}`} name="otherMethod" maxLength={120} required />
+            </Field>
+          ) : null}
+          <Field label="What happened? (optional)" htmlFor={`pn-${spiderId}`}>
+            <Textarea id={`pn-${spiderId}`} name="notes" maxLength={1000} />
+          </Field>
+          <Button type="submit" disabled={saving} className="w-full">{saving ? "Saving…" : "Save moment"}</Button>
+        </form>
+      ) : null}
 
       {panel === "feed" ? (
         <form
@@ -174,7 +226,7 @@ export function QuickLogButtons({
             const fd = new FormData(event.currentTarget);
             void run(() => quickFeed(spiderId, fd));
           }}
-        >
+        ><MutationContextInput />
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log a feeding for {spiderName}
           </p>
@@ -191,7 +243,7 @@ export function QuickLogButtons({
             >
               {PREY_TYPES.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
                 </option>
               ))}
             </Select>
@@ -242,7 +294,7 @@ export function QuickLogButtons({
             const fd = new FormData(event.currentTarget);
             void run(() => quickMist(spiderId, fd));
           }}
-        >
+        ><MutationContextInput />
           <p className="text-sm font-semibold text-[var(--midnight)]">
             Log hydration for {spiderName}
           </p>
@@ -294,24 +346,13 @@ export function QuickLogButtons({
             const fd = new FormData(event.currentTarget);
             void run(() => logMolt(spiderId, fd));
           }}
-        >
+        ><MutationContextInput />
           <DateTimeField
             id={`md-${spiderId}`}
             name="moltDate"
             label="When"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Previous instar" htmlFor={`pi-${spiderId}`}>
-              <Input
-                id={`pi-${spiderId}`}
-                name="previousInstar"
-                placeholder="i8"
-              />
-            </Field>
-            <Field label="New instar" htmlFor={`ni-${spiderId}`}>
-              <Input id={`ni-${spiderId}`} name="newInstar" placeholder="i9" />
-            </Field>
-          </div>
+          <MoltStageFields previousStage={currentLifeStage ?? ""} />
           <label className="flex items-center gap-2 text-sm text-[var(--midnight)]/80">
             <input type="checkbox" name="approximate" className="rounded" />
             Approximate date
@@ -342,7 +383,7 @@ export function QuickLogButtons({
             const fd = new FormData(event.currentTarget);
             void run(() => quickObservation(spiderId, fd));
           }}
-        >
+        ><MutationContextInput />
           <DateTimeField
             id={`od-${spiderId}`}
             name="date"
@@ -354,17 +395,9 @@ export function QuickLogButtons({
               name="kind"
               defaultValue="behavior note"
             >
-              <option value="built a new hammock">built a new hammock</option>
-              <option value="unusually active">unusually active</option>
-              <option value="hiding more than usual">
-                hiding more than usual
-              </option>
-              <option value="explored enclosure">explored enclosure</option>
-              <option value="refused food">refused food</option>
-              <option value="moved hammock">moved hammock</option>
-              <option value="drinking water">drinking water</option>
-              <option value="behavior note">behavior note</option>
-              <option value="custom note">custom note</option>
+              {OBSERVATION_KINDS.filter(kind => kind !== "play and interaction").map(kind => (
+                <option key={kind} value={kind}>{observationLabel(kind)}</option>
+              ))}
             </Select>
           </Field>
           <Field label="Notes" htmlFor={`on-${spiderId}`}>

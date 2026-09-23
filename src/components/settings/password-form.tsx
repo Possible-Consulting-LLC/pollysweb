@@ -1,5 +1,7 @@
 "use client";
 
+import { MutationForm } from '@/components/mutation-form';
+import { MutationContextInput } from '@/components/mutation-context';
 import { useActionState, useEffect, useRef } from "react";
 import { updatePasswordAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,7 @@ export function PasswordForm() {
   }, [state?.success]);
 
   return (
-    <form ref={formRef} action={action} className="space-y-4">
+    <MutationForm ref={formRef} action={action} result={state} className="space-y-4"><MutationContextInput />
       <Field label="Current password" htmlFor="currentPassword">
         <Input
           id="currentPassword"
@@ -28,14 +30,13 @@ export function PasswordForm() {
           minLength={6}
         />
       </Field>
-      <Field label="New password" htmlFor="newPassword" hint="At least 6 characters">
+      <Field label="New password" htmlFor="newPassword" hint="15–128 characters. Passphrases and spaces are welcome.">
         <Input
           id="newPassword"
           name="newPassword"
           type="password"
           autoComplete="new-password"
           required
-          minLength={6}
         />
       </Field>
       <Field label="Confirm new password" htmlFor="confirmPassword">
@@ -45,7 +46,6 @@ export function PasswordForm() {
           type="password"
           autoComplete="new-password"
           required
-          minLength={6}
         />
       </Field>
       {state?.error ? (
@@ -64,6 +64,6 @@ export function PasswordForm() {
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Updating…" : "Update password"}
       </Button>
-    </form>
+    </MutationForm>
   );
 }

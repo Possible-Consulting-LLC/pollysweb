@@ -1,11 +1,14 @@
 "use client";
 
+import { MutationForm } from '@/components/mutation-form';
+import { MutationContextInput } from '@/components/mutation-context';
 import { useActionState, useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
 import { MessageSquarePlus, X } from "lucide-react";
 import { submitFeedbackAction } from "@/app/actions/feedback";
 import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { cn } from "@/lib/utils";
 
 type ClientDiagnostics = {
@@ -61,32 +64,6 @@ export function FeedbackButton() {
   const [diagnostics, setDiagnostics] = useState<ClientDiagnostics>(() =>
     collectClientDiagnostics(pathname),
   );
-  const [state, action, pending] = useActionState(
-    submitFeedbackAction,
-    undefined as { error?: string; success?: string } | undefined,
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (state?.success) {
-      const timer = window.setTimeout(() => setOpen(false), 1400);
-      return () => window.clearTimeout(timer);
-    }
-  }, [state?.success]);
-
   if (pathname === "/today") return null;
 
   return (
@@ -113,18 +90,12 @@ export function FeedbackButton() {
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-          <button
-            type="button"
-            className="absolute inset-0 bg-[var(--midnight)]/45"
-            aria-label="Close feedback"
-            onClick={() => setOpen(false)}
-          />
+        <ModalDialog labelledBy={titleId} onClose={() => setOpen(false)}>
+          <div className="flex min-h-full items-end justify-center sm:items-center">
           <div
-            role="dialog"
-            aria-modal="true"
             aria-labelledby={titleId}
-            className="relative z-10 w-full max-w-md rounded-t-[1.75rem] border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_16px_48px_var(--shadow)] sm:rounded-[1.75rem]"
+            className="relative w-full max-w-md rounded-t-[1.75rem] border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5 shadow-[0_16px_48px_var(--shadow)] sm:rounded-[1.75rem]"
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -148,64 +119,78 @@ export function FeedbackButton() {
               </button>
             </div>
 
-            <form action={action} className="space-y-4" key={state?.success ? "sent" : "form"}>
-              {/* Diagnostics for the email only — not shown in the UI. */}
-              <input type="hidden" name="userAgent" value={diagnostics.userAgent} />
-              <input type="hidden" name="platform" value={diagnostics.platform} />
-              <input type="hidden" name="language" value={diagnostics.language} />
-              <input type="hidden" name="languages" value={diagnostics.languages} />
-              <input type="hidden" name="timezone" value={diagnostics.timezone} />
-              <input type="hidden" name="screen" value={diagnostics.screen} />
-              <input type="hidden" name="viewport" value={diagnostics.viewport} />
-              <input
-                type="hidden"
-                name="devicePixelRatio"
-                value={diagnostics.devicePixelRatio}
-              />
-              <input type="hidden" name="touchPoints" value={diagnostics.touchPoints} />
-              <input type="hidden" name="online" value={diagnostics.online} />
-              <input type="hidden" name="pageUrl" value={diagnostics.pageUrl} />
-              <input type="hidden" name="referrer" value={diagnostics.referrer} />
-              <input type="hidden" name="pathname" value={pathname || ""} />
-
-              <Field label="Type" htmlFor="category">
-                <Select id="category" name="category" defaultValue="feedback" required>
-                  <option value="feedback">Feedback</option>
-                  <option value="bug">Bug report</option>
-                  <option value="idea">Idea</option>
-                  <option value="other">Other</option>
-                </Select>
-              </Field>
-              <Field label="Your note" htmlFor="message">
-                <Textarea
-                  id="message"
-                  name="message"
-                  required
-                  minLength={10}
-                  maxLength={4000}
-                  placeholder="What happened, or what would you love to see?"
-                />
-              </Field>
-              {state?.error ? (
-                <p className="text-sm text-rose-700" role="alert">
-                  {state.error}
-                </p>
-              ) : null}
-              {state?.success ? (
-                <p
-                  className="rounded-2xl bg-emerald-500/15 px-3 py-2 text-sm text-[var(--midnight)]"
-                  role="status"
-                >
-                  {state.success}
-                </p>
-              ) : null}
-              <Button type="submit" className="w-full" disabled={pending || Boolean(state?.success)}>
-                {pending ? "Sending…" : state?.success ? "Sent" : "Send to Spoodly"}
-              </Button>
-            </form>
+            <FeedbackForm diagnostics={diagnostics} pathname={pathname} onSuccess={() => setOpen(false)} />
           </div>
-        </div>
+          </div>
+        </ModalDialog>
       ) : null}
     </>
+  );
+}
+
+function FeedbackForm({
+  diagnostics,
+  pathname,
+  onSuccess,
+}: {
+  diagnostics: ClientDiagnostics;
+  pathname: string;
+  onSuccess: () => void;
+}) {
+  const [state, action, pending] = useActionState(
+    submitFeedbackAction,
+    undefined as { error?: string; success?: string } | undefined,
+  );
+
+  useEffect(() => {
+    if (!state?.success) return;
+    const timer = window.setTimeout(onSuccess, 1400);
+    return () => window.clearTimeout(timer);
+  }, [onSuccess, state?.success]);
+
+  return (
+    <MutationForm action={action} result={state} className="space-y-4"><MutationContextInput />
+      <input type="hidden" name="userAgent" value={diagnostics.userAgent} />
+      <input type="hidden" name="platform" value={diagnostics.platform} />
+      <input type="hidden" name="language" value={diagnostics.language} />
+      <input type="hidden" name="languages" value={diagnostics.languages} />
+      <input type="hidden" name="timezone" value={diagnostics.timezone} />
+      <input type="hidden" name="screen" value={diagnostics.screen} />
+      <input type="hidden" name="viewport" value={diagnostics.viewport} />
+      <input type="hidden" name="devicePixelRatio" value={diagnostics.devicePixelRatio} />
+      <input type="hidden" name="touchPoints" value={diagnostics.touchPoints} />
+      <input type="hidden" name="online" value={diagnostics.online} />
+      <input type="hidden" name="pageUrl" value={diagnostics.pageUrl} />
+      <input type="hidden" name="referrer" value={diagnostics.referrer} />
+      <input type="hidden" name="pathname" value={pathname || ""} />
+
+      <Field label="Type" htmlFor="category">
+        <Select id="category" name="category" defaultValue="feedback" required>
+          <option value="feedback">Feedback</option>
+          <option value="bug">Bug report</option>
+          <option value="idea">Idea</option>
+          <option value="other">Other</option>
+        </Select>
+      </Field>
+      <Field label="Your note" htmlFor="message">
+        <Textarea
+          id="message"
+          name="message"
+          required
+          minLength={10}
+          maxLength={4000}
+          placeholder="What happened, or what would you love to see?"
+        />
+      </Field>
+      {state?.error ? <p className="text-sm text-rose-700" role="alert">{state.error}</p> : null}
+      {state?.success ? (
+        <p className="rounded-2xl bg-emerald-500/15 px-3 py-2 text-sm text-[var(--midnight)]" role="status">
+          {state.success}
+        </p>
+      ) : null}
+      <Button type="submit" className="w-full" disabled={pending || Boolean(state?.success)}>
+        {pending ? "Sending…" : state?.success ? "Sent" : "Send to Spoodly"}
+      </Button>
+    </MutationForm>
   );
 }

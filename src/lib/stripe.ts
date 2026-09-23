@@ -1,16 +1,18 @@
 import "server-only";
 import Stripe from "stripe";
+import { isStaging } from "./staging-guard";
 import { prisma } from "@/lib/db";
 import {
   FREE_SPIDER_LIMIT,
-  isProPlan,
   type BillingInterval,
   PLAN_PRICES,
 } from "@/lib/billing";
+import { effectivePro } from "./effective-entitlement";
 
 let stripeClient: Stripe | null = null;
 
 export function getStripe() {
+  if (isStaging()) throw new Error("Stripe is disabled in staging.");
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) throw new Error("Missing STRIPE_SECRET_KEY");
   if (!stripeClient) {
@@ -18,6 +20,8 @@ export function getStripe() {
       // Pin to the version shipped with stripe-node.
       apiVersion: "2026-08-26.dahlia",
       typescript: true,
+      timeout: 10_000,
+      maxNetworkRetries: 1,
     });
   }
   return stripeClient;
@@ -37,12 +41,13 @@ export async function getBillingProfile(userId: string) {
       id: true,
       email: true,
       name: true,
-      plan: true,
+      plan: true, isDemo: true, demoPlan: true,
       stripeCustomerId: true,
       stripeSubscriptionId: true,
       stripePriceId: true,
       subscriptionStatus: true,
       subscriptionCurrentPeriodEnd: true,
+      billingLastCheckedAt: true,
     },
   });
 
@@ -56,7 +61,7 @@ export async function getBillingProfile(userId: string) {
     }),
   ]);
 
-  const plan = isProPlan(user.plan) ? "pro" : "free";
+  const plan = effectivePro(user) ? "pro" : "free";
   const spiderCount = activeSpiderCount;
   const atFreeLimit = plan === "free" && spiderCount >= FREE_SPIDER_LIMIT;
 
@@ -69,33 +74,4 @@ export async function getBillingProfile(userId: string) {
     atFreeLimit,
     canAddSpider: plan === "pro" || spiderCount < FREE_SPIDER_LIMIT,
   };
-}
-
-export async function syncSubscriptionToUser(
-  userId: string,
-  subscription: Stripe.Subscription,
-) {
-  const priceId = subscription.items.data[0]?.price.id ?? null;
-  const status = subscription.status;
-  const active =
-    status === "active" || status === "trialing" || status === "past_due";
-
-  // Stripe SDK typings vary by API version for period end.
-  const periodEndUnix =
-    (subscription as { current_period_end?: number }).current_period_end ??
-    subscription.items.data[0]?.current_period_end ??
-    null;
-
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      plan: active ? "pro" : "free",
-      stripeSubscriptionId: subscription.id,
-      stripePriceId: priceId,
-      subscriptionStatus: status,
-      subscriptionCurrentPeriodEnd: periodEndUnix
-        ? new Date(periodEndUnix * 1000)
-        : null,
-    },
-  });
 }

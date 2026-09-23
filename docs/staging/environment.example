@@ -1,0 +1,32 @@
+# Reference only. Do not load this file as a working environment.
+# Copy values from the NEW staging project into a gitignored .env.local
+# or Vercel's staging-project environment settings. Never copy the live .env.
+NEXT_PUBLIC_SUPABASE_URL=https://nfdecdylxcmuypxodppe.supabase.co
+# Server-only secret key from this staging project; never NEXT_PUBLIC_*.
+SUPABASE_SERVICE_ROLE_KEY=
+# Obtain the transaction-pooler URL and direct/session-pooler URL from
+# staging's Connect panel. Both must identify nfdecdylxcmuypxodppe.
+# Preserve the provider's TLS parameters; percent-encode the password.
+DATABASE_URL=
+DIRECT_URL=
+# Create a unique staging secret; do not reuse production's.
+AUTH_SECRET=
+# Set after Vercel confirms the generated staging domain.
+AUTH_URL=
+# Keep integrations disabled in all staging-project environment scopes.
+STRIPE_SECRET_KEY=
+STRIPE_PRICE_MONTHLY=
+STRIPE_PRICE_YEARLY=
+STRIPE_WEBHOOK_SECRET=
+RESEND_API_KEY=
+# Email ownership verification uses a separate staging-only Resend key.
+# Keep this unset until sender domain and recipient allowlist are ready.
+EMAIL_RESEND_API_KEY=
+EMAIL_FROM_EMAIL=
+EMAIL_VERIFICATION_ORIGIN=https://staging.spoodlyspace.com
+EMAIL_ALLOWED_RECIPIENTS=
+# Optional staging feedback recipient; must appear in EMAIL_ALLOWED_RECIPIENTS.
+FEEDBACK_TO_EMAIL=support@spoodlyspace.com
+# Set only after delivery has been tested. Must be UTC ISO timestamp.
+# Existing password users have seven days from this time to verify.
+PASSWORD_EMAIL_VERIFICATION_GRACE_START=

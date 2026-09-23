@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { privatePhotoSrc } from "@/lib/photo-media";
 
 /** Profile / gallery image that works with SVGs, /uploads, and data URLs on Vercel. */
 export function SpoodImage({
@@ -13,7 +14,7 @@ export function SpoodImage({
   priority?: boolean;
   sizes?: string;
 }) {
-  const url = src?.trim() || "/spoods/defaults/star.svg";
+  const url = privatePhotoSrc(src?.trim() || "/spoods/defaults/star.svg");
 
   return (
     // eslint-disable-next-line @next/next/no-img-element -- mixed SVG / data URL / upload sources

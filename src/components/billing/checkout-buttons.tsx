@@ -1,4 +1,5 @@
 "use client";
+import { useMutationContext } from '@/components/mutation-context';
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function CheckoutButtons({ stripeReady, mode }: Props) {
+ const mutationContext = useMutationContext();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<BillingInterval | "portal" | null>(null);
@@ -60,7 +62,7 @@ export function CheckoutButtons({ stripeReady, mode }: Props) {
           type="button"
           className="w-full"
           disabled={!stripeReady || pending}
-          onClick={() => run("portal", () => openBillingPortalAction())}
+          onClick={() => run("portal", () => openBillingPortalAction(mutationContext))}
         >
           {busy === "portal" ? "Opening…" : "Open billing portal"}
         </Button>
@@ -91,7 +93,7 @@ export function CheckoutButtons({ stripeReady, mode }: Props) {
             className="mt-4 w-full"
             disabled={!stripeReady || pending}
             onClick={() =>
-              run("monthly", () => startCheckoutAction("monthly"))
+              run("monthly", () => startCheckoutAction("monthly", mutationContext))
             }
           >
             {busy === "monthly" ? "Starting…" : "Start monthly"}
@@ -115,7 +117,7 @@ export function CheckoutButtons({ stripeReady, mode }: Props) {
             variant="gold"
             className="mt-4 w-full"
             disabled={!stripeReady || pending}
-            onClick={() => run("yearly", () => startCheckoutAction("yearly"))}
+            onClick={() => run("yearly", () => startCheckoutAction("yearly", mutationContext))}
           >
             {busy === "yearly" ? "Starting…" : "Start yearly"}
           </Button>

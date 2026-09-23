@@ -1,12 +1,19 @@
 "use server";
 
+import { MaintenanceError } from '@/lib/admin/maintenance-policy';
+import { writableSpiderTransaction } from '@/lib/maintenance-write';
+import { withMutation } from '@/lib/mutation-boundary';
+
+import { baselineCelebrations, finishCareCelebrations, forgetWithdrawnCelebrations } from "@/lib/care-celebrations";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { getActionUser } from "@/lib/session";
-import { daysBetweenMolts, fastingDaysBeforeMolt, statusAfterSuccessfulMolt } from "@/lib/care";
+import { mutateMolt, mutateMaintenance } from "@/lib/history-mutations";
 import type { ActionResult } from "@/app/actions/care";
-import { resolveActivityDateTime } from "@/app/actions/care-shared";
+import { getCareWriteUser, resolveActivityDateTime } from "@/app/actions/care-shared";
+import { assertSpiderWritable } from "@/lib/spider-write-policy";
+import { boundedText, hydrationMethods, optionalText } from "@/lib/write-validation";
+import { cleanupDetachedPhoto, detachStoredPhotoRecord } from '@/lib/uploads';
 
 export type ActivityType =
   | "feeding"
@@ -17,15 +24,15 @@ export type ActivityType =
   | "maintenance"
   | "photo";
 
-function asOptionalString(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
-  return text ? text : undefined;
+function asOptionalString(value: FormDataEntryValue | null, label = "Text", max = 1000) {
+  return optionalText(value, label, max);
 }
 
 function revalidateSpider(spiderId: string) {
   revalidatePath("/home");
   revalidatePath("/spoods");
   revalidatePath("/activity");
+  revalidatePath("/constellation");
   revalidatePath(`/spoods/${spiderId}`);
   revalidatePath(`/spoods/${spiderId}/story`);
 }
@@ -86,11 +93,11 @@ async function resolveOwnedEvent(
       });
       return row
         ? {
-            spiderId: row.enclosure.spider.id,
-            spiderName: row.enclosure.spider.name,
-            enclosureId: row.enclosure.id,
-            row,
-          }
+          spiderId: row.enclosure.spider.id,
+          spiderName: row.enclosure.spider.name,
+          enclosureId: row.enclosure.id,
+          row,
+        }
         : null;
     }
     case "photo": {
@@ -110,234 +117,220 @@ export async function updateActivityAction(
   id: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  try {
-    const user = await getActionUser();
-    if (!user?.id) return { ok: false, error: "Please sign in again." };
+  return withMutation(formData, 'data', 'updateactivityaction', async () => {
+    try {
+      const user = await getCareWriteUser();
+      if (!user?.id) return { ok: false, error: "Please sign in again." };
 
-    const owned = await resolveOwnedEvent(type, id, user.id);
-    if (!owned) return { ok: false, error: "Activity not found." };
+      const owned = await resolveOwnedEvent(type, id, user.id);
+      if (!owned) return { ok: false, error: "Activity not found." };
+      await assertSpiderWritable(user.id, owned.spiderId);
 
-    const date = await resolveActivityDateTime(user.id!, formData);
+      const date = await resolveActivityDateTime(user.id!, formData);
+      const previousCareDate = type === "molt"
+        ? (owned.row as { moltDate: Date }).moltDate
+        : ["feeding", "misting", "observation", "body"].includes(type)
+          ? (owned.row as { date: Date }).date
+          : undefined;
+      const baseline = await baselineCelebrations(user.id);
 
-    switch (type) {
-      case "feeding": {
-        const schema = z.object({
-          preyType: z.string().min(1),
-          quantity: z.coerce.number().int().min(1),
-          outcome: z.string().min(1),
-          notes: z.string().optional(),
-          preySize: z.string().optional(),
-        });
-        const data = schema.parse({
-          preyType: formData.get("preyType") || "fruit flies",
-          quantity: formData.get("quantity") || 1,
-          outcome: formData.get("outcome") || "Ate normally",
-          notes: asOptionalString(formData.get("notes")),
-          preySize: asOptionalString(formData.get("preySize")),
-        });
-        await prisma.feedingEvent.update({
-          where: { id },
-          data: {
-            date,
-            preyType: data.preyType,
-            quantity: data.quantity,
-            outcome: data.outcome,
-            notes: data.notes ?? null,
-            preySize: data.preySize ?? null,
-          },
-        });
-        break;
-      }
-      case "misting": {
-        const methods = formData
-          .getAll("method")
-          .map((value) => String(value).trim())
-          .filter(Boolean);
-        if (methods.length === 0) {
-          return { ok: false, error: "Choose at least one hydration method." };
-        }
-        const notes = asOptionalString(formData.get("notes"));
-        await prisma.mistingEvent.update({
-          where: { id },
-          data: {
-            date,
-            methods: JSON.stringify(methods),
-            mistedEnclosure: methods.some((m) => m.toLowerCase().includes("mist")),
-            waterDroplet: methods.some((m) => m.toLowerCase().includes("droplet")),
-            notes: notes ?? null,
-          },
-        });
-        break;
-      }
-      case "molt": {
-        const previousInstar = asOptionalString(formData.get("previousInstar"));
-        const newInstar = asOptionalString(formData.get("newInstar"));
-        const approximate = formData.get("approximate") === "on";
-        const successful = formData.get("successful") === "on";
-        const notes = asOptionalString(formData.get("notes"));
-
-        const prior = await prisma.moltEvent.findFirst({
-          where: { spiderId: owned.spiderId, id: { not: id }, moltDate: { lt: date } },
-          orderBy: { moltDate: "desc" },
-        });
-        const daysSincePriorMolt = daysBetweenMolts(prior?.moltDate, date);
-        const lastSuccess = await prisma.feedingEvent.findFirst({
-          where: {
-            spiderId: owned.spiderId,
-            date: { lte: date },
-            outcome: { in: ["Ate normally", "Ate partially"] },
-          },
-          orderBy: { date: "desc" },
-        });
-        const fasting = fastingDaysBeforeMolt(lastSuccess?.date, date);
-
-        await prisma.moltEvent.update({
-          where: { id },
-          data: {
-            moltDate: date,
-            previousInstar: previousInstar ?? null,
-            newInstar: newInstar ?? null,
-            approximate,
-            successful,
-            notes: notes ?? null,
-            daysSincePriorMolt: daysSincePriorMolt ?? null,
-            fastingDaysBefore: fasting ?? null,
-          },
-        });
-        if (successful) {
-          await prisma.spider.update({
-            where: { id: owned.spiderId },
-            data: {
-              ...(newInstar ? { instar: newInstar } : {}),
-              status: statusAfterSuccessfulMolt(date),
-            },
+      switch (type) {
+        case "feeding": {
+          const schema = z.object({
+            preyType: z.string().min(1).max(120),
+            quantity: z.coerce.number().int().min(1),
+            outcome: z.string().min(1).max(120),
+            notes: z.string().max(1000).optional(),
+            preySize: z.string().max(120).optional(),
           });
-        }
-        break;
-      }
-      case "observation": {
-        const kind = String(formData.get("kind") || "behavior note").trim();
-        const notes = asOptionalString(formData.get("notes"));
-        await prisma.observationEvent.update({
-          where: { id },
-          data: { date, kind, notes: notes ?? null },
-        });
-        break;
-      }
-      case "body": {
-        const condition = String(formData.get("condition") || "Normal").trim();
-        const notes = asOptionalString(formData.get("notes"));
-        await prisma.bodyConditionEvent.update({
-          where: { id },
-          data: { date, condition, notes: notes ?? null },
-        });
-        break;
-      }
-      case "maintenance": {
-        const kind = String(formData.get("kind") || "cleaning").trim();
-        const notes = asOptionalString(formData.get("notes"));
-        await prisma.enclosureMaintenanceEvent.update({
-          where: { id },
-          data: { date, kind, notes: notes ?? null },
-        });
-        const enclosureId = "enclosureId" in owned ? owned.enclosureId : null;
-        if (enclosureId && (kind === "cleaning" || kind === "rehouse")) {
-          await prisma.enclosure.update({
-            where: { id: enclosureId },
-            data: {
-              ...(kind === "cleaning" ? { lastCleaned: date } : {}),
-              ...(kind === "rehouse" ? { lastRehoused: date } : {}),
-            },
+          const data = schema.parse({
+            preyType: formData.get("preyType") || "fruit flies",
+            quantity: formData.get("quantity") || 1,
+            outcome: formData.get("outcome") || "Ate normally",
+            notes: asOptionalString(formData.get("notes"), "Notes"),
+            preySize: asOptionalString(formData.get("preySize"), "Prey size", 120),
           });
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.feedingEvent.update({
+            where: { id },
+            data: {
+              date,
+              preyType: data.preyType,
+              quantity: data.quantity,
+              outcome: data.outcome,
+              notes: data.notes ?? null,
+              preySize: data.preySize ?? null,
+            },
+          }));
+          break;
         }
-        break;
+        case "misting": {
+          const methods = hydrationMethods(formData.getAll("method"));
+          if (methods.length === 0) {
+            return { ok: false, error: "Choose at least one hydration method." };
+          }
+          const notes = asOptionalString(formData.get("notes"));
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.mistingEvent.update({
+            where: { id },
+            data: {
+              date,
+              methods: JSON.stringify(methods),
+              mistedEnclosure: methods.some((m) => m.toLowerCase().includes("mist")),
+              waterDroplet: methods.some((m) => m.toLowerCase().includes("droplet")),
+              notes: notes ?? null,
+            },
+          }));
+          break;
+        }
+        case "molt": {
+          const previousInstar = asOptionalString(formData.get("previousInstar"), "Previous instar", 120);
+          const newInstar = asOptionalString(formData.get("newInstar"), "New instar", 120);
+          const approximate = formData.get("approximate") === "on";
+          const successful = formData.get("successful") === "on";
+          const notes = asOptionalString(formData.get("notes"));
+
+          await mutateMolt(owned.spiderId, tx => tx.moltEvent.update({
+            where: { id },
+            data: {
+              moltDate: date,
+              previousInstar: previousInstar ?? null,
+              newInstar: newInstar ?? null,
+              approximate,
+              successful,
+              notes: notes ?? null,
+            },
+          }));
+          break;
+        }
+        case "observation": {
+          const kind = boundedText(formData.get("kind") || "behavior note", "Observation kind", 120);
+          const notes = asOptionalString(formData.get("notes"));
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.observationEvent.update({
+            where: { id },
+            data: { date, kind, notes: notes ?? null },
+          }));
+          break;
+        }
+        case "body": {
+          const condition = boundedText(formData.get("condition") || "Normal", "Body condition", 120);
+          const notes = asOptionalString(formData.get("notes"));
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.bodyConditionEvent.update({
+            where: { id },
+            data: { date, condition, notes: notes ?? null },
+          }));
+          break;
+        }
+        case "maintenance": {
+          const kind = boundedText(formData.get("kind") || "cleaning", "Maintenance kind", 120);
+          const notes = asOptionalString(formData.get("notes"));
+          const enclosureId = "enclosureId" in owned ? owned.enclosureId : null;
+          if (!enclosureId) return { ok: false, error: "Enclosure not found." };
+          await mutateMaintenance(enclosureId, tx => tx.enclosureMaintenanceEvent.update({ where: { id }, data: { date, kind, notes: notes ?? null } }));
+          break;
+        }
+        case "photo": {
+          const caption = asOptionalString(formData.get("caption"), "Caption");
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.photo.update({
+            where: { id },
+            data: { takenAt: date, caption: caption ?? null },
+          }));
+          break;
+        }
+        default:
+          return { ok: false, error: "Unknown activity type." };
       }
-      case "photo": {
-        const caption = asOptionalString(formData.get("caption"));
-        await prisma.photo.update({
-          where: { id },
-          data: { takenAt: date, caption: caption ?? null },
-        });
-        break;
-      }
-      default:
-        return { ok: false, error: "Unknown activity type." };
+
+      revalidateSpider(owned.spiderId);
+      const activityDate = ["feeding", "misting", "observation", "body"].includes(type) ? date : undefined;
+      const changedDate = type === "molt" ? date : activityDate;
+      const affectedSince = previousCareDate && changedDate && previousCareDate < changedDate ? previousCareDate : changedDate;
+      return { ok: true, celebrations: await finishCareCelebrations(user.id, baseline, activityDate, false, affectedSince), message: `Updated ${owned.spiderName}'s ${type} log.` };
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      console.error("updateActivityAction", error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not update activity.",
+      };
     }
 
-    revalidateSpider(owned.spiderId);
-    return { ok: true, message: `Updated ${owned.spiderName}'s ${type} log.` };
-  } catch (error) {
-    console.error("updateActivityAction", error);
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Could not update activity.",
-    };
-  }
+  });
 }
 
 export async function deleteActivityAction(
   type: ActivityType,
-  id: string,
+  id: string, submittedContext: string
 ): Promise<ActionResult> {
-  try {
-    const user = await getActionUser();
-    if (!user?.id) return { ok: false, error: "Please sign in again." };
+  return withMutation(submittedContext, 'data', 'deleteactivityaction', async () => {
+    try {
+      const user = await getCareWriteUser();
+      if (!user?.id) return { ok: false, error: "Please sign in again." };
 
-    const owned = await resolveOwnedEvent(type, id, user.id);
-    if (!owned) return { ok: false, error: "Activity not found." };
+      const owned = await resolveOwnedEvent(type, id, user.id);
+      if (!owned) return { ok: false, error: "Activity not found." };
+      await assertSpiderWritable(user.id, owned.spiderId);
+      const affectedSince = type === "molt"
+        ? (owned.row as { moltDate: Date }).moltDate
+        : ["feeding", "misting", "observation", "body"].includes(type)
+          ? (owned.row as { date: Date }).date
+          : undefined;
 
-    switch (type) {
-      case "feeding":
-        await prisma.feedingEvent.delete({ where: { id } });
-        break;
-      case "misting":
-        await prisma.mistingEvent.delete({ where: { id } });
-        break;
-      case "molt":
-        await prisma.moltEvent.delete({ where: { id } });
-        break;
-      case "observation":
-        await prisma.observationEvent.delete({ where: { id } });
-        break;
-      case "body":
-        await prisma.bodyConditionEvent.delete({ where: { id } });
-        break;
-      case "maintenance":
-        await prisma.enclosureMaintenanceEvent.delete({ where: { id } });
-        break;
-      case "photo": {
-        const photo = owned.row as {
-          url: string;
-          spider: { profilePhoto: string | null };
-        };
-        const { deleteStoredImage } = await import("@/lib/uploads");
-        await prisma.photo.delete({ where: { id } });
-        await deleteStoredImage(photo.url).catch(() => undefined);
-        if (photo.spider.profilePhoto === photo.url) {
-          const fallback = await prisma.photo.findFirst({
-            where: { spiderId: owned.spiderId },
-            orderBy: { takenAt: "desc" },
-          });
-          await prisma.spider.update({
-            where: { id: owned.spiderId },
-            data: {
-              profilePhoto: fallback?.url ?? "/spoods/defaults/star.svg",
-            },
-          });
+      await baselineCelebrations(user.id);
+      let storageCleanupPending = false;
+
+      switch (type) {
+        case "feeding":
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.feedingEvent.delete({ where: { id } }));
+          break;
+        case "misting":
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.mistingEvent.delete({ where: { id } }));
+          break;
+        case "molt":
+          await mutateMolt(owned.spiderId, tx => tx.moltEvent.delete({ where: { id } }));
+          break;
+        case "observation":
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.observationEvent.delete({ where: { id } }));
+          break;
+        case "body":
+          await writableSpiderTransaction(user.id, owned.spiderId, tx => tx.bodyConditionEvent.delete({ where: { id } }));
+          break;
+        case "maintenance": {
+          const enclosureId = "enclosureId" in owned ? owned.enclosureId : null;
+          if (!enclosureId) return { ok: false, error: "Enclosure not found." };
+          await mutateMaintenance(enclosureId, tx => tx.enclosureMaintenanceEvent.delete({ where: { id } }));
+          break;
         }
-        break;
+        case "photo": {
+          const detached = await writableSpiderTransaction(user.id, owned.spiderId, tx =>
+            detachStoredPhotoRecord(tx, { photoId: id, spiderId: owned.spiderId, userId: user.id! }),
+          );
+          if (detached.cleanupPrepared) {
+            const cleanup = await cleanupDetachedPhoto(detached.url, user.id!);
+            storageCleanupPending = cleanup === 'pending';
+          }
+          break;
+        }
+        default:
+          return { ok: false, error: "Unknown activity type." };
       }
-      default:
-        return { ok: false, error: "Unknown activity type." };
+
+      let rewardRefreshPending = false;
+      try { await forgetWithdrawnCelebrations(user.id, affectedSince); }
+      catch (error) {
+        console.error('Could not refresh rewards after deletion', error); rewardRefreshPending = true;
+      }
+      revalidateSpider(owned.spiderId);
+      return {
+        ok: true,
+        message: `Removed that ${type} log.${storageCleanupPending ? ' Secure storage cleanup is pending and has been recorded for administrator recovery.' : ''}${rewardRefreshPending ? ' Reload Badges to refresh your rewards.' : ''}`,
+      };
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      console.error("deleteActivityAction", error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not delete activity.",
+      };
     }
 
-    revalidateSpider(owned.spiderId);
-    return { ok: true, message: `Removed that ${type} log.` };
-  } catch (error) {
-    console.error("deleteActivityAction", error);
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Could not delete activity.",
-    };
-  }
+  });
 }

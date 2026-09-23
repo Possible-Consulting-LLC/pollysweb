@@ -56,3 +56,4 @@ AGENTS.md
 CLAUDE.md
 *.webp
 public/uploads/
+.env*

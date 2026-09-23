@@ -1,5 +1,7 @@
 "use client";
+import { useMutationContext } from '@/components/mutation-context';
 
+import { MutationContextInput } from '@/components/mutation-context';
 import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updatePremoltStatus } from "@/app/actions/care";
@@ -14,6 +16,7 @@ export function PremoltToggle({
   spiderId: string;
   status: string;
 }) {
+ const mutationContext = useMutationContext();
   const router = useRouter();
   const [value, setValue] = useState(status);
   const [prevStatus, setPrevStatus] = useState(status);
@@ -38,7 +41,7 @@ export function PremoltToggle({
         setSaving(true);
         void (async () => {
           try {
-            const result = await updatePremoltStatus(spiderId, value);
+            const result = await updatePremoltStatus(spiderId, value, mutationContext);
             if (!result.ok) {
               setError(result.error);
               setSaving(false);
@@ -51,14 +54,14 @@ export function PremoltToggle({
               router.refresh();
             });
           } catch {
-            setError("Could not update premolt status.");
+            setError("Could not update molt phase.");
             setSaving(false);
           }
         })();
       }}
-    >
+    ><MutationContextInput />
       <Select
-        aria-label="Premolt status"
+        aria-label="Molt phase"
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
@@ -89,7 +92,7 @@ export function PremoltToggle({
         </p>
       ) : null}
       <Button type="submit" disabled={!dirty || saving} className="w-full">
-        {saving ? "Saving…" : dirty ? "Save premolt status" : "Saved"}
+        {saving ? "Saving…" : dirty ? "Save molt phase" : "Saved"}
       </Button>
     </form>
   );

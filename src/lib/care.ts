@@ -29,9 +29,10 @@ export function resolveSpiderStatus(
   status: string,
   lastMoltAt: Date | null | undefined,
   now = new Date(),
+  timeZone = "UTC",
 ): string {
   if (status !== "Post-molt recovery") return status;
-  const elapsed = daysSince(lastMoltAt, now);
+  const elapsed = daysSince(lastMoltAt, now, timeZone);
   if (elapsed === null || elapsed >= POST_MOLT_RECOVERY_DAYS) {
     return "Normal";
   }
@@ -42,25 +43,27 @@ export function resolveSpiderStatus(
 export function statusAfterSuccessfulMolt(
   moltDate: Date,
   now = new Date(),
+  timeZone = "UTC",
 ): string {
-  return resolveSpiderStatus("Post-molt recovery", moltDate, now);
+  return resolveSpiderStatus("Post-molt recovery", moltDate, now, timeZone);
 }
 
 export function shouldSuppressFeedingReminder(status: string): boolean {
   return isPremoltLike(status);
 }
 
-export function daysSince(date: Date | null | undefined, now = new Date()): number | null {
+export function daysSince(date: Date | null | undefined, now = new Date(), timeZone = "UTC"): number | null {
   if (!date) return null;
-  return daysBetween(date, now);
+  return daysBetween(date, now, timeZone);
 }
 
 export function daysBetweenMolts(
   earlier: Date | null | undefined,
   later: Date | null | undefined,
+  timeZone = "UTC",
 ): number | null {
   if (!earlier || !later) return null;
-  return daysBetween(earlier, later);
+  return daysBetween(earlier, later, timeZone);
 }
 
 export function nextInstar(current: string | null | undefined): string | null {
@@ -79,7 +82,15 @@ export type CareInputs = {
   feedIntervalDays: number;
   mistIntervalDays: number;
   now?: Date;
+  timeZone?: string;
 };
+
+export function isMistingDue(
+  input: Pick<CareInputs, "lastMistedAt" | "mistIntervalDays" | "now" | "timeZone">,
+): boolean {
+  const elapsed = daysSince(input.lastMistedAt, input.now, input.timeZone);
+  return elapsed === null || elapsed >= input.mistIntervalDays;
+}
 
 export function deriveCareStatus(input: CareInputs): CareStatus {
   const now = input.now ?? new Date();
@@ -87,24 +98,25 @@ export function deriveCareStatus(input: CareInputs): CareStatus {
     input.status,
     input.lastMoltAt,
     now,
+    input.timeZone,
   ) as PremoltStatus;
 
   if (status === "Post-molt recovery") return "Post-molt recovery";
-  if (status === "Premolt" || status === "Molting") return "In premolt";
+  if (status === "Molting") return "Molting";
+  if (status === "Premolt") return "In premolt";
   if (status === "Possible premolt") return "Possible premolt";
 
-  const daysSinceMolt = daysSince(input.lastMoltAt, now);
+  const daysSinceMolt = daysSince(input.lastMoltAt, now, input.timeZone);
   if (daysSinceMolt !== null && daysSinceMolt <= 7) {
     return "Recently molted";
   }
 
-  const daysSinceMist = daysSince(input.lastMistedAt, now);
-  if (daysSinceMist === null || daysSinceMist >= input.mistIntervalDays) {
+  if (isMistingDue(input)) {
     return "Mist today";
   }
 
   if (!shouldSuppressFeedingReminder(status)) {
-    const daysSinceFeed = daysSince(input.lastSuccessfulFedAt ?? input.lastFedAt, now);
+    const daysSinceFeed = daysSince(input.lastSuccessfulFedAt, now, input.timeZone);
     if (daysSinceFeed === null || daysSinceFeed >= input.feedIntervalDays) {
       return "Feeding due";
     }
@@ -136,6 +148,8 @@ export function friendlyNeedCopy(name: string, status: CareStatus): string {
       return `${name} might be heading toward a molt.`;
     case "In premolt":
       return `${name} is in premolt — fasting may be expected.`;
+    case "Molting":
+      return `${name} is molting. Give them a little space.`;
     case "Recently molted":
       return `${name} recently molted. Take it gentle.`;
     case "Post-molt recovery":

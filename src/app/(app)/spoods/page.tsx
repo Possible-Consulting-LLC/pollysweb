@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodCareCard } from "@/components/spoods/spood-card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
 import { listSpidersForUser } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 import { PREMOLT_STATUSES, SEX_OPTIONS } from "@/lib/constants";
+import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
 export default async function SpoodsPage({
   searchParams,
@@ -15,13 +16,15 @@ export default async function SpoodsPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const views = await listSpidersForUser(user.id!, {
-    q: params.q,
-    status: params.status,
-    sex: params.sex,
-  });
-  const activeCount = views.filter((v) => !v.spider.memorializedAt).length;
-  const memorialCount = views.length - activeCount;
+  const hasFilters = Boolean(params.q || params.status || params.sex);
+  const [views, allViews, writeState] = await Promise.all([
+    listSpidersForUser(user.id!, { q: params.q, status: params.status, sex: params.sex }),
+    hasFilters ? listSpidersForUser(user.id!) : Promise.resolve(null),
+    getSpiderWriteState(user.id!),
+  ]);
+  const collection = allViews ?? views;
+  const activeCount = collection.filter((v) => !v.spider.memorializedAt).length;
+  const memorialCount = collection.length - activeCount;
 
   return (
     <div className="space-y-6">
@@ -63,29 +66,29 @@ export default async function SpoodsPage({
         subtitle={
           memorialCount
             ? `${memorialCount} in memory`
-            : `${views.length} spood${views.length === 1 ? "" : "s"}`
+            : `${collection.length} spood${collection.length === 1 ? "" : "s"}`
         }
         action={
-          <Link href="/spoods/new">
-            <Button size="sm">Add a Spood</Button>
-          </Link>
+          <Link href="/spoods/new" className={buttonVariants({ size: "sm" })}>Add a Spood</Link>
         }
       />
 
       {views.length === 0 ? (
         <EmptyState
-          title="No spoods yet"
-          body="Your little corner of the web is looking pretty empty."
+          title={hasFilters ? "No matching spoods" : "No spoods yet"}
+          body={hasFilters ? "Try clearing or changing the filters." : "Your little corner of the web is looking pretty empty."}
           action={
-            <Link href="/spoods/new">
-              <Button>Add your first spood</Button>
-            </Link>
+            hasFilters ? undefined : <Link href="/spoods/new" className={buttonVariants()}>Add your first spood</Link>
           }
         />
       ) : (
         <div className="space-y-3">
           {views.map((view) => (
-            <SpoodCareCard key={view.spider.id} view={view} />
+            <SpoodCareCard
+              key={view.spider.id}
+              view={view}
+              readOnly={!writeState.proAccess && writeState.firstSpiderId !== view.spider.id}
+            />
           ))}
         </div>
       )}

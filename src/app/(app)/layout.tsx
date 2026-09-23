@@ -1,3 +1,4 @@
+import { CareCelebrations } from "@/components/constellation/celebrations";
 import { BottomNav } from "@/components/layout/nav";
 import { BrandLogo } from "@/components/brand/logo";
 import { FeedbackButton } from "@/components/feedback/feedback-button";
@@ -12,8 +13,9 @@ export default async function AppLayout({
   await requireUser();
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-4 pb-24 pt-4 sm:max-w-2xl sm:px-6">
+    <div data-site-protected className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-4 pb-24 pt-4 sm:max-w-2xl sm:px-6">
       <TimezoneSync />
+      <CareCelebrations />
       <div className="mb-3 flex items-center justify-start">
         <BrandLogo
           href="/home"

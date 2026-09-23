@@ -1,3 +1,5 @@
+import { isStaging } from "./staging-guard";
+
 export const FREE_SPIDER_LIMIT = 1;
 
 export const PLAN_PRICES = {
@@ -31,11 +33,20 @@ function env(name: string) {
 }
 
 export function isStripeConfigured() {
+  if (isStaging()) return false;
+  const monthly = env("STRIPE_PRICE_MONTHLY");
+  const yearly = env("STRIPE_PRICE_YEARLY");
   return Boolean(
     env("STRIPE_SECRET_KEY") &&
-      env("STRIPE_PRICE_MONTHLY") &&
-      env("STRIPE_PRICE_YEARLY"),
+      env("STRIPE_WEBHOOK_SECRET") &&
+      monthly?.startsWith("price_") &&
+      yearly?.startsWith("price_") &&
+      legacyProPriceIds().every((priceId) => priceId.startsWith("price_")),
   );
+}
+
+export function legacyProPriceIds(value = process.env.STRIPE_PRO_LEGACY_PRICE_IDS) {
+  return value?.split(",").map((priceId) => priceId.trim()).filter(Boolean) ?? [];
 }
 
 export function stripeEnvStatus() {

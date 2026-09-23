@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
 import { QuickLogButtons } from "@/components/spoods/quick-log";
 import { PremoltToggle } from "@/components/spoods/premolt-toggle";
 import { AboutForm } from "@/components/spoods/about-form";
@@ -13,13 +12,15 @@ import {
 import { MemorialPanel } from "@/components/spoods/memorial-panel";
 import { PhotoGallery } from "@/components/spoods/photo-gallery";
 import { SpoodImage } from "@/components/spoods/spood-image";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, SectionHeader, StatusPill } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { formatCareWhen, parseHydrationMethods } from "@/lib/utils";
 import { getSpiderCare } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
+import { formatShortDate } from "@/lib/utils";
 import { isPremoltLike } from "@/lib/care";
+import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
 export default async function SpiderProfilePage({
   params,
@@ -33,6 +34,8 @@ export default async function SpiderProfilePage({
   const { photo: photoFlag } = await searchParams;
   const view = await getSpiderCare(user.id!, id);
   if (!view) notFound();
+  const writeState = await getSpiderWriteState(user.id!);
+  const writable = writeState.proAccess || writeState.firstSpiderId === id;
 
   const { spider, careStatus } = view;
   const memorialized = Boolean(spider.memorializedAt);
@@ -52,8 +55,13 @@ export default async function SpiderProfilePage({
           role="status"
         >
           Spood saved, but the photo upload was blocked. You can add a photo from
-          this profile — if it keeps failing, check the Supabase Storage policies
-          and that Vercel uses the anon JWT key (starts with eyJ…).
+          this profile — if it keeps failing, check the Supabase Storage settings
+          and server-only service key in staging.
+        </p>
+      ) : null}
+      {!writable ? (
+        <p className="rounded-2xl border border-[var(--plum)]/20 bg-[var(--lavender)]/45 px-4 py-3 text-sm text-[var(--midnight)]" role="status">
+          This spood is read-only on your current plan. You can still enjoy its photos and history. <Link href="/upgrade" className="font-semibold underline underline-offset-2">Manage billing</Link> to make changes again.
         </p>
       ) : null}
       <div className="relative overflow-hidden rounded-[2rem] bg-[var(--panel)] p-5 text-[var(--on-panel)]">
@@ -71,39 +79,40 @@ export default async function SpiderProfilePage({
             />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--lavender)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--star)]">
               {memorialized ? "In memory" : "Spood profile"}
             </p>
             <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-none">
               {spider.name}
             </h1>
             <p className="mt-2 text-sm text-[var(--on-panel)]/70">{subtitle}</p>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
               <StatusPill status={memorialized ? "In memory" : careStatus} />
+              {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
+                <StatusPill status="Mist today" />
+              ) : null}
             </div>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={`/spoods/${spider.id}/story`}>
-            <Button variant="gold" size="sm">
-              {spider.name}&apos;s Story
-            </Button>
-          </Link>
+          <Link href={`/spoods/${spider.id}/story`} className={buttonVariants({ variant: "gold", size: "sm" })}>{spider.name}&apos;s Story</Link>
         </div>
       </div>
 
       {memorialized ? (
         <Card className="space-y-2">
           <SectionHeader title="Memorial" />
-          <MemorialPanel
+          {writable ? <MemorialPanel
             spiderId={spider.id}
             spiderName={spider.name}
             memorialized
             passedOn={
-              spider.passedOn ? format(spider.passedOn, "MMM d, yyyy") : null
+              spider.passedOn ? formatShortDate(spider.passedOn) : null
             }
             memorialNote={spider.memorialNote}
-          />
+          /> : (
+            <p className="text-sm text-[var(--midnight)]/75">{spider.memorialNote || "Their story remains here."}</p>
+          )}
         </Card>
       ) : null}
 
@@ -145,7 +154,7 @@ export default async function SpiderProfilePage({
                 </dd>
               </div>
               <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Premolt</dt>
+                <dt className="text-xs text-[var(--midnight)]/55">Molt phase</dt>
                 <dd className="font-semibold">{spider.status}</dd>
               </div>
             </dl>
@@ -155,9 +164,15 @@ export default async function SpiderProfilePage({
                 a molt.
               </p>
             ) : null}
-            <QuickLogButtons
+            {view.mistDue && careStatus !== "Mist today" ? (
+              <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {spider.name} could use a little mist today.
+              </p>
+            ) : null}
+            {writable ? <QuickLogButtons
               spiderId={spider.id}
               spiderName={spider.name}
+              currentLifeStage={spider.instar}
               lastFeeding={
                 spider.feedings[0]
                   ? {
@@ -174,21 +189,21 @@ export default async function SpiderProfilePage({
                     }
                   : null
               }
-            />
+            /> : null}
           </Card>
 
-          <Card className="space-y-3">
-            <SectionHeader title="Premolt mode" />
+          {writable ? <Card className="space-y-3">
+            <SectionHeader title="Molt phase" />
             <Field label="Current phase">
               <PremoltToggle spiderId={spider.id} status={spider.status} />
             </Field>
-          </Card>
+          </Card> : null}
         </>
       ) : null}
 
       <Card className="space-y-2">
         <SectionHeader title="About" subtitle="Name, species, dates, and notes" />
-        <AboutForm
+        {writable ? <AboutForm
           spiderId={spider.id}
           about={{
             name: spider.name,
@@ -205,10 +220,17 @@ export default async function SpiderProfilePage({
             source: spider.source,
             notes: spider.notes,
           }}
-        />
+        /> : (
+          <dl className="grid gap-2 text-sm sm:grid-cols-2">
+            <div><dt className="text-[var(--midnight)]/60">Species</dt><dd>{spider.commonName || spider.species || "—"}</dd></div>
+            <div><dt className="text-[var(--midnight)]/60">Life stage</dt><dd>{spider.instar || "—"}</dd></div>
+            <div><dt className="text-[var(--midnight)]/60">Source</dt><dd>{spider.source || "—"}</dd></div>
+            <div><dt className="text-[var(--midnight)]/60">Notes</dt><dd>{spider.notes || "—"}</dd></div>
+          </dl>
+        )}
       </Card>
 
-      {!memorialized ? (
+      {!memorialized && writable ? (
         <Card>
           <SectionHeader title="Body condition observation" />
           <BodyConditionForm
@@ -228,8 +250,9 @@ export default async function SpiderProfilePage({
                 : "Add a home for this spood"
             }
           />
-          <EnclosureForm
+          {writable ? <EnclosureForm
             spiderId={spider.id}
+            timeZone={view.timeZone}
             enclosure={
               spider.enclosure
                 ? {
@@ -249,8 +272,13 @@ export default async function SpiderProfilePage({
                   }
                 : null
             }
-          />
-          {spider.enclosure ? <MaintenanceForm spiderId={spider.id} /> : null}
+          /> : (
+            <p className="text-sm text-[var(--midnight)]/75">
+              {spider.enclosure?.name || "No enclosure details yet."}
+              {spider.enclosure?.dimensions ? ` · ${spider.enclosure.dimensions}` : ""}
+            </p>
+          )}
+          {writable && spider.enclosure ? <MaintenanceForm spiderId={spider.id} /> : null}
         </Card>
       ) : null}
 
@@ -260,10 +288,10 @@ export default async function SpiderProfilePage({
           subtitle={
             memorialized
               ? "Moments from their story"
-              : "Add moments to their story"
+              : writable ? "Add moments to their story" : "Moments from their story"
           }
         />
-        {memorialized ? null : <PhotoUploadForm spiderId={spider.id} />}
+        {memorialized || !writable ? null : <PhotoUploadForm spiderId={spider.id} />}
         <PhotoGallery
           photos={spider.photos.map((photo) => ({
             id: photo.id,
@@ -272,15 +300,16 @@ export default async function SpiderProfilePage({
             takenAt: photo.takenAt.toISOString(),
           }))}
           profilePhotoUrl={spider.profilePhoto}
+          allowManage={writable}
           emptyLabel={
             memorialized
               ? "No photos in this memorial yet."
-              : "No photos yet — add one above."
+              : !writable ? "No photos yet." : "No photos yet — add one above."
           }
         />
       </Card>
 
-      {!memorialized ? (
+      {!memorialized && writable ? (
         <Card className="space-y-2">
           <SectionHeader
             title="Memorial"

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { BRAND_LOGO_SRC } from "@/lib/brand";
@@ -14,13 +15,13 @@ export function BrandLogo({
   priority?: boolean;
 }) {
   const image = (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       src={BRAND_LOGO_SRC}
       alt="Spoodly Space"
       width={240}
       height={240}
-      decoding="async"
+      sizes={size === "hero" ? "(min-width: 640px) 864px, 100vw" : "120px"}
+      loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : "auto"}
       className={cn(
         "h-auto w-full select-none",

@@ -1,5 +1,7 @@
 "use client";
+import { useMutationContext } from '@/components/mutation-context';
 
+import { MutationContextInput } from '@/components/mutation-context';
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -16,8 +18,10 @@ import {
   FEEDING_OUTCOMES,
   HYDRATION_METHODS,
   OBSERVATION_KINDS,
+  observationLabel,
   PREY_TYPES,
 } from "@/lib/constants";
+import { MoltStageFields } from "@/components/spoods/molt-stage-fields";
 import type { ActivityItem } from "@/lib/spiders";
 
 type EditableItem = {
@@ -33,11 +37,11 @@ type EditableItem = {
   };
 };
 
-export function ActivityEditorList({ items }: { items: EditableItem[] }) {
+export function ActivityEditorList({ items, writableSpiderIds }: { items: EditableItem[]; writableSpiderIds?: string[] }) {
   return (
     <div className="divide-y divide-[var(--plum)]/10 overflow-hidden rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)]">
       {items.map((item) => (
-        <ActivityEditorRow key={`${item.type}-${item.id}`} item={item} />
+        <ActivityEditorRow key={`${item.type}-${item.id}`} item={item} readOnly={writableSpiderIds ? !writableSpiderIds.includes(item.spiderId) : false} />
       ))}
     </div>
   );
@@ -46,10 +50,13 @@ export function ActivityEditorList({ items }: { items: EditableItem[] }) {
 export function ActivityEditorRow({
   item,
   compact = false,
+  readOnly = false,
 }: {
   item: EditableItem;
   compact?: boolean;
+  readOnly?: boolean;
 }) {
+ const mutationContext = useMutationContext();
   const [open, setOpen] = useState(false);
   const { pending, message, error, run } = useActionFeedback();
 
@@ -76,13 +83,13 @@ export function ActivityEditorRow({
                 Profile
               </Link>
             ) : null}
-            <button
+            {!readOnly ? <button
               type="button"
               className="text-xs font-semibold text-[var(--plum)] hover:underline"
               onClick={() => setOpen((v) => !v)}
             >
               {open ? "Close" : "Edit"}
-            </button>
+            </button> : null}
           </div>
         </div>
       </div>
@@ -114,11 +121,12 @@ export function ActivityEditorRow({
               return result;
             });
           }}
-        >
+        ><MutationContextInput />
           <DateTimeField
             name="date"
             label="When"
             defaultValue={item.fields.date}
+            timeZone={item.fields.timeZone}
           />
 
           {item.type === "feeding" ? (
@@ -127,7 +135,7 @@ export function ActivityEditorRow({
                 <Select name="preyType" defaultValue={item.fields.preyType || PREY_TYPES[0]}>
                   {PREY_TYPES.map((p) => (
                     <option key={p} value={p}>
-                      {p}
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
                     </option>
                   ))}
                   {item.fields.preyType &&
@@ -190,17 +198,10 @@ export function ActivityEditorRow({
 
           {item.type === "molt" ? (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Previous instar">
-                  <Input
-                    name="previousInstar"
-                    defaultValue={item.fields.previousInstar ?? ""}
-                  />
-                </Field>
-                <Field label="New instar">
-                  <Input name="newInstar" defaultValue={item.fields.newInstar ?? ""} />
-                </Field>
-              </div>
+              <MoltStageFields
+                previousStage={item.fields.previousInstar ?? ""}
+                newStage={item.fields.newInstar ?? ""}
+              />
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -225,12 +226,12 @@ export function ActivityEditorRow({
               <Select name="kind" defaultValue={item.fields.kind || OBSERVATION_KINDS[0]}>
                 {OBSERVATION_KINDS.map((kind) => (
                   <option key={kind} value={kind}>
-                    {kind}
+                    {observationLabel(kind)}
                   </option>
                 ))}
                 {item.fields.kind &&
                 !(OBSERVATION_KINDS as readonly string[]).includes(item.fields.kind) ? (
-                  <option value={item.fields.kind}>{item.fields.kind}</option>
+                  <option value={item.fields.kind}>{observationLabel(item.fields.kind)}</option>
                 ) : null}
               </Select>
             </Field>
@@ -291,7 +292,7 @@ export function ActivityEditorRow({
                   return;
                 }
                 run(async () => {
-                  const result = await deleteActivityAction(item.type, item.id);
+                  const result = await deleteActivityAction(item.type, item.id, mutationContext);
                   if (result.ok) setOpen(false);
                   return result;
                 });

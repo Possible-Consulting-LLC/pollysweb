@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -5,20 +6,20 @@ import {
   ArrowRight,
   Camera,
   Check,
-  Droplets,
   Heart,
-  NotebookTabs,
   Sparkles,
+  Star,
   Utensils,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { BRAND_LOGO_SRC } from "@/lib/brand";
 import { getSessionUser } from "@/lib/session";
+import { LandingAppPreview } from "@/components/landing/app-preview";
 
 export const metadata: Metadata = {
   title: "Spoodly Space — Jumping spider care, all in one place",
   description:
-    "Track feedings, hydration, molts, photos, and care notes for your jumping spiders in one calm, organized space.",
+    "Track jumping spider care, keep each spood’s story, and celebrate shared care streaks and little milestones.",
 };
 
 const features = [
@@ -29,8 +30,8 @@ const features = [
   },
   {
     icon: Sparkles,
-    title: "Navigate molts with confidence",
-    body: "Track premolt signs, successful molts, instars, and recovery periods without relying on memory.",
+    title: "Follow each molt phase",
+    body: "Track life stage, molt phase, and successful molts while keeping misting visible during a molt.",
   },
   {
     icon: Camera,
@@ -48,7 +49,7 @@ const steps = [
   {
     number: "01",
     title: "Create each spood’s profile",
-    body: "Add their name, species, sex, instar, arrival date, enclosure details, and favorite portrait.",
+    body: "Add their name, species, sex, life stage, acquisition date, enclosure details, and favorite portrait.",
   },
   {
     number: "02",
@@ -58,7 +59,7 @@ const steps = [
   {
     number: "03",
     title: "Let their history guide care",
-    body: "Review recent activity and long-term patterns so you can make thoughtful decisions for every spider.",
+    body: "Review recent care and each spood’s Story timeline so the details stay close when you need them.",
   },
 ];
 
@@ -77,10 +78,11 @@ export default async function RootPage() {
           className="inline-flex items-center gap-3 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)]"
           aria-label="Spoodly Space home"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             src={BRAND_LOGO_SRC}
             alt=""
+            sizes="48px"
+            loading="eager"
             width={56}
             height={56}
             className="h-12 w-12 object-contain"
@@ -128,7 +130,7 @@ export default async function RootPage() {
             </Link>
           </div>
           <div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-[var(--midnight)]/60">
-            {["Simple care logs", "Private by default", "Built for mobile"].map(
+            {["Simple care logs", "Care in one place", "Built for mobile"].map(
               (item) => (
                 <span key={item} className="inline-flex items-center gap-1.5">
                   <Check className="h-4 w-4 text-[var(--plum)]" />
@@ -144,63 +146,7 @@ export default async function RootPage() {
             aria-hidden
             className="absolute -inset-10 -z-10 rounded-full bg-[var(--lavender)]/45 blur-3xl"
           />
-          <div className="rotate-[1.5deg] rounded-[2rem] border border-[var(--plum)]/15 bg-[var(--card-solid)] p-5 shadow-[0_24px_70px_rgba(30,36,66,0.14)] sm:p-7">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--plum)]/70">
-                  Today in your web
-                </p>
-                <p className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold text-[var(--midnight)]">
-                  Everyone’s care, at a glance
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[var(--lavender)] p-3 text-[var(--plum)]">
-                <NotebookTabs className="h-6 w-6" />
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              <div className="flex items-center gap-4 rounded-2xl border border-[var(--plum)]/10 bg-[var(--cream)]/70 p-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--gold)]/35 text-xl">
-                  🕷️
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[var(--midnight)]">Clementine</p>
-                  <p className="text-sm text-[var(--midnight)]/55">
-                    Last fed 4 days ago
-                  </p>
-                </div>
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
-                  Check in
-                </span>
-              </div>
-              <div className="flex items-center gap-4 rounded-2xl border border-[var(--plum)]/10 bg-[var(--cream)]/70 p-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--lavender)] text-xl">
-                  ✦
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[var(--midnight)]">Mochi</p>
-                  <p className="text-sm text-[var(--midnight)]/55">
-                    In premolt · resting cozy
-                  </p>
-                </div>
-                <span className="rounded-full bg-[var(--lavender)] px-3 py-1 text-xs font-bold text-[var(--plum-deep)]">
-                  Premolt
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-[var(--plum)] p-4 text-[var(--on-accent)]">
-                <Utensils className="h-5 w-5" />
-                <p className="mt-5 text-sm font-bold">Log a feeding</p>
-              </div>
-              <div className="rounded-2xl bg-[var(--lavender)] p-4 text-[var(--midnight)]">
-                <Droplets className="h-5 w-5 text-[var(--plum)]" />
-                <p className="mt-5 text-sm font-bold">Log hydration</p>
-              </div>
-            </div>
-          </div>
+          <LandingAppPreview />
         </div>
       </section>
 
@@ -236,6 +182,34 @@ export default async function RootPage() {
                 </p>
               </article>
             ))}
+          </div>
+          <div className="mt-5 grid gap-7 rounded-3xl bg-[var(--panel)] p-6 text-[var(--on-panel)] sm:p-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--gold)]">
+                Care Constellation
+              </p>
+              <h3 className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold sm:text-3xl">
+                Make room for the little wins.
+              </h3>
+              <p className="mt-3 max-w-2xl leading-7 text-[var(--on-panel)]/80">
+                Check in on each spood and log or thoughtfully defer care that’s due to light a daily star. One shared streak celebrates your whole web. Badges mark care days and little moments like photos, observations, and successful molts. Handling is never required.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[
+                { icon: Sparkles, name: "First Spark", detail: "1 care day" },
+                { icon: Star, name: "Seven Stars", detail: "7 in a row" },
+                { icon: Camera, name: "First Portrait", detail: "First photo" },
+              ].map(({ icon: Icon, name, detail }) => (
+                <div key={name} className="flex flex-col items-center rounded-2xl border border-white/15 bg-white/5 p-2.5 sm:p-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--gold)]/15 text-[var(--gold)]">
+                    <Icon className="h-6 w-6" aria-hidden />
+                  </span>
+                  <span className="mt-2 text-xs font-bold leading-tight">{name}</span>
+                  <span className="mt-1 text-[10px] leading-tight text-[var(--on-panel)]/65">{detail}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -320,7 +294,10 @@ export default async function RootPage() {
       <footer className="border-t border-[var(--plum)]/10 px-5 py-8 sm:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 text-center text-sm text-[var(--midnight)]/55 sm:flex-row sm:items-center sm:justify-between sm:text-left">
           <p>© {new Date().getFullYear()} Spoodly Space</p>
-          <p>A thoughtful corner of the web for jumping spider keepers.</p>
+          <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 sm:justify-end">
+            <Link href="/privacy" className="hover:text-[var(--plum)]">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-[var(--plum)]">Terms &amp; Conditions</Link>
+          </div>
         </div>
       </footer>
     </main>

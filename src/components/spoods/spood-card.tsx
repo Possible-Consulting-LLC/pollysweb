@@ -9,9 +9,11 @@ import { SpoodImage } from "@/components/spoods/spood-image";
 export function SpoodCareCard({
   view,
   showQuickActions = true,
+  readOnly = false,
 }: {
   view: SpiderCareView;
   showQuickActions?: boolean;
+  readOnly?: boolean;
 }) {
   const { spider, careStatus } = view;
   const memorialized = Boolean(spider.memorializedAt);
@@ -42,11 +44,12 @@ export function SpoodCareCard({
               </Link>
               <p className="truncate text-sm text-[var(--midnight)]/60">{subtitle}</p>
             </div>
-            {memorialized ? (
-              <StatusPill status="In memory" />
-            ) : (
-              <StatusPill status={careStatus} />
-            )}
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <StatusPill status={memorialized ? "In memory" : careStatus} />
+              {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
+                <StatusPill status="Mist today" />
+              ) : null}
+            </div>
           </div>
           <p className="mt-1 text-sm text-[var(--midnight)]/70">
             {memorialized
@@ -54,6 +57,16 @@ export function SpoodCareCard({
                 `${spider.name}'s story lives on in your corner of the web.`
               : friendlyNeedCopy(spider.name, careStatus)}
           </p>
+          {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
+            <p className="mt-1 text-sm font-semibold text-[var(--midnight)]">
+              {friendlyNeedCopy(spider.name, "Mist today")}
+            </p>
+          ) : null}
+          {readOnly ? (
+            <p className="mt-2 text-sm font-semibold text-[var(--plum)]">
+              Read-only while Pro is paused. Your spood and history stay here.
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -84,10 +97,11 @@ export function SpoodCareCard({
             </div>
           </dl>
 
-          {showQuickActions ? (
+          {showQuickActions && !readOnly ? (
             <QuickLogButtons
               spiderId={spider.id}
               spiderName={spider.name}
+              currentLifeStage={spider.instar}
               lastFeeding={
                 spider.feedings[0]
                   ? {

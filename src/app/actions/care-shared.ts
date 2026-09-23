@@ -1,16 +1,24 @@
+import { maintenanceTransaction } from '@/lib/maintenance-write';
+import type { Celebration } from "@/lib/care-progress";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { getActionUser } from "@/lib/session";
+import { allowAction, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
+import { optionalText } from "@/lib/write-validation";
+import { assertSpiderWritable } from "@/lib/spider-write-policy";
 import {
   normalizeTimeZone,
-  requireFormDateTime,
+  requireNonFutureFormDateTime,
 } from "@/lib/utils";
 
 export type ActionResult =
-  | { ok: true; message: string }
-  | { ok: false; error: string };
+  | { ok: true; message: string; celebrations?: Celebration[]; }
+  | { ok: false; error: string; };
 
 export async function ownedSpider(spiderId: string, userId: string) {
-  return prisma.spider.findFirst({ where: { id: spiderId, userId } });
+  const spider = await prisma.spider.findFirst({ where: { id: spiderId, userId } });
+  if (spider) await assertSpiderWritable(userId, spiderId);
+  return spider;
 }
 
 export function revalidateSpider(spiderId: string) {
@@ -19,13 +27,22 @@ export function revalidateSpider(spiderId: string) {
   revalidatePath("/home");
   revalidatePath("/spoods");
   revalidatePath("/activity");
+  revalidatePath("/constellation");
   revalidatePath(`/spoods/${spiderId}`);
   revalidatePath(`/spoods/${spiderId}/story`);
 }
 
-export function asOptionalString(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
-  return text ? text : undefined;
+export function asOptionalString(value: FormDataEntryValue | null, label = "Text", max = 1000) {
+  return optionalText(value, label, max);
+}
+
+export async function getCareWriteUser() {
+  const user = await getActionUser();
+  if (!user?.id) return null;
+  if (!await allowAction("care", user.id)) {
+    throw new Error(RATE_LIMIT_MESSAGE);
+  }
+  return user;
 }
 
 /** Persist browser zone on first activity log so SSR displays match. */
@@ -44,10 +61,10 @@ export async function rememberUserTimeZone(
   });
   if (!user || normalizeTimeZone(user.timezone)) return;
 
-  await prisma.user.update({
+  await maintenanceTransaction(tx => tx.user.update({
     where: { id: userId },
     data: { timezone: fromForm },
-  });
+  }), undefined, false);
   revalidatePath("/settings");
   revalidatePath("/activity");
   revalidatePath("/home");
@@ -67,5 +84,5 @@ export async function resolveActivityDateTime(
     normalizeTimeZone(user?.timezone) ||
     normalizeTimeZone(String(formData.get("clientTimeZone") || "")) ||
     "UTC";
-  return requireFormDateTime(formData, fieldName, fallback);
+  return requireNonFutureFormDateTime(formData, fieldName, fallback);
 }

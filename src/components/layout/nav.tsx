@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Bug, PlusCircle, History, Settings } from "lucide-react";
+import { Award, Home, Icon, History, Settings } from "lucide-react";
+import { spider } from "@lucide/lab";
 import { cn } from "@/lib/utils";
+
+function SpiderIcon(props: { className?: string; "aria-hidden"?: boolean }) {
+  return <Icon iconNode={spider} {...props} />;
+}
 
 const links = [
   { href: "/home", label: "Home", icon: Home },
-  { href: "/spoods", label: "My Spoods", icon: Bug },
-  { href: "/spoods/new", label: "Add", icon: PlusCircle },
+  { href: "/spoods", label: "My Spoods", icon: SpiderIcon },
+  { href: "/constellation", label: "Badges", icon: Award },
   { href: "/activity", label: "Activity", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -29,9 +34,9 @@ export function BottomNav() {
           const active =
             href === "/spoods"
               ? pathname === "/spoods" ||
-                (pathname.startsWith("/spoods/") && !pathname.startsWith("/spoods/new"))
+                pathname.startsWith("/spoods/")
               : pathname === href || pathname.startsWith(`${href}/`);
-          const isAdd = href === "/spoods/new";
+          const isBadge = href === "/constellation";
           return (
             <li key={href} className="flex-1">
               <Link
@@ -43,15 +48,16 @@ export function BottomNav() {
                   active
                     ? "text-[var(--plum)]"
                     : "text-[var(--midnight)]/45 hover:text-[var(--plum)]",
-                  isAdd && "relative",
+                  isBadge && "relative",
                 )}
+                aria-current={active ? "page" : undefined}
               >
                 <span
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-2xl",
-                    isAdd &&
+                    isBadge &&
                       "bg-[var(--plum)] text-[var(--on-accent)] shadow-md shadow-[var(--plum)]/25",
-                    active && !isAdd && "bg-[var(--lavender)]/70",
+                    active && !isBadge && "bg-[var(--lavender)]/70",
                   )}
                 >
                   <Icon className="h-5 w-5" aria-hidden />

@@ -1,0 +1,9 @@
+# Email ownership verification
+
+Password signup starts with an email address and optional display name. A 30-minute, single-use link goes to that address. The link opens a password form; submitting a valid password consumes the challenge and creates a verified user in one transaction. No password or user row is stored before the link is used. Signup and resend give the same public response whether an address is new or already registered, including when a configured sender fails to deliver.
+
+Existing password users with `emailVerified = null` can sign in while `PASSWORD_EMAIL_VERIFICATION_GRACE_START` is unset. Once operators explicitly set that validated timestamp after confirming delivery, they have seven days from it; Home and Settings show the exact UTC deadline and let them request a link. Afterward credentials and existing sessions cannot access the app until they verify using a 30-minute, single-use email link. Login failure copy points everyone to the verification path without revealing account state. No migration writes `emailVerified`. Social-only accounts retain their existing provider policy.
+
+Challenges store only SHA-256 token digests, expire after 30 minutes, and are consumed with conditional database writes. New challenges supersede prior challenges for the same email and purpose. Send attempts use the shared account/IP rate limiter. Sending requires a dedicated email API key, an explicit sender, a configured canonical app origin, and, in staging, a recipient allowlist. Missing configuration fails closed for new signup and resend. The existing feedback email key remains disabled in staging.
+
+Verification links carry the token in a URL query. The verification page uses a referrer policy that does not forward the URL and is excluded from indexing. Invalid, expired, or used links get a generic expired-link page with a resend route. New signup does not reveal account existence; login errors remain generic.

@@ -1,0 +1,2 @@
+import { stopTestSessionAction } from '@/app/actions/admin-test-session';
+export default function TestingEnded() { return <main className="mx-auto max-w-lg space-y-4 p-6"><h1 className="text-2xl font-semibold">Testing session ended</h1><p>Reloaded or stale forms cannot save changes. Return to your own account to continue.</p><form action={stopTestSessionAction}><button className="rounded-xl border p-3">Return to admin</button></form></main>; }

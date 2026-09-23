@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 import {
   COMMON_TIMEZONES,
@@ -13,6 +13,7 @@ export function DateTimeField({
   id,
   label = "When",
   defaultValue,
+  timeZone,
   required = true,
   includeTimeZone = true,
 }: {
@@ -20,6 +21,7 @@ export function DateTimeField({
   id?: string;
   label?: string;
   defaultValue?: string;
+  timeZone?: string;
   required?: boolean;
   includeTimeZone?: boolean;
 }) {
@@ -30,8 +32,13 @@ export function DateTimeField({
   );
   const [value] = useState(
     () =>
-      defaultValue || toDateTimeLocalInputValue(new Date(), browserZone),
+      defaultValue || toDateTimeLocalInputValue(new Date(), timeZone || browserZone),
   );
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   return (
     <>
@@ -42,14 +49,18 @@ export function DateTimeField({
           type="datetime-local"
           required={required}
           defaultValue={value}
+          max={toDateTimeLocalInputValue(now, timeZone || browserZone)}
+          onFocus={() => setNow(new Date())}
         />
       </Field>
       {includeTimeZone ? (
-        <input type="hidden" name="clientTimeZone" value={browserZone} />
+        <input type="hidden" name="timeZone" value={timeZone || browserZone} />
       ) : null}
     </>
   );
 }
+
+const subscribeTimezone = () => () => {};
 
 export function TimezoneSelect({
   name = "timezone",
@@ -60,11 +71,13 @@ export function TimezoneSelect({
   id?: string;
   defaultValue?: string | null;
 }) {
-  const browserZone = useMemo(
+  const browserZone = useSyncExternalStore(
+    subscribeTimezone,
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    [],
+    () => "UTC",
   );
-  const initial = defaultValue?.trim() || browserZone;
+  const [selection, setSelection] = useState<string | null>(null);
+  const initial = selection ?? (defaultValue?.trim() || browserZone);
   const options = useMemo(() => {
     const set = new Set<string>([...COMMON_TIMEZONES, browserZone, initial]);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
@@ -74,9 +87,9 @@ export function TimezoneSelect({
     <Field
       label="Timezone"
       htmlFor={id}
-          hint={`Used when showing activity times. Defaults to this device (${browserZone}). Save settings once so logs keep showing the right clock.`}
+          hint={`Used for activity times and administrator reporting. Defaults to this device (${browserZone}). Save settings once so logs keep showing the right clock.`}
         >
-      <Select id={id} name={name} defaultValue={initial}>
+      <Select id={id} name={name} value={initial} onChange={event => setSelection(event.target.value)}>
         {options.map((zone) => (
           <option key={zone} value={zone}>
             {zone === browserZone ? `${zone} (this device)` : zone}

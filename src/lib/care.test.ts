@@ -5,6 +5,8 @@ import {
   daysSince,
   deriveCareStatus,
   fastingDaysBeforeMolt,
+  friendlyNeedCopy,
+  isMistingDue,
   isSuccessfulFeeding,
   nextInstar,
   resolveSpiderStatus,
@@ -91,6 +93,34 @@ describe("reminder suppression and care status", () => {
     );
   });
 
+  it("shows Molting as its own care phase and keeps feeding reminders paused", () => {
+    const status = deriveCareStatus({
+      ...base,
+      status: "Molting",
+      lastMistedAt: new Date("2026-09-05"),
+    });
+    assert.equal(status, "Molting");
+    assert.equal(friendlyNeedCopy("Star", status), "Star is molting. Give them a little space.");
+    assert.equal(shouldSuppressFeedingReminder("Molting"), true);
+  });
+
+  it("keeps daily misting due during molting without replacing the molt phase", () => {
+    const input = { ...base, status: "Molting" };
+    assert.equal(deriveCareStatus(input), "Molting");
+    assert.equal(isMistingDue(input), true);
+    assert.equal(shouldSuppressFeedingReminder(input.status), true);
+  });
+
+  it("clears the misting reminder after hydration on the same care day", () => {
+    const input = {
+      ...base,
+      status: "Molting",
+      lastMistedAt: new Date("2026-09-05"),
+    };
+    assert.equal(isMistingDue(input), false);
+    assert.equal(deriveCareStatus(input), "Molting");
+  });
+
   it("prioritizes mist when due", () => {
     assert.equal(
       deriveCareStatus({
@@ -171,4 +201,10 @@ describe("reminder suppression and care status", () => {
       "Normal",
     );
   });
+});
+
+describe('unsuccessful offers do not reset feeding clock', () => {
+ it('keeps feeding due when there is no successful meal', () => {
+  assert.equal(deriveCareStatus({status:'Normal',lastFedAt:new Date('2026-09-05T12:00Z'),lastSuccessfulFedAt:null,lastMistedAt:new Date('2026-09-05T12:00Z'),lastMoltAt:null,feedIntervalDays:3,mistIntervalDays:2,now:new Date('2026-09-05T12:00Z')}),'Feeding due');
+ });
 });

@@ -6,10 +6,11 @@ import { Field, Select } from "@/components/ui/field";
 import {
   getRecentActivity,
   getUserDefaults,
-  listSpidersForUser,
 } from "@/lib/spiders";
 import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
+import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
 export default async function ActivityPage({
   searchParams,
@@ -18,13 +19,14 @@ export default async function ActivityPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [spiders, activity, defaults] = await Promise.all([
-    listSpidersForUser(user.id!),
+  const [spiders, activity, defaults, writeState] = await Promise.all([
+    prisma.spider.findMany({ where: { userId: user.id! }, select: { id: true, name: true, memorializedAt: true }, orderBy: { name: "asc" } }),
     getRecentActivity(user.id!, {
       spiderId: params.spiderId,
       type: params.type,
     }),
     getUserDefaults(user.id!),
+    getSpiderWriteState(user.id!),
   ]);
   const zone = await resolveDisplayTimeZone(defaults.timezone);
 
@@ -39,9 +41,9 @@ export default async function ActivityPage({
         <Field label="Spider" htmlFor="spiderId">
           <Select id="spiderId" name="spiderId" defaultValue={params.spiderId || ""}>
             <option value="">All spoods</option>
-            {spiders.map((s) => (
-              <option key={s.spider.id} value={s.spider.id}>
-                {s.spider.name}
+            {[...spiders].sort((a, b) => Number(Boolean(a.memorializedAt)) - Number(Boolean(b.memorializedAt)) || a.name.localeCompare(b.name)).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
             ))}
           </Select>
@@ -73,6 +75,7 @@ export default async function ActivityPage({
         />
       ) : (
         <ActivityEditorList
+          writableSpiderIds={writeState.proAccess ? spiders.map((spider) => spider.id) : writeState.firstSpiderId ? [writeState.firstSpiderId] : []}
           items={activity.map((item) => ({
             id: item.id,
             type: item.type,

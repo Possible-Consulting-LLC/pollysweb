@@ -1,12 +1,20 @@
+import { withCareProgress } from "@/lib/care-progress-data";
+import { calendarDayKey } from "@/lib/constellation";
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodCareCard } from "@/components/spoods/spood-card";
 import { SpoodImage } from "@/components/spoods/spood-image";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
 import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
+import { getStreakPreview, reviewItemsFor } from "@/lib/constellation-data";
+import { StreakCard } from "@/components/constellation/streak-card";
+import { getSpiderWriteState } from "@/lib/spider-write-policy";
+import { EmailVerificationNotice } from "@/components/auth/email-verification-notice";
+import { legacyVerificationDeadline } from "@/lib/email-verification";
+import { prisma } from "@/lib/db";
 
 function greeting(timeZone: string) {
   let hour = 12;
@@ -27,10 +35,24 @@ function greeting(timeZone: string) {
 
 export default async function HomePage() {
   const user = await requireUser();
-  const defaults = await getUserDefaults(user.id!);
-  const views = await listSpidersForUser(user.id!);
-  const activity = await getRecentActivity(user.id!);
-  const zone = await resolveDisplayTimeZone(defaults.timezone);
+  const defaultsPromise = getUserDefaults(user.id!);
+  const zonePromise = defaultsPromise.then((defaults) => resolveDisplayTimeZone(defaults.timezone));
+  const [defaults, views, activity, zone, constellation, writeState, verificationAccount] = await Promise.all([
+    defaultsPromise,
+    listSpidersForUser(user.id!),
+    getRecentActivity(user.id!),
+    zonePromise,
+    zonePromise.then((zone) => getStreakPreview(user.id!, zone)),
+    getSpiderWriteState(user.id!),
+    process.env.PASSWORD_EMAIL_VERIFICATION_GRACE_START
+      ? prisma.user.findUnique({ where: { id: user.id! }, select: { passwordHash: true, emailVerified: true } })
+      : Promise.resolve(null),
+  ]);
+  const reviewItems = await withCareProgress(user.id!, calendarDayKey(new Date(), zone), zone, reviewItemsFor(views, defaults.feedDefaultDays, writeState));
+  const isReadOnly = (spiderId: string) => !writeState.proAccess && writeState.firstSpiderId !== spiderId;
+  const verificationDeadline = verificationAccount
+    ? legacyVerificationDeadline(verificationAccount, new Date(), process.env.PASSWORD_EMAIL_VERIFICATION_GRACE_START)
+    : null;
 
   const active = views.filter((v) => !v.spider.memorializedAt);
   const memorial = views.filter((v) => v.spider.memorializedAt);
@@ -44,6 +66,16 @@ export default async function HomePage() {
         subtitle="Here’s what your little corner needs today."
       />
 
+      {verificationDeadline ? <EmailVerificationNotice deadline={new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "long", timeStyle: "short" }).format(verificationDeadline) + " UTC"} /> : null}
+
+      <StreakCard
+        streak={constellation.streak}
+        completedToday={constellation.completedToday}
+        activeCount={reviewItems.length}
+        caredCount={reviewItems.filter(item => item.caredFor).length}
+        compact
+      />
+
       <section>
         <SectionHeader
           title="Needs attention"
@@ -53,11 +85,7 @@ export default async function HomePage() {
               : "Everyone looks cozy"
           }
           action={
-            <Link href="/spoods/new">
-              <Button variant="ghost" size="sm">
-                Add
-              </Button>
-            </Link>
+            <Link href="/spoods/new" className={buttonVariants({ size: "sm" })}>Add a Spood</Link>
           }
         />
         {active.length === 0 && memorial.length === 0 ? (
@@ -65,9 +93,7 @@ export default async function HomePage() {
             title="No spoods yet"
             body="Your little corner of the web is looking pretty empty."
             action={
-              <Link href="/spoods/new">
-                <Button>Add your first spood</Button>
-              </Link>
+              <Link href="/spoods/new" className={buttonVariants()}>Add your first spood</Link>
             }
           />
         ) : needing.length === 0 ? (
@@ -82,7 +108,7 @@ export default async function HomePage() {
         ) : (
           <div className="space-y-3">
             {needing.map((view) => (
-              <SpoodCareCard key={view.spider.id} view={view} />
+              <SpoodCareCard key={view.spider.id} view={view} readOnly={isReadOnly(view.spider.id)} />
             ))}
           </div>
         )}
@@ -111,6 +137,10 @@ export default async function HomePage() {
               <StatusPill
                 status={v.spider.memorializedAt ? "In memory" : v.careStatus}
               />
+              {!v.spider.memorializedAt && v.mistDue && v.careStatus !== "Mist today" ? (
+                <StatusPill status="Mist today" />
+              ) : null}
+              {isReadOnly(v.spider.id) ? <span className="text-xs text-[var(--midnight)]/60">Read-only</span> : null}
             </Link>
           ))}
         </div>
@@ -120,11 +150,7 @@ export default async function HomePage() {
         <SectionHeader
           title="Recent activity"
           action={
-            <Link href="/activity">
-              <Button variant="ghost" size="sm">
-                See all
-              </Button>
-            </Link>
+            <Link href="/activity" className={buttonVariants({ variant: "ghost", size: "sm" })}>See all</Link>
           }
         />
         {activity.length === 0 ? (
@@ -165,16 +191,8 @@ export default async function HomePage() {
       <section>
         <SectionHeader title="Quick actions" />
         <div className="grid grid-cols-2 gap-2">
-          <Link href="/spoods/new">
-            <Button variant="secondary" className="h-14 w-full">
-              Add a Spood
-            </Button>
-          </Link>
-          <Link href="/activity">
-            <Button variant="soft" className="h-14 w-full">
-              Browse Activity
-            </Button>
-          </Link>
+          <Link href="/spoods/new" className={buttonVariants({ variant: "secondary", className: "h-14 w-full" })}>Add a Spood</Link>
+          <Link href="/activity" className={buttonVariants({ variant: "soft", className: "h-14 w-full" })}>Browse Activity</Link>
         </div>
       </section>
     </div>

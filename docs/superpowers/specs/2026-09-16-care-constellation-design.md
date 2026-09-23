@@ -16,11 +16,11 @@ The feature belongs to the isolated staging worktree and separate staging servic
 
 ## What earns a shared care day
 
-A keeper can review today's care for each active spood. The day uses the keeper's saved IANA timezone, falling back to the browser timezone and then UTC, consistent with existing date handling. Completion requires at least one active spood and a review of **every active spood at the time of completion**. A review confirms that the keeper looked in on that spood; it is not a request to perform extra care.
+A keeper can review today's care for each active spood. The day uses the keeper's saved IANA timezone, falling back to the browser timezone and then UTC, consistent with existing date handling. Completion requires at least one active spood and a review of **every active spood in the server's final review snapshot**. A review confirms that the keeper looked in on that spood; it is not a request to perform extra care.
 
 For each due item, the keeper either logs the appropriate care or chooses **Not appropriate today** and gives a short reason. Feeding reminders remain paused in premolt/molting according to existing care rules. Misting due remains visible during molting and must be addressed in the review. If nothing is due, a simple review is enough. The server recomputes due items and ownership when saving; it never trusts a browser-supplied due list or spider IDs alone.
 
-Once all reviews qualify, the server stores a completed care day with its `YYYY-MM-DD` calendar key, timezone, completion timestamp, and a snapshot of the included spider IDs and any deferred items/reasons. One completed day per keeper/calendar date is allowed. Completion is durable: adding or memorializing a spood later does not retroactively change an earned day. A newly added spood joins the next day's review if today's day was already completed. A keeper can correct today's decisions before completion; completed days are read-only in version one. No day can be completed with an empty active collection.
+Once all reviews qualify, the server stores a completed care day with its `YYYY-MM-DD` calendar key, timezone, completion timestamp, and a snapshot of the included spider IDs and any deferred items/reasons. It rechecks due items and the keeper's day immediately before saving; the insert itself checks the active spider ID set and database-local calendar day. The final server check is the cutoff for due-state decisions: a care log or setting changed after that check is a later event, not a retroactive change to the review. One completed day per keeper/calendar date is allowed. Completion is durable: adding or memorializing a spood later does not retroactively change an earned day. A newly added spood joins the next day's review if today's day was already completed. A keeper can correct today's decisions before completion; completed days are read-only in version one. No day can be completed with an empty active collection.
 
 The current streak ends today if today is complete, otherwise yesterday while today is still available. A missing prior day breaks the streak when the next day begins. Best streak is the longest consecutive run of completed calendar dates in the recorded timezone. A timezone change does not create a second reward for a duplicate date key. Earlier completed days remain recorded using their original date keys. No automatic backfilling or streak-repair currency is included in version one; backdated activity edits continue to correct the activity history without inventing a completed review. This is a deliberate first-version boundary for the previously discussed recovery idea.
 
@@ -34,14 +34,18 @@ The current streak ends today if today is complete, otherwise yesterday while to
 | Shared streak | Star Path | 14 consecutive completed care days |
 | Shared streak | Moonkeeper | 30 consecutive completed care days |
 | Shared streak | Galaxy Guide | 100 consecutive completed care days |
-| Spood story | First Portrait | First uploaded Photo for that spood; built-in avatar does not count |
-| Spood story | Sharp Eyes | First ObservationEvent for that spood |
+| Spood story | First Portrait | First uploaded Photo for that spood, dated by upload time; built-in avatar does not count |
+| Spood story | Sharp Eyes | First non-play ObservationEvent for that spood |
 | Spood story | Silk Architect | ObservationEvent with the existing `built a new hammock` kind |
 | Spood story | Fresh Suit | First MoltEvent with `successful = true` |
 | Spood story | Spoodiversary | One calendar year from acquisition date, or from profile creation when no acquisition date exists |
 | Spood story | New Chapter | First enclosure maintenance event with `kind = rehouse` |
 
 Story rewards are optional discoveries, not a checklist every spood must finish. An adult or wild-caught spider may never molt in the keeper's care. No reward is based on feeding count, fasting duration, speed of molting, handling, egg laying, or the number of spoods owned.
+
+## Optional play and interaction log
+
+Keepers may record a play or interaction moment with a date and time, a method, and optional notes. Methods cover watching in the enclosure, following an object, exploring outside the enclosure, voluntary handling, and a free-text Other choice. This is an optional observation entry in the existing activity and Story history; it does not require another database table. The form never suggests that physical contact is required. Interaction is not part of daily streak completion and has no reward threshold, so a keeper who never handles or plays with a spood is not penalized.
 
 Streak reward unlock dates derive from the first completed run reaching each threshold and remain earned if a later streak breaks. Story rewards derive from current, user-owned source records. Editing or deleting a qualifying source record updates the gallery; if no qualifying record remains, the story reward returns to locked. Spoodiversary is evaluated from the current profile date and the keeper's calendar date. Story rewards for memorialized spoods remain visible while their profiles remain in the account.
 
@@ -51,7 +55,7 @@ Streak reward unlock dates derive from the first completed run reaching each thr
 - Keep the reward catalog in application code, not database rows. Derive streak awards from `CareDay` and story awards from existing `Photo`, `ObservationEvent`, `MoltEvent`, `EnclosureMaintenanceEvent`, and `Spider` records. Do not add a badge-awards table or duplicate event state.
 - Query only records belonging to the authenticated keeper. Use bounded, indexed queries and aggregations that do not truncate historical completions or quietly omit older reward events.
 - Use the existing server-action pattern for review submission. Enforce authentication, ownership, timezone validation, due-state recheck, and one completion per date on the server. Concurrent submissions must be idempotent.
-- Reward artwork is a set of static, app-owned illustrations with accessible names and sufficient text contrast in both existing themes. No external images, tracking, or social sharing are needed.
+- Reward artwork is a set of app-owned vector medallions with distinct symbols, accessible names, and sufficient text contrast in both existing themes. No external images, tracking, or social sharing are needed.
 
 ## Verification and release
 

@@ -1,5 +1,10 @@
 {
-  "ignoreCommand": "node scripts/vercel-ignore.js",
+  "crons": [
+    {
+      "path": "/api/cron/reconcile-billing",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "redirects": [
     {
       "source": "/brand/spoodly-logo.png",
@@ -11,5 +16,8 @@
       "destination": "/brand/spoodly-logo-mark.png",
       "permanent": false
     }
+  ],
+  "regions": [
+    "pdx1"
   ]
 }

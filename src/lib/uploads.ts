@@ -1,38 +1,33 @@
+import { guardMaintenance } from './admin/maintenance-access';
+import { MaintenanceError } from './admin/maintenance-policy';
 import { mkdir, writeFile } from "fs/promises";
+import { prisma } from "./db";
+import { admittedUpload } from "./upload-admission";
+import type { Prisma } from "@prisma/client";
 import path from "path";
+import { randomUUID } from "node:crypto";
+import { getActionUser } from "./session";
+import { allowAction, RATE_LIMIT_MESSAGE } from "./rate-limit";
+import { validateRasterUpload, uploadValidationMessage } from "./upload-validation";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
+import { SPOODS_BUCKET, storagePathFromReference, storageReference } from "./photo-media";
+import {
+  createPhotoCleanupService,
+  detachPhotoRecord,
+  type DetachPhotoTransaction,
+  type PhotoCleanupResult,
+  type PhotoCleanupTransaction,
+} from './photo-cleanup';
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
-export const SPOODS_BUCKET = "spoods";
+
+import { getPhotoSizeError } from "./upload-limits";
 
 function objectPath(prefix: string, ext: string) {
   const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "spood";
-  return `${safePrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  return `${safePrefix}/${randomUUID()}.${ext}`;
 }
 
-/** Public URL helper for objects already in the spoods bucket. */
-export function publicSpoodUrl(objectPathValue: string) {
-  const supabase = getSupabaseAdmin();
-  const { data } = supabase.storage.from(SPOODS_BUCKET).getPublicUrl(objectPathValue);
-  return data.publicUrl;
-}
-
-export function isSupabaseStorageUrl(url: string) {
-  return (
-    url.includes("/storage/v1/object/public/spoods/") ||
-    url.includes("/storage/v1/object/sign/spoods/")
-  );
-}
-
-export function storagePathFromPublicUrl(url: string): string | null {
-  const marker = "/storage/v1/object/public/spoods/";
-  const idx = url.indexOf(marker);
-  if (idx === -1) return null;
-  return decodeURIComponent(url.slice(idx + marker.length).split("?")[0] || "");
-}
-
-/** Persist an image to the public Supabase `spoods` bucket (with local fallback). */
+/** Persist an image to the `spoods` bucket (with local development fallback). */
 export async function saveImageUpload(
   file: File,
   prefix: string,
@@ -40,46 +35,53 @@ export async function saveImageUpload(
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Choose a photo to upload." };
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return { error: "Photo must be under 5MB." };
-  }
+  const sizeError = getPhotoSizeError(file);
+  if (sizeError) return { error: sizeError };
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const safeExt = ALLOWED_EXT.has(ext) ? ext : "jpg";
-  const mime =
-    file.type && file.type.startsWith("image/")
-      ? file.type
-      : `image/${safeExt === "jpg" ? "jpeg" : safeExt}`;
-  // Normalize jpg → jpeg for Storage MIME allow-lists
-  const contentType = mime === "image/jpg" ? "image/jpeg" : mime;
+  const user = await getActionUser();
+  if (!user?.id) return { error: "Please sign in again." };
+  if (!await allowAction("upload", user.id)) return { error: RATE_LIMIT_MESSAGE };
+
+  let verified;
+  try {
+    verified = await validateRasterUpload(Buffer.from(await file.arrayBuffer()));
+  } catch (error) {
+    return { error: uploadValidationMessage(error) };
+  }
+  const { bytes, extension: safeExt, contentType } = verified;
   const pathInBucket = objectPath(prefix, safeExt);
 
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseAdmin();
-      const { error } = await supabase.storage
-        .from(SPOODS_BUCKET)
-        .upload(pathInBucket, bytes, {
-          contentType,
-          upsert: false,
-          cacheControl: "3600",
-        });
+      const assertOwner = async (tx: Prisma.TransactionClient) => {
+        await guardMaintenance('write', undefined, tx);
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+        const current = await tx.user.findUnique({ where: { id: user.id! }, select: { deletingAt: true, suspendedAt: true } });
+        if (!current || current.deletingAt || current.suspendedAt) throw new Error("Account unavailable for uploads.");
+        if (prefix !== user.id && !await tx.spider.findFirst({ where: { id: prefix, userId: user.id! }, select: { id: true } })) throw new Error("Invalid upload owner.");
+      };
+      let activeTx: Prisma.TransactionClient;
+      await admittedUpload({
+        reserve: () => prisma.$transaction(async tx => {
+          await assertOwner(tx);
+          await tx.ownedUpload.create({ data: { key: pathInBucket, userId: user.id! } });
+        }),
+        underAccountLock: work => prisma.$transaction(async tx => {
+          await assertOwner(tx); activeTx = tx; return work();
+        }, { maxWait: 10_000, timeout: 45_000 }),
+        upload: async () => {
+          await guardMaintenance('write', undefined, activeTx);
+          const result = await supabase.storage.from(SPOODS_BUCKET).upload(pathInBucket, bytes, { contentType, upsert: false, cacheControl: "3600" });
+          if (result.error) throw result.error;
+          return result;
+        },
+        settle: async () => { await activeTx.ownedUpload.update({ where: { key: pathInBucket }, data: { settled: true } }); },
+      });
 
-      if (error) {
-        console.error("[upload] supabase storage error", error);
-        const msg = error.message || "Forbidden";
-        if (/forbidden|row-level security|policy|invalid.*key|jwt/i.test(msg)) {
-          return {
-            error:
-              "Storage blocked the upload (Forbidden). On Vercel, set NEXT_PUBLIC_SUPABASE_ANON_KEY to the anon JWT from Supabase → Settings → API (starts with eyJ…). Remove any S3 secret from SUPABASE_SERVICE_ROLE_KEY. Check /api/health → SUPABASE_KEY_KIND.",
-          };
-        }
-        return { error: `Couldn’t upload photo: ${msg}` };
-      }
-
-      return { url: publicSpoodUrl(pathInBucket) };
+      return { url: storageReference(pathInBucket) };
     } catch (error) {
+      if(error instanceof MaintenanceError) throw error;
       console.error("[upload] supabase upload failed", error);
       return {
         error:
@@ -88,11 +90,13 @@ export async function saveImageUpload(
     }
   }
 
-  // Local / writable environments without Supabase Storage env vars.
+  // Disk fallback is only for explicit local development.
+  if (process.env.NODE_ENV !== "development") return { error: "Photo storage is not configured." };
   try {
-    const filename = `${prefix}-${Date.now()}.${safeExt}`;
+    const filename = `${randomUUID()}.${safeExt}`;
     const dir = path.join(process.cwd(), "public", "uploads");
     await mkdir(dir, { recursive: true });
+    await guardMaintenance('write');
     await writeFile(path.join(dir, filename), bytes);
     return { url: `/uploads/${filename}` };
   } catch (error) {
@@ -104,22 +108,53 @@ export async function saveImageUpload(
   }
 }
 
-/** Best-effort delete from the spoods bucket when the URL points there. */
-export async function deleteStoredImage(url: string) {
-  if (!isSupabaseConfigured()) return;
+const photoCleanup = createPhotoCleanupService({
+  keyFromReference: reference => storagePathFromReference(
+    reference,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+  ),
+  referenceVariants: key => {
+    const origin = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/\/$/, '');
+    return {
+      exact: [storageReference(key)],
+      prefixes: origin ? [
+        `${origin}/storage/v1/object/public/${SPOODS_BUCKET}/${key}`,
+        `${origin}/storage/v1/object/sign/${SPOODS_BUCKET}/${key}`,
+      ] : [],
+    };
+  },
+  withLocked: (userId, work) => prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+    return work(tx as unknown as PhotoCleanupTransaction);
+  }, { maxWait: 10_000, timeout: 45_000 }),
+  remove: async key => {
+    if (!isSupabaseConfigured()) throw new Error('Photo storage is not configured.');
+    const { error } = await getSupabaseAdmin().storage.from(SPOODS_BUCKET).remove([key]);
+    if (error) throw error;
+  },
+});
 
-  const objectPathValue = storagePathFromPublicUrl(url);
-  if (!objectPathValue) return;
+/** Record cleanup ownership in the same transaction that detaches the photo. */
+export async function detachStoredPhotoRecord(
+  tx: Prisma.TransactionClient,
+  input: { photoId: string; spiderId: string; userId: string },
+) {
+  return detachPhotoRecord(
+    tx as unknown as DetachPhotoTransaction,
+    input,
+    photoCleanup.prepare,
+  );
+}
 
-  try {
-    const supabase = getSupabaseAdmin();
-    const { error } = await supabase.storage
-      .from(SPOODS_BUCKET)
-      .remove([objectPathValue]);
-    if (error) {
-      console.warn("[upload] supabase delete failed", error.message);
-    }
-  } catch (error) {
-    console.warn("[upload] supabase delete threw", error);
-  }
+/** Delete only a settled, keeper-owned object that has no remaining relation.
+ * Provider uncertainty leaves the OwnedUpload row as a durable retry record. */
+export async function cleanupDetachedPhoto(url: string, userId: string): Promise<PhotoCleanupResult> {
+  return photoCleanup.cleanup(url, userId);
+}
+
+/** Strict cleanup of this request's settled, unattached remote object. Failure
+ * retains the durable ledger for operator cleanup; never infer settlement. */
+export async function cleanupUnattachedUpload(url:string,userId:string):Promise<void> {
+  const result = await cleanupDetachedPhoto(url, userId);
+  if (result === 'pending') console.warn('[upload] Unattached object remains in cleanup ledger.');
 }

@@ -1,11 +1,14 @@
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 import {
   deriveCareStatus,
   daysSince,
-  isSuccessfulFeeding,
+  isMistingDue,
   resolveSpiderStatus,
   type CareInputs,
 } from "@/lib/care";
+import { resolveDisplayTimeZone } from "@/lib/utils";
+import { SUCCESSFUL_FEEDING_OUTCOMES, observationLabel } from "@/lib/constants";
 import type { CareStatus } from "@/lib/constants";
 import type {
   BodyConditionEvent,
@@ -39,7 +42,9 @@ export type SpiderWithRelations = Spider & {
 
 export type SpiderCareView = {
   spider: SpiderWithRelations;
+  timeZone: string;
   careStatus: CareStatus;
+  mistDue: boolean;
   lastFedAt: Date | null;
   lastSuccessfulFedAt: Date | null;
   lastMistedAt: Date | null;
@@ -55,43 +60,23 @@ function latestDate(events: { date: Date }[]): Date | null {
   return events[0]?.date ?? null;
 }
 
-/** Persist expired Post-molt recovery → Normal so the DB matches what we show. */
-async function persistResolvedStatuses(
-  spiders: Array<{ id: string; status: string; molts: { moltDate: Date }[] }>,
-) {
-  const stale = spiders.flatMap((spider) => {
-    const lastMoltAt = spider.molts[0]?.moltDate ?? null;
-    const next = resolveSpiderStatus(spider.status, lastMoltAt);
-    if (next === spider.status) return [];
-    spider.status = next;
-    return [{ id: spider.id, status: next }];
-  });
-  if (stale.length === 0) return;
-  await Promise.all(
-    stale.map((row) =>
-      prisma.spider.update({
-        where: { id: row.id },
-        data: { status: row.status },
-      }),
-    ),
-  );
-}
-
 export function buildCareView(
   spider: SpiderWithRelations,
   defaults: Pick<User, "feedDefaultDays" | "mistDefaultDays">,
+  lastSuccessfulFedAt: Date | null = null,
+  timeZone = "UTC",
+  lastSuccessfulMoltAt: Date | null = null,
 ): SpiderCareView {
   const lastFedAt = latestDate(spider.feedings);
-  const successful = spider.feedings.find((f) => isSuccessfulFeeding(f.outcome));
-  const lastSuccessfulFedAt = successful?.date ?? null;
   const lastMistedAt = latestDate(spider.mistings);
-  const lastMoltAt = spider.molts[0]?.moltDate ?? null;
-  const status = resolveSpiderStatus(spider.status, lastMoltAt);
+  const lastMoltAt = lastSuccessfulMoltAt;
+  const status = resolveSpiderStatus(spider.status, lastMoltAt, new Date(), timeZone);
   const viewSpider =
     status === spider.status ? spider : { ...spider, status };
 
   const inputs: CareInputs = {
     status,
+    timeZone,
     lastFedAt,
     lastSuccessfulFedAt,
     lastMistedAt,
@@ -102,15 +87,17 @@ export function buildCareView(
 
   return {
     spider: viewSpider,
+    timeZone,
     careStatus: deriveCareStatus(inputs),
+    mistDue: isMistingDue(inputs),
     lastFedAt,
     lastSuccessfulFedAt,
     lastMistedAt,
     lastMoltAt,
-    daysSinceFeed: daysSince(lastFedAt),
-    daysSinceSuccessfulFeed: daysSince(lastSuccessfulFedAt),
-    daysSinceMist: daysSince(lastMistedAt),
-    daysSinceMolt: daysSince(lastMoltAt),
+    daysSinceFeed: daysSince(lastFedAt, new Date(), timeZone),
+    daysSinceSuccessfulFeed: daysSince(lastSuccessfulFedAt, new Date(), timeZone),
+    daysSinceMist: daysSince(lastMistedAt, new Date(), timeZone),
+    daysSinceMolt: daysSince(lastMoltAt, new Date(), timeZone),
     latestBodyCondition: spider.bodyConditions[0]?.condition ?? null,
   };
 }
@@ -125,33 +112,30 @@ const spiderInclude = {
   photos: { orderBy: { takenAt: "desc" as const }, take: 20 },
 };
 
-export async function getUserDefaults(userId: string) {
+/** Share settings only within a render request; never cache across keepers or mutations. */
+export const getUserDefaults = cache(async (userId: string) => {
   return prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: {
       feedDefaultDays: true,
       mistDefaultDays: true,
-      cleanDefaultDays: true,
-      dateFormat: true,
       timezone: true,
-      measurement: true,
       theme: true,
       name: true,
       email: true,
     },
   });
-}
+});
 
 export async function listSpidersForUser(userId: string, query?: {
   q?: string;
   status?: string;
   sex?: string;
 }) {
-  const spiders = await prisma.spider.findMany({
+  const [spiders, defaults] = await Promise.all([prisma.spider.findMany({
     where: {
       userId,
       ...(query?.sex ? { sex: query.sex } : {}),
-      ...(query?.status ? { status: query.status } : {}),
       ...(query?.q
         ? {
             OR: [
@@ -164,12 +148,17 @@ export async function listSpidersForUser(userId: string, query?: {
     },
     include: spiderInclude,
     orderBy: { name: "asc" },
-  });
-
-  const defaults = await getUserDefaults(userId);
-  await persistResolvedStatuses(spiders);
+  }), getUserDefaults(userId)]);
+  const zone = await resolveDisplayTimeZone(defaults.timezone);
+  const latestBySpider = await latestSuccessfulCareForSpiders(
+    spiders.map((spider) => spider.id),
+  );
   return spiders
-    .map((s) => buildCareView(s, defaults))
+    .map((spider) => {
+      const latest = latestBySpider.get(spider.id) ?? { fed: null, molt: null };
+      return buildCareView(spider, defaults, latest.fed, zone, latest.molt);
+    })
+    .filter((view) => !query?.status || view.spider.status === query.status)
     .sort((a, b) => {
       const am = a.spider.memorializedAt ? 1 : 0;
       const bm = b.spider.memorializedAt ? 1 : 0;
@@ -192,9 +181,9 @@ export async function getSpiderCare(userId: string, spiderId: string) {
     },
   });
   if (!spider) return null;
-  await persistResolvedStatuses([spider]);
   const defaults = await getUserDefaults(userId);
-  return buildCareView(spider as SpiderWithRelations, defaults);
+  const latest = await latestSuccessfulCare(spider.id);
+  return buildCareView(spider as SpiderWithRelations, defaults, latest.fed, await resolveDisplayTimeZone(defaults.timezone), latest.molt);
 }
 
 export type ActivityType =
@@ -216,6 +205,7 @@ export type ActivityItem = {
   /** Serializable fields for the edit form (dates as yyyy-MM-dd). */
   fields: {
     date: string;
+    timeZone?: string;
     preyType?: string;
     quantity?: number;
     preySize?: string | null;
@@ -245,12 +235,10 @@ export async function getRecentActivity(
   userId: string,
   filters?: { spiderId?: string; type?: string },
 ): Promise<ActivityItem[]> {
-  const defaults = await getUserDefaults(userId);
   const { toDateTimeLocalInputValue, resolveDisplayTimeZone } = await import(
     "@/lib/utils"
   );
-  const displayZone = await resolveDisplayTimeZone(defaults.timezone);
-  const spiders = await prisma.spider.findMany({
+  const [spiders, defaults] = await Promise.all([prisma.spider.findMany({
     where: { userId, ...(filters?.spiderId ? { id: filters.spiderId } : {}) },
     select: {
       id: true,
@@ -264,7 +252,8 @@ export async function getRecentActivity(
         include: { maintenance: { orderBy: { date: "desc" }, take: 30 } },
       },
     },
-  });
+  }), getUserDefaults(userId)]);
+  const displayZone = await resolveDisplayTimeZone(defaults.timezone);
 
   const items: ActivityItem[] = [];
 
@@ -279,6 +268,7 @@ export async function getRecentActivity(
         title: `Fed ${spider.name}`,
         detail: `${f.quantity}× ${f.preyType} — ${f.outcome}`,
         fields: {
+          timeZone: displayZone,
           date: toDateTimeLocalInputValue(f.date, displayZone),
           preyType: f.preyType,
           quantity: f.quantity,
@@ -305,6 +295,7 @@ export async function getRecentActivity(
         title: `Hydrated ${spider.name}`,
         detail: methods.join(" · "),
         fields: {
+          timeZone: displayZone,
           date: toDateTimeLocalInputValue(m.date, displayZone),
           methods,
           notes: m.notes,
@@ -321,6 +312,7 @@ export async function getRecentActivity(
         title: `${spider.name} molted`,
         detail: [molt.previousInstar, molt.newInstar].filter(Boolean).join(" → "),
         fields: {
+          timeZone: displayZone,
           date: toDateTimeLocalInputValue(molt.moltDate, displayZone),
           previousInstar: molt.previousInstar,
           newInstar: molt.newInstar,
@@ -337,9 +329,10 @@ export async function getRecentActivity(
         spiderId: spider.id,
         spiderName: spider.name,
         date: o.date,
-        title: `${spider.name}: ${o.kind}`,
+        title: o.kind === "play and interaction" ? `Play & interaction with ${spider.name}` : `${spider.name}: ${observationLabel(o.kind)}`,
         detail: o.notes,
         fields: {
+          timeZone: displayZone,
           date: toDateTimeLocalInputValue(o.date, displayZone),
           kind: o.kind,
           notes: o.notes,
@@ -356,6 +349,7 @@ export async function getRecentActivity(
         title: `${spider.name} body condition`,
         detail: b.condition,
         fields: {
+          timeZone: displayZone,
           date: toDateTimeLocalInputValue(b.date, displayZone),
           condition: b.condition,
           notes: b.notes,
@@ -373,6 +367,7 @@ export async function getRecentActivity(
           title: `${spider.name} enclosure ${maint.kind}`,
           detail: maint.notes,
           fields: {
+          timeZone: displayZone,
             date: toDateTimeLocalInputValue(maint.date, displayZone),
             kind: maint.kind,
             notes: maint.notes,
@@ -388,4 +383,79 @@ export async function getRecentActivity(
   }
 
   return filtered.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 100);
+}
+
+async function latestSuccessfulCare(spiderId: string) {
+ const [feeding, molt] = await Promise.all([
+ prisma.feedingEvent.findFirst({ where: { spiderId, outcome: { in: [...SUCCESSFUL_FEEDING_OUTCOMES] } }, orderBy: { date: "desc" }, select: { date: true } }),
+ prisma.moltEvent.findFirst({ where: { spiderId, successful: true }, orderBy: { moltDate: "desc" }, select: { moltDate: true } }),
+ ]);
+ return { fed: feeding?.date ?? null, molt: molt?.moltDate ?? null };
+}
+
+async function latestSuccessfulCareForSpiders(spiderIds: string[]) {
+  const result = new Map<
+    string,
+    { fed: Date | null; molt: Date | null }
+  >();
+  if (spiderIds.length === 0) return result;
+  const [feedings, molts] = await Promise.all([
+    prisma.feedingEvent.groupBy({
+      by: ["spiderId"],
+      where: {
+        spiderId: { in: spiderIds },
+        outcome: { in: [...SUCCESSFUL_FEEDING_OUTCOMES] },
+      },
+      _max: { date: true },
+    }),
+    prisma.moltEvent.groupBy({
+      by: ["spiderId"],
+      where: { spiderId: { in: spiderIds }, successful: true },
+      _max: { moltDate: true },
+    }),
+  ]);
+  for (const spiderId of spiderIds) {
+    result.set(spiderId, { fed: null, molt: null });
+  }
+  for (const feeding of feedings) {
+    result.get(feeding.spiderId)!.fed = feeding._max.date;
+  }
+  for (const molt of molts) {
+    result.get(molt.spiderId)!.molt = molt._max.moltDate;
+  }
+  return result;
+}
+
+/** Story pages merge independently bounded streams with one stable chronological cursor. */
+export async function getSpiderStory(userId: string, spiderId: string, cursor?: string) {
+ const { decodeHistoryCursor, pageHistory } = await import('./history-page');
+ const after = decodeHistoryCursor(cursor);
+ const stream = (field: 'date' | 'moltDate' | 'takenAt') => ({
+  take: 51,
+  orderBy: [{[field]:'desc' as const},{id:'desc' as const}],
+  ...(after ? {where:{OR:[{[field]:{lt:after.date}},{[field]:after.date,id:{lt:after.id}}]}} : {}),
+ });
+ const spider = await prisma.spider.findFirst({where:{id:spiderId,userId},include:{
+  feedings:stream('date'),mistings:stream('date'),molts:stream('moltDate'),observations:stream('date'),bodyConditions:stream('date'),photos:stream('takenAt'),enclosure:{include:{maintenance:stream('date')}},
+ }});
+ if (!spider) return null;
+ const acquisition = spider.acquisitionDate
+  ? {id:`acquired:${spider.id}`,date:spider.acquisitionDate}
+  : null;
+ const candidates = [...spider.feedings,...spider.mistings,...spider.observations,...spider.bodyConditions,...(spider.enclosure?.maintenance??[]),...spider.molts.map(m=>({...m,date:m.moltDate})),...spider.photos.map(p=>({...p,date:p.takenAt})),...(acquisition?[acquisition]:[])];
+ const page = pageHistory(candidates,cursor);
+ const ids=new Set(page.items.map(e=>e.id));
+ spider.feedings=spider.feedings.filter(e=>ids.has(e.id));spider.mistings=spider.mistings.filter(e=>ids.has(e.id));spider.observations=spider.observations.filter(e=>ids.has(e.id));spider.bodyConditions=spider.bodyConditions.filter(e=>ids.has(e.id));spider.photos=spider.photos.filter(e=>ids.has(e.id));spider.molts=spider.molts.filter(e=>ids.has(e.id));
+ if(spider.enclosure)spider.enclosure.maintenance=spider.enclosure.maintenance.filter(e=>ids.has(e.id));
+ const defaults=await getUserDefaults(userId);const zone=await resolveDisplayTimeZone(defaults.timezone);
+ const { daysBetween }=await import('./utils');
+ // Derive intervals from full chronological history, including predecessors outside this page.
+ spider.molts=await Promise.all(spider.molts.map(async molt=>{
+  const [prior,meal]=await Promise.all([
+   prisma.moltEvent.findFirst({where:{spiderId,moltDate:{lt:molt.moltDate},successful:true},orderBy:{moltDate:'desc'},select:{moltDate:true}}),
+   prisma.feedingEvent.findFirst({where:{spiderId,date:{lte:molt.moltDate},outcome:{in:[...SUCCESSFUL_FEEDING_OUTCOMES]}},orderBy:{date:'desc'},select:{date:true}}),
+  ]);
+  return {...molt,daysSincePriorMolt:prior?daysBetween(prior.moltDate,molt.moltDate,zone):null,fastingDaysBefore:meal?daysBetween(meal.date,molt.moltDate,zone):null};
+ }));
+ return {spider,nextCursor:page.nextCursor,includeAcquisition:Boolean(acquisition&&ids.has(acquisition.id))};
 }

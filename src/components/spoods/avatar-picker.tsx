@@ -6,33 +6,32 @@ import {
   DEFAULT_SPOOOD_AVATARS,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { PHOTO_HELP } from "@/lib/prepare-photo";
+import { PreparedPhotoInput } from "./prepared-photo-input";
 
-export function SpoodAvatarPicker() {
+export function SpoodAvatarPicker({ onSelectionChange }: { onSelectionChange?: () => void }) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<string>(DEFAULT_SPOOOD_AVATAR_SRC);
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [inputKey, setInputKey] = useState(0);
 
   function pickDefault(src: string) {
+    onSelectionChange?.();
+    setInputKey(key => key + 1);
     setSelected(src);
-    setUploadPreview(null);
     setFileName(null);
     if (fileRef.current) fileRef.current.value = "";
   }
 
   function onFileChange(file: File | null) {
+    onSelectionChange?.();
+
     if (!file) {
-      setUploadPreview(null);
-      setFileName(null);
+        setFileName(null);
       setSelected(DEFAULT_SPOOOD_AVATAR_SRC);
       return;
     }
-    const url = URL.createObjectURL(file);
-    setUploadPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return url;
-    });
     setFileName(file.name);
     setSelected("upload");
   }
@@ -42,7 +41,7 @@ export function SpoodAvatarPicker() {
       <div>
         <p className="text-sm font-semibold text-[var(--midnight)]">Photo</p>
         <p className="mt-0.5 text-xs text-[var(--midnight)]/55">
-          Pick a default portrait or upload your own (up to 5MB).
+          Pick a default portrait or upload your own. {PHOTO_HELP}
         </p>
       </div>
 
@@ -50,7 +49,7 @@ export function SpoodAvatarPicker() {
 
       <div className="grid grid-cols-5 gap-2">
         {DEFAULT_SPOOOD_AVATARS.map((avatar) => {
-          const active = selected === avatar.src && !uploadPreview;
+          const active = selected === avatar.src;
           return (
             <button
               key={avatar.id}
@@ -101,27 +100,17 @@ export function SpoodAvatarPicker() {
         >
           Upload a photo
         </label>
-        <input
-          ref={fileRef}
-          id={inputId}
-          name="photo"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="sr-only"
-          onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-        />
+        <PreparedPhotoInput key={inputKey} inputRef={fileRef} id={inputId}
+          className="sr-only" onReady={onFileChange} />
         {fileName ? (
           <span className="truncate text-xs text-[var(--midnight)]/60">{fileName}</span>
         ) : (
-          <span className="text-xs text-[var(--midnight)]/45">JPG, PNG, WebP, or GIF</span>
+          <span className="text-xs text-[var(--midnight)]/45">JPEG, PNG, WebP, still GIF, or HEIC/HEIF</span>
         )}
       </div>
 
-      {uploadPreview ? (
+      {fileName ? (
         <div className="flex items-center gap-3">
-          <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-[var(--plum)]/20">
-            <img src={uploadPreview} alt="Upload preview" className="h-full w-full object-cover" />
-          </div>
           <button
             type="button"
             className="text-sm font-semibold text-[var(--plum)] hover:underline"

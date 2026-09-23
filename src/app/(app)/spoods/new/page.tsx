@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { AddSpoodForm } from "@/components/spoods/add-spood-form";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FREE_SPIDER_LIMIT, PLAN_PRICES } from "@/lib/billing";
 import { getBillingProfile } from "@/lib/stripe";
@@ -37,16 +37,8 @@ export default async function AddSpoodPage() {
             {PLAN_PRICES.yearly.amountLabel}/year.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/upgrade" className="flex-1">
-              <Button type="button" className="w-full" size="lg">
-                See Pro plans
-              </Button>
-            </Link>
-            <Link href="/spoods" className="flex-1">
-              <Button type="button" variant="soft" className="w-full" size="lg">
-                Back to My Spoods
-              </Button>
-            </Link>
+            <Link href="/upgrade" className={buttonVariants({ size: "lg", className: "flex-1 w-full" })}>See Pro plans</Link>
+            <Link href="/spoods" className={buttonVariants({ variant: "soft", size: "lg", className: "flex-1 w-full" })}>Back to My Spoods</Link>
           </div>
         </Card>
       )}

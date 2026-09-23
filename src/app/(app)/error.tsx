@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 export default function AppError({
   error,
@@ -31,11 +31,7 @@ export default function AppError({
         <Button type="button" onClick={reset}>
           Try again
         </Button>
-        <Link href="/home">
-          <Button type="button" variant="secondary">
-            Back home
-          </Button>
-        </Link>
+        <Link href="/home" className={buttonVariants({ variant: "secondary" })}>Back home</Link>
       </div>
     </div>
   );

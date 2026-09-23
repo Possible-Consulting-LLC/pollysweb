@@ -1,15 +1,16 @@
-import Image from "next/image";
+import { observationLabel } from "@/lib/constants";
+import { SpoodImage } from "@/components/spoods/spood-image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActivityEditorRow } from "@/components/activity/activity-editor";
 import { PhotoOpenButton } from "@/components/spoods/photo-gallery";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { formatDateTimeInZone, resolveDisplayTimeZone, toDateTimeLocalInputValue } from "@/lib/utils";
-import { getSpiderCare, getUserDefaults } from "@/lib/spiders";
+import { formatShortDate, formatDateTimeInZone, resolveDisplayTimeZone, toDateTimeLocalInputValue } from "@/lib/utils";
+import { getSpiderStory, getUserDefaults } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
-import { daysBetweenMolts } from "@/lib/care";
 import { parseHydrationMethods } from "@/lib/utils";
+import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
 type StoryEvent = {
   id: string;
@@ -23,6 +24,7 @@ type StoryEvent = {
   editable?: boolean;
   fields?: {
     date: string;
+    timeZone?: string;
     preyType?: string;
     quantity?: number;
     preySize?: string | null;
@@ -41,22 +43,27 @@ type StoryEvent = {
 
 export default async function StoryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ before?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const [view, defaults] = await Promise.all([
-    getSpiderCare(user.id!, id),
+  const { before } = await searchParams;
+  const [view, defaults, writeState] = await Promise.all([
+    getSpiderStory(user.id!, id, before),
     getUserDefaults(user.id!),
+    getSpiderWriteState(user.id!),
   ]);
   if (!view) notFound();
   const { spider } = view;
+  const writable = writeState.proAccess || writeState.firstSpiderId === id;
   const zone = await resolveDisplayTimeZone(defaults.timezone);
 
   const events: StoryEvent[] = [];
 
-  if (spider.acquisitionDate) {
+  if (spider.acquisitionDate && view.includeAcquisition) {
     events.push({
       id: "acquired",
       date: spider.acquisitionDate,
@@ -81,6 +88,7 @@ export default async function StoryPage({
       instarLabel: molt.newInstar,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(molt.moltDate, zone),
         previousInstar: molt.previousInstar,
         newInstar: molt.newInstar,
@@ -96,11 +104,12 @@ export default async function StoryPage({
       id: obs.id,
       date: obs.date,
       kind: "observation",
-      title: obs.kind,
+      title: observationLabel(obs.kind),
       detail: obs.notes,
       photo: obs.photoUrl,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(obs.date, zone),
         kind: obs.kind,
         notes: obs.notes,
@@ -118,6 +127,7 @@ export default async function StoryPage({
       photo: feed.photoUrl,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(feed.date, zone),
         preyType: feed.preyType,
         quantity: feed.quantity,
@@ -138,6 +148,7 @@ export default async function StoryPage({
       detail: methods.join(" · ") || mist.notes,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(mist.date, zone),
         methods,
         notes: mist.notes,
@@ -154,6 +165,7 @@ export default async function StoryPage({
       detail: body.notes,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(body.date, zone),
         condition: body.condition,
         notes: body.notes,
@@ -180,6 +192,7 @@ export default async function StoryPage({
         detail: maint.notes,
         editable: true,
         fields: {
+        timeZone: zone,
           date: toDateTimeLocalInputValue(maint.date, zone),
           kind: maint.kind,
           notes: maint.notes,
@@ -198,6 +211,7 @@ export default async function StoryPage({
       photo: photo.url,
       editable: true,
       fields: {
+        timeZone: zone,
         date: toDateTimeLocalInputValue(photo.takenAt, zone),
         caption: photo.caption,
       },
@@ -205,12 +219,6 @@ export default async function StoryPage({
   }
 
   events.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  const moltEvents = events.filter((e) => e.kind === "molt");
-  for (let i = 1; i < moltEvents.length; i++) {
-    const gap = daysBetweenMolts(moltEvents[i - 1].date, moltEvents[i].date);
-    moltEvents[i].moltGap = moltEvents[i].moltGap ?? gap;
-  }
 
   const galleryPhotos = events
     .filter((event) => event.photo)
@@ -235,13 +243,13 @@ export default async function StoryPage({
             A scrapbook of little moments — tap Edit on any entry to fix dates or details.
           </p>
         </div>
-        <Link href={`/spoods/${spider.id}`}>
-          <Button variant="soft" size="sm">
-            Profile
-          </Button>
-        </Link>
+        <Link href={`/spoods/${spider.id}`} className={buttonVariants({ variant: "soft", size: "sm" })}>Profile</Link>
       </div>
 
+      <nav aria-label="Story pages" className="flex gap-4">
+        {before ? <Link href={`/spoods/${spider.id}/story`} className="underline">Newest entries</Link> : null}
+        {view.nextCursor ? <Link href={`/spoods/${spider.id}/story?before=${encodeURIComponent(view.nextCursor)}`} className="underline">Older entries</Link> : null}
+      </nav>
       <div className="relative space-y-0 pl-2">
         <div className="absolute bottom-4 left-[1.65rem] top-4 w-px bg-gradient-to-b from-[var(--gold)] via-[var(--lavender-deep)] to-[var(--plum)]/40" />
 
@@ -278,11 +286,10 @@ export default async function StoryPage({
                         )}
                         className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-[var(--lavender)]"
                       >
-                        <Image
+                        <SpoodImage
                           src={event.photo}
                           alt=""
-                          fill
-                          className="object-cover"
+                          className="h-full w-full object-cover"
                         />
                       </PhotoOpenButton>
                     ) : null}
@@ -295,6 +302,7 @@ export default async function StoryPage({
                       {event.editable && event.fields ? (
                         <ActivityEditorRow
                           compact
+                          readOnly={!writable}
                           item={{
                             id: event.id,
                             type: event.kind as
@@ -329,7 +337,7 @@ export default async function StoryPage({
                             </p>
                           ) : null}
                           <time className="mt-2 block text-xs text-[var(--midnight)]/45">
-                            {formatDateTimeInZone(event.date, zone)}
+                            {event.kind === "acquired" ? formatShortDate(event.date) : formatDateTimeInZone(event.date, zone)}
                           </time>
                         </>
                       )}

@@ -27,10 +27,18 @@ export function toDateInputValue(date: Date | string | null | undefined): string
   if (!date) return "";
   const value = typeof date === "string" ? new Date(date) : date;
   if (Number.isNaN(value.getTime())) return "";
-  const y = value.getFullYear();
-  const m = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
+  const y = value.getUTCFullYear();
+  const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(value.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Today's calendar date on the current device, for client-side date defaults. */
+export function localTodayInputValue(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /** Local wall-clock value for `<input type="datetime-local">` (`yyyy-MM-ddTHH:mm`). */
@@ -59,16 +67,12 @@ export function toDateTimeLocalInputValue(
   return `${y}-${m}-${day}T${h}:${min}`;
 }
 
-/** Parse `yyyy-MM-dd` as local noon to avoid UTC day-shift. */
+/** Calendar dates are stored as UTC midnight. */
 export function parseLocalDateInput(value: string | null | undefined): Date | null {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const fallback = new Date(raw);
-    return Number.isNaN(fallback.getTime()) ? null : fallback;
-  }
-  const parsed = new Date(`${raw}T12:00:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+ const raw = String(value ?? "").trim();
+ if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+ const parsed = new Date(raw + "T00:00:00.000Z");
+ return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === raw ? parsed : null;
 }
 
 export function requireLocalDateInput(
@@ -119,7 +123,11 @@ export function requireZonedDateTimeInput(
   timeZone: string | null | undefined,
   fallback = new Date(),
 ) {
-  return parseZonedDateTimeInput(value, timeZone) ?? fallback;
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  const parsed = parseZonedDateTimeInput(raw, timeZone);
+  if (!parsed) throw new Error("Enter a valid date and time.");
+  return parsed;
 }
 
 /** Read activity when + optional clientTimeZone from a log/edit form. */
@@ -129,8 +137,8 @@ export function requireFormDateTime(
   fallbackTimeZone = "UTC",
 ) {
   const timeZone =
-    String(formData.get("clientTimeZone") || "").trim() ||
     String(formData.get("timeZone") || "").trim() ||
+    String(formData.get("clientTimeZone") || "").trim() ||
     fallbackTimeZone;
   return requireZonedDateTimeInput(
     String(formData.get(fieldName) || ""),
@@ -138,11 +146,25 @@ export function requireFormDateTime(
   );
 }
 
+/** Event history records something that has happened, never a scheduled event. */
+export function requireNonFutureFormDateTime(
+  formData: FormData,
+  fieldName = "date",
+  fallbackTimeZone = "UTC",
+  now = new Date(),
+) {
+  const date = requireFormDateTime(formData, fieldName, fallbackTimeZone);
+  if (date.getTime() > now.getTime()) {
+    throw new Error("Event date and time cannot be in the future.");
+  }
+  return date;
+}
+
 export function formatShortDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
   const value = typeof date === "string" ? new Date(date) : date;
   if (Number.isNaN(value.getTime())) return "—";
-  return value.toLocaleDateString();
+  return value.toLocaleDateString(undefined, { timeZone: "UTC" });
 }
 
 /** Format a stored instant in the user's timezone, with time. */
@@ -200,10 +222,12 @@ export async function resolveDisplayTimeZone(
   return "UTC";
 }
 
-export function daysBetween(from: Date, to: Date = new Date()): number {
-  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.floor((end - start) / (1000 * 60 * 60 * 24));
+export function daysBetween(from: Date, to: Date = new Date(), timeZone = "UTC"): number {
+ const calendarDay = (date: Date) => {
+  const parts = zonedParts(date, normalizeTimeZone(timeZone) || "UTC")!;
+  return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+ };
+ return Math.round((calendarDay(to) - calendarDay(from)) / 86400000);
 }
 
 export function normalizeTimeZone(value: string | null | undefined): string {
@@ -333,7 +357,7 @@ function zonedWallTimeToUtc(
     Number(verified.hour) !== hour ||
     Number(verified.minute) !== minute
   ) {
-    // DST gap/overlap fallback — still return best effort.
+    return null;
   }
   return new Date(utcMs);
 }

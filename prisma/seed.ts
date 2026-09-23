@@ -1,25 +1,19 @@
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { assertDemoSeedTarget } from "../src/lib/seed-guard";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  assertDemoSeedTarget();
   const email = "demo@spoodly.space";
   const passwordHash = await bcrypt.hash("spoodly123", 10);
 
-  await prisma.feedingEvent.deleteMany();
-  await prisma.mistingEvent.deleteMany();
-  await prisma.moltEvent.deleteMany();
-  await prisma.observationEvent.deleteMany();
-  await prisma.bodyConditionEvent.deleteMany();
-  await prisma.enclosureMaintenanceEvent.deleteMany();
-  await prisma.photo.deleteMany();
-  await prisma.reminder.deleteMany();
-  await prisma.enclosure.deleteMany();
-  await prisma.spider.deleteMany();
-  await prisma.user.deleteMany({ where: { email } });
+  await prisma.$transaction(async (tx) => {
+    // User relations cascade, so this removes only the demo keeper's records.
+    await tx.user.deleteMany({ where: { email } });
 
-  const user = await prisma.user.create({
+  const user = await tx.user.create({
     data: {
       email,
       name: "Keeper",
@@ -32,7 +26,7 @@ async function main() {
     },
   });
 
-  const star = await prisma.spider.create({
+  const star = await tx.spider.create({
     data: {
       userId: user.id,
       name: "Star",
@@ -49,7 +43,7 @@ async function main() {
     },
   });
 
-  await prisma.enclosure.create({
+  await tx.enclosure.create({
     data: {
       spiderId: star.id,
       name: "Star's Orbit",
@@ -77,7 +71,7 @@ async function main() {
     },
   });
 
-  await prisma.moltEvent.createMany({
+  await tx.moltEvent.createMany({
     data: [
       {
         spiderId: star.id,
@@ -117,11 +111,11 @@ async function main() {
     ],
   });
 
-  await prisma.moltEvent.deleteMany({
+  await tx.moltEvent.deleteMany({
     where: { spiderId: star.id, moltDate: new Date("2026-08-30") },
   });
 
-  await prisma.moltEvent.create({
+  await tx.moltEvent.create({
     data: {
       spiderId: star.id,
       moltDate: new Date("2026-05-10"),
@@ -135,7 +129,7 @@ async function main() {
     },
   });
 
-  await prisma.feedingEvent.createMany({
+  await tx.feedingEvent.createMany({
     data: [
       {
         spiderId: star.id,
@@ -172,7 +166,7 @@ async function main() {
     ],
   });
 
-  await prisma.mistingEvent.createMany({
+  await tx.mistingEvent.createMany({
     data: [
       {
         spiderId: star.id,
@@ -196,7 +190,7 @@ async function main() {
     ],
   });
 
-  await prisma.bodyConditionEvent.createMany({
+  await tx.bodyConditionEvent.createMany({
     data: [
       {
         spiderId: star.id,
@@ -218,7 +212,7 @@ async function main() {
     ],
   });
 
-  await prisma.observationEvent.createMany({
+  await tx.observationEvent.createMany({
     data: [
       {
         spiderId: star.id,
@@ -247,7 +241,7 @@ async function main() {
     ],
   });
 
-  await prisma.photo.createMany({
+  await tx.photo.createMany({
     data: [
       {
         spiderId: star.id,
@@ -273,7 +267,7 @@ async function main() {
     ],
   });
 
-  await prisma.reminder.createMany({
+  await tx.reminder.createMany({
     data: [
       { userId: user.id, spiderId: star.id, kind: "feeding", intervalDays: 3, enabled: true },
       { userId: user.id, spiderId: star.id, kind: "misting", intervalDays: 1, enabled: true },
@@ -281,7 +275,7 @@ async function main() {
     ],
   });
 
-  const clementine = await prisma.spider.create({
+  const clementine = await tx.spider.create({
     data: {
       userId: user.id,
       name: "Clementine",
@@ -297,7 +291,7 @@ async function main() {
     },
   });
 
-  await prisma.feedingEvent.create({
+  await tx.feedingEvent.create({
     data: {
       spiderId: clementine.id,
       date: new Date("2026-08-30"),
@@ -306,7 +300,7 @@ async function main() {
       outcome: "Ate normally",
     },
   });
-  await prisma.mistingEvent.create({
+  await tx.mistingEvent.create({
     data: {
       spiderId: clementine.id,
       date: new Date("2026-09-05"),
@@ -315,7 +309,7 @@ async function main() {
     },
   });
 
-  const mochi = await prisma.spider.create({
+  const mochi = await tx.spider.create({
     data: {
       userId: user.id,
       name: "Mochi",
@@ -328,7 +322,7 @@ async function main() {
       profilePhoto: "/spoods/defaults/mochi.svg",
     },
   });
-  await prisma.feedingEvent.create({
+  await tx.feedingEvent.create({
     data: {
       spiderId: mochi.id,
       date: new Date("2026-09-04"),
@@ -337,7 +331,7 @@ async function main() {
       outcome: "Ate normally",
     },
   });
-  await prisma.mistingEvent.create({
+  await tx.mistingEvent.create({
     data: {
       spiderId: mochi.id,
       date: new Date("2026-09-03"),
@@ -346,7 +340,7 @@ async function main() {
     },
   });
 
-  const wednesday = await prisma.spider.create({
+  const wednesday = await tx.spider.create({
     data: {
       userId: user.id,
       name: "Wednesday",
@@ -360,7 +354,7 @@ async function main() {
       notes: "Dark morph vibes. Currently fasting in a sealed hammock.",
     },
   });
-  await prisma.feedingEvent.create({
+  await tx.feedingEvent.create({
     data: {
       spiderId: wednesday.id,
       date: new Date("2026-08-18"),
@@ -369,7 +363,7 @@ async function main() {
       outcome: "Refused prey",
     },
   });
-  await prisma.mistingEvent.create({
+  await tx.mistingEvent.create({
     data: {
       spiderId: wednesday.id,
       date: new Date("2026-09-04"),
@@ -380,6 +374,7 @@ async function main() {
 
   console.log("Seeded demo keeper:", email, "/ password: spoodly123");
   console.log("Spiders:", star.name, clementine.name, mochi.name, wednesday.name);
+  });
 }
 
 main()

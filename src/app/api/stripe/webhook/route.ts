@@ -1,30 +1,17 @@
+import { guardServiceMaintenance } from '@/lib/admin/maintenance-access';
+import { MaintenanceError, maintenanceResponse } from '@/lib/admin/maintenance-policy';
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { prisma } from "@/lib/db";
-import { getStripe, syncSubscriptionToUser } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
+import { reconcileStripeCustomer } from "@/lib/billing-service";
+import { isStaging } from "@/lib/staging-guard";
 
 export const runtime = "nodejs";
-
-async function userIdFromSubscription(subscription: Stripe.Subscription) {
-  const metaUserId = subscription.metadata?.userId;
-  if (metaUserId) return metaUserId;
-
-  const customerId =
-    typeof subscription.customer === "string"
-      ? subscription.customer
-      : subscription.customer.id;
-
-  const user = await prisma.user.findFirst({
-    where: { stripeCustomerId: customerId },
-    select: { id: true },
-  });
-  return user?.id ?? null;
-}
 
 export async function POST(request: Request) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!secret || !key) {
+  if (isStaging() || !secret || !key) {
     return NextResponse.json(
       { error: "Stripe webhook is not configured." },
       { status: 503 },
@@ -47,38 +34,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
   }
 
+  try { await guardServiceMaintenance(); } catch { return maintenanceResponse(); }
   try {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        const userId =
-          session.client_reference_id ||
-          session.metadata?.userId ||
-          null;
-        const subscriptionId =
-          typeof session.subscription === "string"
-            ? session.subscription
-            : session.subscription?.id;
-        if (userId && subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          await syncSubscriptionToUser(userId, subscription);
-        }
+        const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+        if (session.mode === "subscription" && customerId) await reconcileStripeCustomer(customerId);
         break;
       }
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        const userId = await userIdFromSubscription(subscription);
-        if (userId) {
-          await syncSubscriptionToUser(userId, subscription);
-        }
+        const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+        await reconcileStripeCustomer(customerId);
         break;
       }
       default:
         break;
     }
   } catch (error) {
+    if (error instanceof MaintenanceError) return maintenanceResponse();
     console.error("[stripe webhook] handler failed", error);
     return NextResponse.json({ error: "Webhook handler failed." }, { status: 500 });
   }

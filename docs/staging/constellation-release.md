@@ -1,0 +1,7 @@
+# Care Constellation staging release — 2026-09-16
+
+- Target: Supabase project `nfdecdylxcmuypxodppe` and Vercel project `prj_WrjgdWSnmp1RV5C0qz9vPckFj2pO` (`spoodly-space-staging`). The guarded migration entry point verifies the local staging configuration and refuses other targets.
+- Prisma status showed only `20260916120000_care_days` pending. It was applied with `migrate deploy`; a subsequent status check reported the schema up to date. No seed or reset ran.
+- Staging preview deployment `dpl_4oqSiRNyyzCk3zFyg6hJrDkBBQq4` and stable staging deployment `dpl_GoWGkdVeiXpuL71DkqnfW6TwttAk` both built successfully. The stable staging alias points to the latter. No deployment or commit to the live project or main branch occurred.
+- Validation: 129 unit tests passed; lint, TypeScript, diff check, and local webpack production build passed. The stable staging health endpoint returned `ok: true`. In the signed-in staging browser, Home showed the new Constellation card; `/constellation` rendered the checklist and reward gallery; the profile showed Play choices and a current-time maximum on activity date fields. The review submission itself was left for the keeper to try, so no artificial streak day was added.
+- Future-dated activity timestamps are rejected server-side for logging and edits, including the optional Play log and photos. Date pickers cap values at the current time in their selected timezone.

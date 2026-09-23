@@ -3,6 +3,7 @@ export {
   quickFeed,
   quickMist,
   quickObservation,
+  quickInteraction,
   logBodyCondition,
   logMolt,
   updatePremoltStatus,

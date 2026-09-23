@@ -1,7 +1,10 @@
 "use client";
 
+import { MutationContextInput } from '@/components/mutation-context';
 import { useState } from "react";
 import { updateSpiderAbout } from "@/app/actions/about";
+import { SpeciesFields } from "@/components/spoods/species-fields";
+import { LifeStageField } from "@/components/spoods/life-stage-field";
 import { useActionFeedback } from "@/components/spoods/profile-forms";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -89,7 +92,7 @@ export function AboutForm({
           {about.sex || "Unknown"}
         </p>
         <p>
-          <span className="text-[var(--midnight)]/55">Instar: </span>
+          <span className="text-[var(--midnight)]/55">Life Stage: </span>
           {about.instar || "Unknown"}
         </p>
         <p>
@@ -137,7 +140,7 @@ export function AboutForm({
           return result;
         });
       }}
-    >
+    ><MutationContextInput />
       <Field label="Name" htmlFor="about-name">
         <Input
           id="about-name"
@@ -146,24 +149,7 @@ export function AboutForm({
           defaultValue={about.name}
         />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Common name" htmlFor="about-common">
-          <Input
-            id="about-common"
-            name="commonName"
-            defaultValue={about.commonName ?? ""}
-            placeholder="Regal Jumping Spider"
-          />
-        </Field>
-        <Field label="Species" htmlFor="about-species">
-          <Input
-            id="about-species"
-            name="species"
-            defaultValue={about.species ?? ""}
-            placeholder="Phidippus regius"
-          />
-        </Field>
-      </div>
+      <SpeciesFields commonName={about.commonName ?? ""} species={about.species ?? ""} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Sex" htmlFor="about-sex">
           <Select id="about-sex" name="sex" defaultValue={about.sex || "Unknown"}>
@@ -174,14 +160,7 @@ export function AboutForm({
             ))}
           </Select>
         </Field>
-        <Field label="Instar" htmlFor="about-instar">
-          <Input
-            id="about-instar"
-            name="instar"
-            defaultValue={about.instar ?? ""}
-            placeholder="i6"
-          />
-        </Field>
+        <LifeStageField defaultValue={about.instar ?? ""} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Hatch date" htmlFor="about-hatch">

@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assertStagingEnvironment } from "./staging-guard";
+import { SPOODS_BUCKET } from "./photo-media";
 
 let client: SupabaseClient | null = null;
 
@@ -6,37 +8,25 @@ function readUrl() {
   return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 }
 
-/** Accept Supabase API keys only — reject S3 access-key/secret mistakes. */
-function isUsableSupabaseKey(key: string) {
+/** Private Storage operations require the service-role API key. */
+function isServiceRoleKey(key: string) {
   const trimmed = key.trim();
   if (!trimmed) return false;
-  // Legacy JWT anon / service_role keys
-  if (trimmed.startsWith("eyJ")) return true;
-  // Newer Supabase key formats
-  if (trimmed.startsWith("sb_publishable_") || trimmed.startsWith("sb_secret_")) {
-    return true;
+  if (trimmed.startsWith("sb_secret_")) return true;
+  if (trimmed.startsWith("eyJ")) {
+    try {
+      const payload = JSON.parse(Buffer.from(trimmed.split(".")[1]!, "base64url").toString("utf8")) as { role?: string };
+      return payload.role === "service_role";
+    } catch {
+      return false;
+    }
   }
   return false;
 }
 
 function readKey() {
-  const candidates = [
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    process.env.SUPABASE_ANON_KEY,
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate && isUsableSupabaseKey(candidate)) {
-      return candidate.trim();
-    }
-    if (candidate && !isUsableSupabaseKey(candidate)) {
-      console.warn(
-        "[supabase] Ignoring invalid key (looks like an S3 secret or other non-API key). Use the anon JWT from Project Settings → API (starts with eyJ…).",
-      );
-    }
-  }
-  return "";
+  const candidate = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+  return isServiceRoleKey(candidate) ? candidate : "";
 }
 
 export function getSupabaseKeyKind() {
@@ -60,12 +50,13 @@ export function getSupabaseKeyKind() {
 }
 
 export function getSupabaseAdmin() {
+  assertStagingEnvironment();
   const url = readUrl();
   const key = readKey();
 
   if (!url || !key) {
     throw new Error(
-      "Missing valid Supabase URL/key. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the anon JWT (eyJ…), not the S3 secret.",
+      "Private photo storage requires SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
 
@@ -78,5 +69,25 @@ export function getSupabaseAdmin() {
 }
 
 export function isSupabaseConfigured() {
+  assertStagingEnvironment();
   return Boolean(readUrl() && readKey());
+}
+
+type BucketLookup = {
+  getBucket(name: string): PromiseLike<{
+    data: { name?: string; public?: boolean } | null;
+    error: unknown;
+  }>;
+};
+
+/** Readiness requires the actual bucket contract, not merely a key-shaped string. */
+export async function privatePhotoStorageReady(
+  storage: BucketLookup = getSupabaseAdmin().storage,
+): Promise<boolean> {
+  try {
+    const { data, error } = await storage.getBucket(SPOODS_BUCKET);
+    return !error && data?.name === SPOODS_BUCKET && data.public === false;
+  } catch {
+    return false;
+  }
 }

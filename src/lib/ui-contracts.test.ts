@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+const root = path.resolve(import.meta.dirname, '..');
+function source(relative: string) { return fs.readFileSync(path.join(root, relative), 'utf8'); }
+function allTsx(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? allTsx(full) : entry.name.endsWith('.tsx') ? [full] : [];
+  });
+}
+
+test('links are not composed around native Button controls', () => {
+  for (const file of allTsx(root)) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /<Link(?:(?!<\/Link>)[\s\S])*?<Button/, file);
+});
+
+test('every quick-log disclosure button exposes its expanded state', () => {
+  const quickLog = source('components/spoods/quick-log.tsx');
+  assert.match(quickLog, /aria-expanded=\{panel === "molt"\}/);
+  assert.match(quickLog, /aria-expanded=\{panel === "note"\}/);
+});
+
+test('read-only profile and filtered collection empty states remain truthful', () => {
+  assert.match(source('app/(app)/spoods/[id]/page.tsx'), /!writable\s*\?\s*"No photos yet\."/);
+  const listing = source('app/(app)/spoods/page.tsx');
+  assert.match(listing, /No matching spoods/);
+  assert.match(listing, /allViews/);
+});

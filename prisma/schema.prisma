@@ -11,8 +11,26 @@ datasource db {
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
+  emailVerified    DateTime?
   name             String?
-  passwordHash     String
+  image            String?
+  passwordHash     String?
+  authVersion      String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  emailChangeVersion String? @db.Uuid
+  /// user | admin | super_admin (database CHECK enforced).
+  role             String   @default("user")
+  suspendedAt      DateTime?
+  deletingAt       DateTime?
+  /// Rotated by a database trigger on authorization changes; null preserves rollout sessions.
+  adminVersion     String?  @db.Uuid
+  /// Optimistic concurrency for administrative account forms; not a session credential.
+  testContextVersion String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountVersion   Int      @default(0)
+  isDemo           Boolean  @default(false)
+  demoPlan         String?
+  demoLabel        String?
+  billingCheckoutIntent BillingCheckoutIntent?
+  protectedOwner   ProtectedOwner?
   dateFormat       String   @default("MMM d, yyyy")
   /// IANA timezone for displaying activity times (e.g. America/Chicago).
   timezone         String   @default("")
@@ -28,11 +46,56 @@ model User {
   stripePriceId    String?
   subscriptionStatus String?
   subscriptionCurrentPeriodEnd DateTime?
+  billingLastCheckedAt DateTime?
+  billingNextCheckAt DateTime?
+  billingCheckFailures Int @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   spiders   Spider[]
   reminders Reminder[]
+  careDays  CareDay[]
+  careCheckins CareCheckin[]
+  celebratedRewards CelebratedReward[]
+  accounts  Account[]
+  facebookDeletionRequests FacebookDeletionRequest[]
+
+  @@index([billingNextCheckAt, id])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model CareDay {
+  id          String   @id @default(cuid())
+  userId      String
+  dayKey      String
+  timeZone    String
+  invalidatedAt DateTime?
+  completedAt DateTime @default(now())
+  snapshot    Json
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey])
+  @@index([userId, completedAt])
 }
 
 model Spider {
@@ -58,6 +121,7 @@ model Spider {
 
   user         User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   enclosure    Enclosure?
+  careCheckins CareCheckin[]
   feedings     FeedingEvent[]
   mistings     MistingEvent[]
   molts        MoltEvent[]
@@ -210,4 +274,171 @@ model Reminder {
   spider Spider? @relation(fields: [spiderId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Shared application abuse counters. Server-only; no client-facing RLS policies.
+model RateLimitBucket {
+  id        String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// One-time, hashed email links. Registration rows exist before the User does.
+model PendingEmailVerification {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  email     String
+  previousEmail String?
+  credentialSnapshot String?
+  name      String?
+  userId    String?
+  /// Safe historical requester reference; intentionally not a cascading relation.
+  requestedByAdminId String?
+  purpose   String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([email, purpose])
+  @@index([expiresAt])
+}
+
+model CareCheckin {
+  userId String
+  spiderId String
+  dayKey String
+  deferred Json @default("{}")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spider Spider @relation(fields: [spiderId], references: [id], onDelete: Cascade)
+  @@id([userId, dayKey, spiderId])
+}
+
+model CelebratedReward {
+  userId String
+  key String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, key])
+}
+
+// Receipts for Facebook deletion requests. Never mark completed merely on receipt.
+model FacebookDeletionRequest {
+  id               String   @id @default(cuid())
+  requestHash      String   @unique
+  subjectHash      String
+  confirmationCode String   @unique
+  userId           String?
+  status           String   @default("pending_review")
+  createdAt        DateTime @default(now())
+  completedAt      DateTime?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([subjectHash])
+  @@index([status, createdAt])
+}
+
+// Server-only singleton. Created only by a verified infrastructure bootstrap.
+model ProtectedOwner {
+  id        Int      @id @default(1)
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// Safe references intentionally have no User relations: history survives deletion.
+model AdminAudit {
+  id String @id @default(cuid())
+  actorId String
+  targetId String?
+  action String
+  reason String
+  changes Json
+  createdAt DateTime @default(now())
+  @@index([createdAt, id])
+  @@index([actorId, createdAt])
+  @@index([targetId, createdAt])
+  @@index([action, createdAt])
+}
+// Only the hash of a random browser proof is retained; never provider tokens.
+model AdminReauth {
+  tokenHash String @id
+  actorId String
+  credentialVersion String
+  provider String?
+  providerAccountId String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  verifiedAt DateTime?
+  @@index([expiresAt])
+  @@index([actorId])
+}
+
+// No foreign key: minimal receipt survives account deletion. Internal manifest cleared at completion.
+model AccountDeletionOperation {
+ id String @id
+ targetId String @unique
+ targetRole String
+ stage String @default("blocked_access")
+ manifest Json
+ customerId String?
+ subscriptionId String?
+ spiderCount Int
+ eventCount Int
+ photoCount Int
+ subscriptionPresent Boolean
+ createdAt DateTime @default(now())
+ completedAt DateTime?
+}
+
+// Records admitted uploads before they can become orphaned by a concurrent deletion.
+model OwnedUpload {
+ key String @id
+ settled Boolean @default(false)
+ userId String
+ createdAt DateTime @default(now())
+ @@index([userId])
+}
+
+// Committed before Stripe I/O. Never discard an ambiguous operation by list absence.
+model BillingCheckoutIntent {
+  id         String   @id
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  interval   String
+  priceId    String
+  appUrl     String
+  customerId String?
+  phase      String   @default("prepare")
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt, id])
+}
+
+// Opaque browser token hashes only. Explicit cleanup preserves safe audit history.
+model AdminTestSession {
+ id String @id
+ tokenHash String @unique
+ actorId String
+ targetId String
+ credentialVersion String
+ createdAt DateTime @default(now())
+ expiresAt DateTime
+ endedAt DateTime?
+ @@index([actorId])
+ @@index([targetId])
+ @@index([expiresAt])
+}
+
+// Server-only durable maintenance singleton. Missing state fails closed.
+model SiteSettings {
+ id Int @id @default(1)
+ version Int @default(0)
+ deadline DateTime?
+ announcementEnabled Boolean @default(false)
+ announcement String @default("")
+ updatedBy String?
+ updatedAt DateTime @updatedAt
 }

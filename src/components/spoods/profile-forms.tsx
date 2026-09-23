@@ -1,5 +1,8 @@
 "use client";
 
+import { MutationContextInput } from '@/components/mutation-context';
+import { celebrateCare } from "@/components/constellation/celebrations";
+
 import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -13,7 +16,15 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { BODY_CONDITIONS, ENCLOSURE_TYPES } from "@/lib/constants";
 import { DateTimeField } from "@/components/ui/datetime-field";
-import { formatShortDate, toDateInputValue } from "@/lib/utils";
+import {
+  formatDateTimeInZone,
+  toDateInputValue,
+} from "@/lib/utils";
+
+import { getPhotoSizeError } from "@/lib/upload-limits";
+
+import { PreparedPhotoInput } from "./prepared-photo-input";
+import { PHOTO_HELP } from "@/lib/prepare-photo";
 
 const bodyIcons: Record<string, string> = {
   "Very thin": "◦",
@@ -66,6 +77,7 @@ export function useActionFeedback() {
       try {
         const result = await action();
         if (result.ok) {
+          celebrateCare(result.message, result.celebrations);
           setMessage(result.message);
           setError(null);
           setPending(false);
@@ -111,7 +123,7 @@ export function BodyConditionForm({
         const fd = new FormData(event.currentTarget);
         run(() => logBodyCondition(spiderId, fd));
       }}
-    >
+    ><MutationContextInput />
       <Field label="Body condition observation" htmlFor="condition">
         <Select id="condition" name="condition" defaultValue={defaultCondition}>
           {BODY_CONDITIONS.map((c) => (
@@ -144,8 +156,10 @@ export function BodyConditionForm({
 export function EnclosureForm({
   spiderId,
   enclosure,
+  timeZone,
 }: {
   spiderId: string;
+  timeZone: string;
   enclosure: {
     name: string | null;
     type: string | null;
@@ -171,8 +185,8 @@ export function EnclosureForm({
               : null}
           </p>
           <p className="mt-1 text-xs">
-            Last cleaned: {formatShortDate(enclosure.lastCleaned)} · Last
-            rehoused: {formatShortDate(enclosure.lastRehoused)}
+            Last cleaned: {formatDateTimeInZone(enclosure.lastCleaned, timeZone)} · Last
+            rehoused: {formatDateTimeInZone(enclosure.lastRehoused, timeZone)}
           </p>
         </div>
       ) : (
@@ -188,7 +202,7 @@ export function EnclosureForm({
           const fd = new FormData(event.currentTarget);
           run(() => upsertEnclosure(spiderId, fd));
         }}
-      >
+      ><MutationContextInput />
         <Field label="Enclosure name" htmlFor="enc-name">
           <Input
             id="enc-name"
@@ -206,7 +220,7 @@ export function EnclosureForm({
             >
               {ENCLOSURE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </option>
               ))}
             </Select>
@@ -259,7 +273,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
         const fd = new FormData(event.currentTarget);
         run(() => logEnclosureMaintenance(spiderId, fd));
       }}
-    >
+    ><MutationContextInput />
       <Field label="Maintenance" htmlFor="kind">
         <Select id="kind" name="kind" defaultValue="cleaning">
           <option value="cleaning">Cleaning</option>
@@ -286,6 +300,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
 
 export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
   const { pending, message, error, run } = useActionFeedback();
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   return (
     <form
@@ -293,20 +308,18 @@ export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
       onSubmit={(event) => {
         event.preventDefault();
         const fd = new FormData(event.currentTarget);
+        const file = fd.get("photo");
+        const sizeError = getPhotoSizeError(file instanceof File ? file : null);
+        setPhotoError(sizeError);
+        if (sizeError) return;
         run(() => addSpiderPhoto(spiderId, fd));
       }}
-    >
+    ><MutationContextInput />
       <Field label="Photo" htmlFor="photo">
-        <Input
-          id="photo"
-          name="photo"
-          type="file"
-          accept="image/*"
-          required
-          className="py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-[var(--lavender)] file:px-3 file:py-1.5 file:text-sm file:font-semibold"
-        />
+        <PreparedPhotoInput id="photo" required onReady={() => setPhotoError(null)}
+          className="py-2 file:mr-3 file:rounded-xl file:border-0 file:bg-[var(--lavender)] file:px-3 file:py-1.5 file:text-sm file:font-semibold" />
       </Field>
-      <p className="text-xs text-[var(--midnight)]/50">JPG, PNG, WebP, or GIF up to 5MB.</p>
+      <p className="text-xs text-[var(--midnight)]/50">{PHOTO_HELP}</p>
       <Field label="Caption (optional)" htmlFor="caption">
         <Input id="caption" name="caption" placeholder="Fresh hammock view" />
       </Field>
@@ -315,7 +328,7 @@ export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
         <input type="checkbox" name="setAsProfile" className="rounded" />
         Set as profile photo
       </label>
-      <Feedback message={message} error={error} />
+      <Feedback message={photoError ? null : message} error={photoError || error} />
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Uploading…" : "Add photo"}
       </Button>

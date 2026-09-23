@@ -1,5 +1,7 @@
 "use client";
+import { useMutationContext } from '@/components/mutation-context';
 
+import { MutationContextInput } from '@/components/mutation-context';
 import { useState } from "react";
 import {
   memorializeSpider,
@@ -8,6 +10,7 @@ import {
 import { useActionFeedback } from "@/components/spoods/profile-forms";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
+import { localTodayInputValue } from "@/lib/utils";
 
 export function MemorialPanel({
   spiderId,
@@ -22,6 +25,7 @@ export function MemorialPanel({
   passedOn: string | null;
   memorialNote: string | null;
 }) {
+ const mutationContext = useMutationContext();
   const { pending, message, error, run } = useActionFeedback();
   const [open, setOpen] = useState(false);
 
@@ -53,7 +57,7 @@ export function MemorialPanel({
           variant="soft"
           className="w-full"
           disabled={pending}
-          onClick={() => run(() => restoreMemorializedSpider(spiderId))}
+          onClick={() => run(() => restoreMemorializedSpider(spiderId, mutationContext))}
         >
           {pending ? "Restoring…" : "Restore to active spoods"}
         </Button>
@@ -105,12 +109,12 @@ export function MemorialPanel({
               return result;
             });
           }}
-        >
+        ><MutationContextInput />
           <Field label="Date passed">
             <Input
               type="date"
               name="passedOn"
-              defaultValue={new Date().toISOString().slice(0, 10)}
+              defaultValue={localTodayInputValue()}
               required
             />
           </Field>

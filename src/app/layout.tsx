@@ -1,9 +1,15 @@
+import { guardMaintenance } from '@/lib/admin/maintenance-access';
+import { TestContextError } from "@/lib/admin/test-session";
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
-import { auth } from "@/lib/auth";
-import { BRAND_LOGO_SRC } from "@/lib/brand";
-import { prisma } from "@/lib/db";
+import { resolveRequestIdentity, anonymousMutationContext } from "@/lib/admin/test-session-store";
+import { MutationContextProvider } from "@/components/mutation-context";
+import { TestSessionBanner } from "@/components/admin/test-session-banner";
+import { SiteStatus } from "@/components/layout/site-status";
+import { hasMaintenanceBypass } from "@/lib/admin/maintenance-access";
+import { getUserDefaults } from "@/lib/spiders";
+import { BRAND_ICON_SRC } from "@/lib/brand";
 import { normalizeTheme } from "@/lib/constants";
 import "./globals.css";
 
@@ -24,8 +30,8 @@ export const metadata: Metadata = {
   description: "Your little corner of the web. Track. Care. Celebrate.",
   applicationName: "Spoodly Space",
   icons: {
-    icon: [{ url: BRAND_LOGO_SRC, type: "image/png" }],
-    apple: [{ url: BRAND_LOGO_SRC }],
+    icon: [{ url: BRAND_ICON_SRC }],
+    apple: [{ url: BRAND_ICON_SRC }],
   },
   appleWebApp: {
     capable: true,
@@ -37,21 +43,17 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   themeColor: "#6b4c7a",
 };
 
 /** Auth + DB theme lookup — keep the whole app request-rendered. */
 export const dynamic = "force-dynamic";
 
-async function resolveTheme() {
+async function resolveTheme(identity: Awaited<ReturnType<typeof resolveRequestIdentity>>) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return "system";
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { theme: true },
-    });
+    if (!identity) return "system";
+    await guardMaintenance('read',identity);
+    const user = await getUserDefaults(identity.effectiveUserId);
     return normalizeTheme(user?.theme);
   } catch (error) {
     // During `next build`, Next may probe routes statically before dynamism
@@ -75,7 +77,16 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const theme = await resolveTheme();
+  let identity = null;
+  let invalidTestContext = false;
+  try { identity = await resolveRequestIdentity(); } catch(error) {
+    identity = null;
+    invalidTestContext = error instanceof TestContextError;
+  }
+  const theme = await resolveTheme(identity);
+  let context="";
+  try { context=identity?.contextVersion ?? (invalidTestContext ? "" : anonymousMutationContext()); } catch { /* Static fallback does not need auth. */ }
+  const maintenanceBypass = identity ? await hasMaintenanceBypass(identity) : false;
 
   return (
     <html
@@ -88,7 +99,11 @@ export default async function RootLayout({
           aria-hidden
           className="cosmic-orbit pointer-events-none fixed inset-0 -z-10"
         />
-        {children}
+        <MutationContextProvider value={context}>
+          <SiteStatus bypass={maintenanceBypass} canHaveBypass={Boolean(identity)} />
+          <TestSessionBanner identity={identity} invalid={invalidTestContext} />
+          {children}
+        </MutationContextProvider>
         <Analytics />
       </body>
     </html>

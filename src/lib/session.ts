@@ -1,44 +1,93 @@
+import { guardMaintenance } from './admin/maintenance-access';
+import { MaintenanceError } from './admin/maintenance-policy';
 import { cache } from "react";
-import { auth, signOut } from "@/lib/auth";
+import { isRedirectError } from 'next/dist/client/components/redirect-error';
+import { signOut } from "@/lib/auth";
+import { getRequestSession } from "@/lib/raw-session";
+import { resolveRequestIdentity } from "@/lib/admin/test-session-store";
+import { TestContextError, type RequestIdentity } from "@/lib/admin/test-session";
+import { mutationIdentity } from "@/lib/mutation-context";
+export { getRequestSession } from "@/lib/raw-session";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
-
 type SessionUser = {
   id?: string | null;
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  emailChangeReauthAt?: number;
+  credentialVersion?: string;
 };
-
 /** Deduped per request so layout + page don't hit auth/DB twice. */
 const loadSessionUser = cache(async (): Promise<{
   user: SessionUser | null;
   stale: boolean;
+  identity: RequestIdentity | null;
 }> => {
-  const session = await auth();
-  const id = session?.user?.id;
-  if (!id) return { user: null, stale: false };
-
+  const admitted = mutationIdentity.getStore();
+  let identity;
+  try {
+    identity = admitted ? admitted.identity : await resolveRequestIdentity();
+  }
+  catch (error) {
+    if (error instanceof MaintenanceError) redirect("/maintenance");
+    if (error instanceof TestContextError)
+      redirect("/testing-ended");
+    throw error;
+  }
+  if (!identity)
+    return {
+      user: null, stale: false, identity: null
+    };
+  await guardMaintenance('read',identity);
   const existing = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true },
+    where: {
+      id: identity.effectiveUserId
+    }, select: {
+      id: true, name: true, email: true, image: true, suspendedAt: true, deletingAt: true
+    }
   });
-
-  if (!existing) return { user: null, stale: true };
-  return { user: session.user, stale: false };
+  if (!existing || existing.suspendedAt || existing.deletingAt) {
+    if (identity.testSessionId)
+      throw new TestContextError();
+    return {
+      user: null, stale: true, identity
+    };
+  }
+  if (identity.testSessionId)
+    return {
+      user: existing, stale: false, identity
+    };
+  const session = await getRequestSession();
+  return {
+    user: session?.user ?? null, stale: false, identity
+  };
 });
-
 /**
+ * Auth.js checks the password fingerprint on every request before returning a user.
  * Resolve the signed-in user. JWTs that no longer match a DB row (reseed /
  * deleted account) are cleared via /api/auth/clear-stale — cookies cannot be
  * modified from a Server Component.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
-  const { user, stale } = await loadSessionUser();
-  if (stale) redirect("/api/auth/clear-stale");
-  return user;
+async function getSessionContext(): Promise<{ user: SessionUser | null; identity: RequestIdentity | null }> {
+  try {
+    await guardMaintenance('read');
+    const { user, stale, identity } = await loadSessionUser();
+    if (stale)
+      redirect("/api/auth/clear-stale");
+    return { user, identity };
+  }
+  catch (error) {
+    if (isRedirectError(error)) throw error;
+    // Admitted form actions need the typed failure from withMutation so edits stay put.
+    if (error instanceof MaintenanceError && mutationIdentity.getStore()) throw error;
+    if (error instanceof TestContextError) redirect("/testing-ended");
+    redirect("/maintenance");
+  }
 }
-
+export async function getSessionUser(): Promise<SessionUser | null> {
+  return (await getSessionContext()).user;
+}
 export async function requireUser() {
   const user = await getSessionUser();
   if (!user?.id) {
@@ -46,13 +95,21 @@ export async function requireUser() {
   }
   return user;
 }
-
+export async function requireUserContext() {
+  const context = await getSessionContext();
+  if (!context.user?.id || !context.identity)
+    redirect("/login");
+  return { user: context.user, identity: context.identity };
+}
 /** For server actions: return null instead of redirecting (redirects break try/catch). */
 export async function getActionUser() {
+  await guardMaintenance('read');
   const { user, stale } = await loadSessionUser();
   if (stale) {
     // Server Actions may mutate cookies.
-    await signOut({ redirect: false });
+    await signOut({
+      redirect: false
+    });
     return null;
   }
   return user;

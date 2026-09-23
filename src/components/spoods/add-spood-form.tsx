@@ -1,38 +1,55 @@
 "use client";
 
-import { useActionState } from "react";
+import { MutationForm } from '@/components/mutation-form';
+import { MutationContextInput } from '@/components/mutation-context';
+import { useRouter } from "next/navigation";
+import { celebrateCare } from "@/components/constellation/celebrations";
+import { useActionState, useState } from "react";
 import { createSpiderAction } from "@/app/actions/auth";
 import { SpoodAvatarPicker } from "@/components/spoods/avatar-picker";
+import { SpeciesFields } from "@/components/spoods/species-fields";
+import { LifeStageField } from "@/components/spoods/life-stage-field";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ENCLOSURE_TYPES, SEX_OPTIONS } from "@/lib/constants";
+import { localTodayInputValue } from "@/lib/utils";
+
+import { getPhotoSizeError } from "@/lib/upload-limits";
 
 export function AddSpoodForm() {
+  const router = useRouter();
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
-    createSpiderAction,
+    async (previous: {error?: string} | undefined, formData: FormData) => {
+      const result = await createSpiderAction(previous, formData);
+      if (result.redirectTo) {
+        celebrateCare(result.message ?? "Spood added!", result.celebrations);
+        router.push(result.redirectTo);
+        router.refresh();
+      }
+      return result;
+    },
     undefined as { error?: string } | undefined,
   );
 
   return (
-    <form action={action} className="space-y-4">
+    <MutationForm
+      action={action} result={state}
+      className="space-y-4"
+      onSubmit={(event) => {
+        const file = new FormData(event.currentTarget).get("photo");
+        const error = getPhotoSizeError(file instanceof File ? file : null);
+        setPhotoError(error);
+        if (error) event.preventDefault();
+      }}
+    ><MutationContextInput />
       <Field label="Name" htmlFor="name">
         <Input id="name" name="name" required placeholder="Star" />
       </Field>
 
-      <SpoodAvatarPicker />
+      <SpoodAvatarPicker onSelectionChange={() => setPhotoError(null)} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Common name" htmlFor="commonName">
-          <Input
-            id="commonName"
-            name="commonName"
-            placeholder="Regal Jumping Spider"
-          />
-        </Field>
-        <Field label="Species" htmlFor="species">
-          <Input id="species" name="species" placeholder="Phidippus regius" />
-        </Field>
-      </div>
+      <SpeciesFields />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Sex" htmlFor="sex">
           <Select id="sex" name="sex" defaultValue="Unknown">
@@ -43,16 +60,19 @@ export function AddSpoodForm() {
             ))}
           </Select>
         </Field>
-        <Field label="Instar" htmlFor="instar">
-          <Input id="instar" name="instar" placeholder="i6" />
-        </Field>
+        <LifeStageField />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Hatch date (if known)" htmlFor="hatchDate">
           <Input id="hatchDate" name="hatchDate" type="date" />
         </Field>
         <Field label="Acquisition date" htmlFor="acquisitionDate">
-          <Input id="acquisitionDate" name="acquisitionDate" type="date" />
+          <Input
+            id="acquisitionDate"
+            name="acquisitionDate"
+            type="date"
+            defaultValue={localTodayInputValue()}
+          />
         </Field>
       </div>
       <Field label="Source / breeder" htmlFor="source">
@@ -86,7 +106,7 @@ export function AddSpoodForm() {
             >
               {ENCLOSURE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </option>
               ))}
             </Select>
@@ -101,15 +121,15 @@ export function AddSpoodForm() {
         </div>
       </div>
 
-      {state?.error ? (
+      {photoError || state?.error ? (
         <p className="text-sm text-rose-700" role="alert">
-          {state.error}
+          {photoError || state?.error}
         </p>
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending ? "Welcoming…" : "Welcome them home"}
       </Button>
-    </form>
+    </MutationForm>
   );
 }

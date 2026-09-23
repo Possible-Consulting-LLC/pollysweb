@@ -1,10 +1,14 @@
 import type { NextConfig } from "next";
+import { assertStagingEnvironment, isStaging } from "./src/lib/staging-guard";
+
+assertStagingEnvironment();
 
 const nextConfig: NextConfig = {
   agentRules: false,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   experimental: {
-    // Match addSpiderPhoto's 5MB cap (plus a little FormData overhead).
+    // Framework ceiling only; Vercel's 4.5MB request cap still applies.
+    // Photo inputs enforce 4MB before submission to leave room for form data.
     serverActions: {
       bodySizeLimit: "6mb",
     },
@@ -25,11 +29,24 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      ...(isStaging() ? [{
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }],
+      }] : []),
+      {
         source: "/brand/spoodly-logo-mark.png",
         headers: [
           {
             key: "Cache-Control",
-            value: "no-cache, no-store, must-revalidate",
+            value: "public, max-age=86400",
           },
         ],
       },

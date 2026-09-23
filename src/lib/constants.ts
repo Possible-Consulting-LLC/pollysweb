@@ -82,9 +82,15 @@ export const OBSERVATION_KINDS = [
   "refused food",
   "moved hammock",
   "drinking water",
+  "play and interaction",
   "behavior note",
   "custom note",
 ] as const;
+
+/** Presentation only: keep observation keys stable for saved history and badges. */
+export function observationLabel(kind: string): string {
+  return kind === "play and interaction" ? "Play & interaction" : kind.charAt(0).toUpperCase() + kind.slice(1);
+}
 
 export const ENCLOSURE_TYPES = [
   "acrylic",
@@ -100,6 +106,7 @@ export const CARE_STATUSES = [
   "Mist today",
   "Possible premolt",
   "In premolt",
+  "Molting",
   "Recently molted",
   "Post-molt recovery",
 ] as const;

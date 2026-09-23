@@ -1,18 +1,15 @@
 "use server";
 
+import { MaintenanceError } from '@/lib/admin/maintenance-policy';
+import { withMutation } from '@/lib/mutation-boundary';
+
 import Stripe from "stripe";
 import { getActionUser } from "@/lib/session";
 import {
-  appUrl,
   isStripeConfigured,
   type BillingInterval,
 } from "@/lib/billing";
-import {
-  getBillingProfile,
-  getStripe,
-  priceIdForInterval,
-  syncSubscriptionToUser,
-} from "@/lib/stripe";
+import { checkoutForUser, portalForUser } from "@/lib/billing-service";
 import { prisma } from "@/lib/db";
 
 function stripeMessage(error: unknown): string {
@@ -38,114 +35,66 @@ function stripeMessage(error: unknown): string {
 }
 
 export async function startCheckoutAction(
-  interval: BillingInterval,
-): Promise<{ url?: string; error?: string }> {
-  const user = await getActionUser();
-  if (!user?.id) {
-    return { error: "Please sign in again, then retry checkout." };
-  }
+  interval: BillingInterval, submittedContext: string
+): Promise<{ url?: string; error?: string; }> {
+  return withMutation(submittedContext, 'billing', 'startcheckoutaction', async () => {
+    const user = await getActionUser();
+    if (!user?.id) {
+      return { error: "Please sign in again, then retry checkout." };
+    }
 
-  if (!isStripeConfigured()) {
-    return {
-      error:
-        "Billing isn’t fully configured yet. Add STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, and STRIPE_PRICE_YEARLY on Vercel, then redeploy.",
-    };
-  }
+    const profile = await prisma.user.findUnique({ where: { id: user.id }, select: { isDemo: true } });
+    if (profile?.isDemo) return { error: "Real billing is disabled for demo accounts." };
 
-  if (interval !== "monthly" && interval !== "yearly") {
-    return { error: "Pick monthly or yearly." };
-  }
-
-  try {
-    const profile = await getBillingProfile(user.id);
-    const stripe = getStripe();
-    const priceId = priceIdForInterval(interval);
-
-    if (!priceId.startsWith("price_")) {
+    if (!isStripeConfigured()) {
       return {
-        error: `${interval === "monthly" ? "STRIPE_PRICE_MONTHLY" : "STRIPE_PRICE_YEARLY"} should look like price_… (not prod_…).`,
+        error:
+          "Billing isn’t fully configured yet. Check the Stripe key, monthly and yearly Price IDs, and webhook signing secret in Vercel, then redeploy.",
       };
     }
 
-    let customerId = profile.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: profile.email,
-        name: profile.name || undefined,
-        metadata: { userId: user.id },
-      });
-      customerId = customer.id;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { stripeCustomerId: customerId },
-      });
+    if (interval !== "monthly" && interval !== "yearly") {
+      return { error: "Pick monthly or yearly." };
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl()}/upgrade?success=1`,
-      cancel_url: `${appUrl()}/upgrade?canceled=1`,
-      client_reference_id: user.id,
-      metadata: { userId: user.id, interval },
-      subscription_data: {
-        metadata: { userId: user.id, interval },
-      },
-      allow_promotion_codes: true,
-    });
-
-    if (!session.url) {
-      return { error: "Stripe didn’t return a checkout URL." };
+    try {
+      return await checkoutForUser(user.id, interval);
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      console.error("[billing] checkout failed", error);
+      return { error: stripeMessage(error) };
     }
-    return { url: session.url };
-  } catch (error) {
-    console.error("[billing] checkout failed", error);
-    return { error: stripeMessage(error) };
-  }
+
+  });
 }
 
-export async function openBillingPortalAction(): Promise<{
+export async function openBillingPortalAction(submittedContext: string): Promise<{
   url?: string;
   error?: string;
 }> {
-  const user = await getActionUser();
-  if (!user?.id) {
-    return { error: "Please sign in again, then retry." };
-  }
-
-  if (!isStripeConfigured()) {
-    return {
-      error:
-        "Billing isn’t fully configured yet. Add Stripe keys on Vercel, then redeploy.",
-    };
-  }
-
-  try {
-    const profile = await getBillingProfile(user.id);
-    if (!profile.stripeCustomerId) {
-      return { error: "No Stripe customer on this account yet." };
+  return withMutation(submittedContext, 'billing', 'openbillingportalaction', async () => {
+    const user = await getActionUser();
+    if (!user?.id) {
+      return { error: "Please sign in again, then retry." };
     }
 
-    const stripe = getStripe();
-    const portal = await stripe.billingPortal.sessions.create({
-      customer: profile.stripeCustomerId,
-      return_url: `${appUrl()}/settings`,
-    });
+    const profile = await prisma.user.findUnique({ where: { id: user.id }, select: { isDemo: true } });
+    if (profile?.isDemo) return { error: "Real billing is disabled for demo accounts." };
 
-    return { url: portal.url };
-  } catch (error) {
-    console.error("[billing] portal failed", error);
-    return { error: stripeMessage(error) };
-  }
-}
+    if (!isStripeConfigured()) {
+      return {
+        error:
+          "Billing isn’t fully configured yet. Add Stripe keys on Vercel, then redeploy.",
+      };
+    }
 
-/** Used by webhook / checkout success reconciliation. */
-export async function applyStripeSubscription(
-  userId: string,
-  subscriptionId: string,
-) {
-  const stripe = getStripe();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  await syncSubscriptionToUser(userId, subscription);
+    try {
+      return await portalForUser(user.id);
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      console.error("[billing] portal failed", error);
+      return { error: stripeMessage(error) };
+    }
+
+  });
 }

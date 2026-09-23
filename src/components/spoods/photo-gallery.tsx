@@ -1,4 +1,5 @@
 "use client";
+import { useMutationContext } from '@/components/mutation-context';
 
 import {
   useCallback,
@@ -13,6 +14,7 @@ import { ChevronLeft, ChevronRight, Trash2, UserRound, X } from "lucide-react";
 import { format } from "date-fns";
 import { deleteSpiderPhoto, setSpiderProfilePhoto } from "@/app/actions/care";
 import { Button } from "@/components/ui/button";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { SpoodImage } from "@/components/spoods/spood-image";
 import { cn } from "@/lib/utils";
 
@@ -72,7 +74,6 @@ export function PhotoLightbox({
     document.body.style.overflow = "hidden";
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
       if (event.key === "ArrowLeft") goPrev();
       if (event.key === "ArrowRight") goNext();
     }
@@ -82,18 +83,13 @@ export function PhotoLightbox({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [goNext, goPrev, onClose]);
+  }, [goNext, goPrev]);
 
-  if (!photo) return null;
+  if (!photo || typeof document === "undefined") return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--panel)]/88 p-3 backdrop-blur-sm sm:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={onClose}
-    >
+    <ModalDialog labelledBy={titleId} onClose={onClose} className="backdrop:bg-[var(--panel)]/88">
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
       <div
         className="relative flex max-h-[min(92dvh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] bg-[var(--panel)] shadow-2xl ring-1 ring-white/10"
         onClick={(event) => event.stopPropagation()}
@@ -191,7 +187,8 @@ export function PhotoLightbox({
           ) : null}
         </div>
       </div>
-    </div>
+      </div>
+    </ModalDialog>
   );
 }
 
@@ -208,6 +205,7 @@ export function PhotoGallery({
   className?: string;
   allowManage?: boolean;
 }) {
+  const mutationContext = useMutationContext();
   const router = useRouter();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [items, setItems] = useState(photos);
@@ -236,7 +234,7 @@ export function PhotoGallery({
     }
     setError(null);
     startTransition(async () => {
-      const result = await deleteSpiderPhoto(photo.id);
+      const result = await deleteSpiderPhoto(photo.id, mutationContext);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -263,7 +261,7 @@ export function PhotoGallery({
     if (currentProfileUrl === photo.url) return;
     setError(null);
     startTransition(async () => {
-      const result = await setSpiderProfilePhoto(photo.id);
+      const result = await setSpiderProfilePhoto(photo.id, mutationContext);
       if (!result.ok) {
         setError(result.error);
         return;

@@ -1,4 +1,7 @@
 import { PrismaClient } from "@prisma/client";
+import { assertStagingEnvironment } from "./staging-guard";
+
+assertStagingEnvironment();
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 

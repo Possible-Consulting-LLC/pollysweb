@@ -1,0 +1,6 @@
+.env*
+docs/
+CODE_REVIEW.md
+.agents/
+.claude/
+.superpowers/

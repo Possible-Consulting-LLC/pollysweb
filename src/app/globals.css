@@ -335,3 +335,19 @@ body {
     animation: none !important;
   }
 }
+
+@keyframes care-confetti-fall {
+  from { translate: 0 -8vh; opacity: 1; rotate: 0deg; }
+  to { translate: 0 108vh; opacity: 0; rotate: 540deg; }
+}
+@keyframes care-award-arrive {
+  from { opacity: 0; transform: scale(.82) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.care-confetti i { position: absolute; top: 0; width: 9px; height: 15px; border-radius: 2px; animation: care-confetti-fall 1.4s ease-out both; }
+.care-celebration { animation: care-award-arrive .35s ease-out both; }
+.care-award-art { animation: care-award-arrive .6s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .care-confetti { display: none; }
+  .care-celebration, .care-award-art { animation: none; }
+}
