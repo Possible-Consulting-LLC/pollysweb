@@ -4,12 +4,12 @@ import { requireAdminActor } from '@/lib/admin/actor';
 import Link from "next/link";
 import { DisconnectProviderForm } from "@/components/settings/disconnect-provider-form";
 import { remainingSignInAvailable, recentSocialAuthentication } from "@/lib/social-disconnect-policy";
-import { logoutAction, updateSettingsAction } from "@/app/actions/auth";
+import { logoutAction, updateSettingsAction, updateThemeAction } from "@/app/actions/auth";
 import { AppHeader } from "@/components/layout/nav";
 import { PasswordForm } from "@/components/settings/password-form";
 import { SocialButtons } from "@/components/auth/social-buttons";
 import { linkSocialProvider } from "@/app/actions/social-auth";
-import { ThemeSelect } from "@/components/settings/theme-select";
+import { ThemeToggle } from "@/components/settings/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, SectionHeader } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/field";
@@ -125,9 +125,7 @@ export default async function SettingsPage({
             </Field>
           </div>
           <TimezoneSelect defaultValue={defaults.timezone} />
-          <Field label="Theme" htmlFor="theme">
-            <ThemeSelect key={theme} theme={theme} />
-          </Field>
+          <ThemeToggle key={theme} theme={theme} action={updateThemeAction} />
 
           <Button type="submit" className="w-full">
             Save settings

@@ -2,16 +2,16 @@ export const SEX_OPTIONS = ["Female", "Male", "Unknown"] as const;
 
 export const THEME_OPTIONS = [
   {
-    value: "system",
-    label: "System — follow your computer’s light/dark setting",
-  },
-  {
     value: "cosmic",
-    label: "Cosmic cream — warm parchment & plum",
+    label: "Light",
   },
   {
     value: "midnight",
-    label: "Midnight soft — cool indigo night",
+    label: "Dark",
+  },
+  {
+    value: "system",
+    label: "System",
   },
 ] as const;
 

@@ -358,6 +358,31 @@ export async function updateSettingsAction(formData: FormData) {
   });
 }
 
+export async function updateThemeAction(formData: FormData) {
+  return withMutation(formData, "data", "updatethemeaction", async () => {
+    const user = await requireUser();
+    if (!await allowAction("care", user.id!)) {
+      return { error: "Too many changes right now. Please try again later." };
+    }
+
+    const submittedTheme = String(formData.get("theme") || "");
+    if (!["cosmic", "midnight", "system"].includes(submittedTheme)) {
+      return { error: "Choose Light, Dark, or System." };
+    }
+    const theme = normalizeTheme(submittedTheme);
+
+    await maintenanceTransaction((tx) => tx.user.update({
+      where: { id: user.id! },
+      data: { theme },
+    }));
+
+    revalidatePath("/", "layout");
+    revalidatePath("/settings");
+    await recordMutationSuccess("updatethemeaction");
+    return { ok: true as const };
+  });
+}
+
 export async function updatePasswordAction(
   _prev: { error?: string; success?: string; } | undefined,
   formData: FormData,
