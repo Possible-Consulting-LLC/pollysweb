@@ -47,6 +47,23 @@ export type LastHydrationDefaults = {
   methods: string[];
 };
 
+export type QuickLogAction =
+  | "feed"
+  | "hydrate"
+  | "molt"
+  | "note"
+  | "play"
+  | "housekeeping";
+
+const ALL_QUICK_LOG_ACTIONS: readonly QuickLogAction[] = [
+  "feed",
+  "hydrate",
+  "molt",
+  "note",
+  "play",
+  "housekeeping",
+];
+
 function togglePanel<T extends string>(
   current: T | null,
   next: T,
@@ -68,6 +85,7 @@ export function QuickLogButtons({
   lastFeeding,
   lastHydration,
   hasEnclosure = true,
+  actions = ALL_QUICK_LOG_ACTIONS,
 }: {
   spiderId: string;
   spiderName: string;
@@ -75,6 +93,7 @@ export function QuickLogButtons({
   lastFeeding?: LastFeedingDefaults | null;
   lastHydration?: LastHydrationDefaults | null;
   hasEnclosure?: boolean;
+  actions?: readonly QuickLogAction[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -151,8 +170,12 @@ export function QuickLogButtons({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <Button
+      <div
+        className={`grid gap-2 ${
+          actions.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
+        }`}
+      >
+        {actions.includes("feed") ? <Button
           type="button"
           variant="secondary"
           size="lg"
@@ -163,8 +186,8 @@ export function QuickLogButtons({
         >
           <Worm className="h-4 w-4" aria-hidden />
           <span>Feed</span>
-        </Button>
-        <Button
+        </Button> : null}
+        {actions.includes("hydrate") ? <Button
           type="button"
           variant="secondary"
           size="lg"
@@ -175,8 +198,8 @@ export function QuickLogButtons({
         >
           <Droplets className="h-4 w-4" aria-hidden />
           <span>Hydrate</span>
-        </Button>
-        <Button
+        </Button> : null}
+        {actions.includes("molt") ? <Button
           type="button"
           variant="secondary"
           size="lg"
@@ -186,8 +209,8 @@ export function QuickLogButtons({
         >
           <Sparkles className="h-4 w-4" aria-hidden />
           <span>Molt</span>
-        </Button>
-        <Button
+        </Button> : null}
+        {actions.includes("note") ? <Button
           type="button"
           variant="soft"
           size="lg"
@@ -197,8 +220,8 @@ export function QuickLogButtons({
         >
           <Eye className="h-4 w-4" aria-hidden />
           <span>Observe</span>
-        </Button>
-        <Button
+        </Button> : null}
+        {actions.includes("play") ? <Button
           type="button"
           variant="soft"
           size="lg"
@@ -208,8 +231,8 @@ export function QuickLogButtons({
         >
           <Gamepad2 className="h-4 w-4" aria-hidden />
           <span>Play</span>
-        </Button>
-        <Button
+        </Button> : null}
+        {actions.includes("housekeeping") ? <Button
           type="button"
           variant="soft"
           size="lg"
@@ -219,7 +242,7 @@ export function QuickLogButtons({
         >
           <BrushCleaning className="h-4 w-4" aria-hidden />
           <span>Housekeeping</span>
-        </Button>
+        </Button> : null}
       </div>
 
       {panel === "housekeeping" ? (
@@ -488,10 +511,6 @@ export function QuickLogButtons({
         </form>
       ) : null}
 
-      <p className="text-xs text-[var(--midnight)]/45">
-        Fed and Hydration open a short form — tap Save when you’re ready.
-        Defaults match what you logged last time for {spiderName}.
-      </p>
     </div>
   );
 }

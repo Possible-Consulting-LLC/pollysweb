@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
-import { SpoodCareCard } from "@/components/spoods/spood-card";
+import { SpoodCareDetails, SpoodIdentity } from "@/components/spoods/spood-card";
+import { SpoodAccordion } from "@/components/spoods/spood-accordion";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -82,15 +83,36 @@ export default async function SpoodsPage({
           }
         />
       ) : (
-        <div className="space-y-3">
-          {views.map((view) => (
-            <SpoodCareCard
-              key={view.spider.id}
-              view={view}
-              readOnly={!writeState.proAccess && writeState.firstSpiderId !== view.spider.id}
-            />
-          ))}
-        </div>
+        <SpoodAccordion
+          items={views.map((view) => {
+            const readOnly = !writeState.proAccess && writeState.firstSpiderId !== view.spider.id;
+            return {
+              id: view.spider.id,
+              identity: (
+                <SpoodIdentity
+                  view={view}
+                  linkName={false}
+                  readOnly={readOnly}
+                />
+              ),
+              content: (
+                <SpoodCareDetails
+                  view={view}
+                  readOnly={readOnly}
+                  showProfileLink
+                />
+              ),
+              profileAction: (
+                <Link
+                  href={`/spoods/${view.spider.id}`}
+                  className={buttonVariants({ variant: "soft", size: "sm" })}
+                >
+                  Profile
+                </Link>
+              ),
+            };
+          })}
+        />
       )}
     </div>
   );

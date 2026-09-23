@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { CareStatusGrid } from "@/components/spoods/care-status-grid";
-import { QuickLogButtons } from "@/components/spoods/quick-log";
+import { QuickLogButtons, type QuickLogAction } from "@/components/spoods/quick-log";
 import { SpoodImage } from "@/components/spoods/spood-image";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, StatusPill } from "@/components/ui/card";
@@ -13,10 +13,12 @@ export function SpoodIdentity({
   view,
   linkName = true,
   readOnly = false,
+  showCareCopy = true,
 }: {
   view: SpiderCareView;
   linkName?: boolean;
   readOnly?: boolean;
+  showCareCopy?: boolean;
 }): ReactNode {
   const { spider, careStatus } = view;
   const memorialized = Boolean(spider.memorializedAt);
@@ -28,18 +30,25 @@ export function SpoodIdentity({
       {spider.name}
     </span>
   );
+  const portrait = (
+    <div className="relative h-16 w-16 overflow-hidden rounded-2xl bg-[var(--lavender)]">
+      <SpoodImage
+        src={spider.profilePhoto}
+        alt={spider.name}
+        className="h-full w-full"
+      />
+    </div>
+  );
 
   return (
     <div className="flex gap-3">
-      <Link href={`/spoods/${spider.id}`} className="shrink-0">
-        <div className="relative h-16 w-16 overflow-hidden rounded-2xl bg-[var(--lavender)]">
-          <SpoodImage
-            src={spider.profilePhoto}
-            alt={spider.name}
-            className="h-full w-full"
-          />
-        </div>
-      </Link>
+      {linkName ? (
+        <Link href={`/spoods/${spider.id}`} className="shrink-0">
+          {portrait}
+        </Link>
+      ) : (
+        <div className="shrink-0">{portrait}</div>
+      )}
       <div className="min-w-0 flex-1">
         {linkName ? (
           <Link
@@ -56,13 +65,15 @@ export function SpoodIdentity({
             <StatusPill status="Mist today" />
           ) : null}
         </div>
-        <p className="mt-2 text-sm text-[var(--midnight)]/70">
-          {memorialized
-            ? spider.memorialNote?.trim() ||
-              `${spider.name}'s story lives on in your corner of the web.`
-            : friendlyNeedCopy(spider.name, careStatus)}
-        </p>
-        {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
+        {showCareCopy ? (
+          <p className="mt-2 text-sm text-[var(--midnight)]/70">
+            {memorialized
+              ? spider.memorialNote?.trim() ||
+                `${spider.name}'s story lives on in your corner of the web.`
+              : friendlyNeedCopy(spider.name, careStatus)}
+          </p>
+        ) : null}
+        {showCareCopy && !memorialized && view.mistDue && careStatus !== "Mist today" ? (
           <p className="mt-1 text-sm font-semibold text-[var(--midnight)]">
             {friendlyNeedCopy(spider.name, "Mist today")}
           </p>
@@ -82,18 +93,24 @@ export function SpoodCareDetails({
   readOnly = false,
   showProfileLink = false,
   showQuickActions = true,
+  showStatus = true,
+  showActionHeading = true,
+  actions,
 }: {
   view: SpiderCareView;
   readOnly?: boolean;
   showProfileLink?: boolean;
   showQuickActions?: boolean;
+  showStatus?: boolean;
+  showActionHeading?: boolean;
+  actions?: readonly QuickLogAction[];
 }): ReactNode {
   const { spider } = view;
   if (spider.memorializedAt) return null;
 
   return (
     <div className="space-y-4">
-      <section className="space-y-2" aria-labelledby={`care-status-${spider.id}`}>
+      {showStatus ? <section className="space-y-2" aria-labelledby={`care-status-${spider.id}`}>
         <h3
           id={`care-status-${spider.id}`}
           className="text-sm font-semibold text-[var(--midnight)]"
@@ -105,21 +122,28 @@ export function SpoodCareDetails({
           daysSinceMist={view.daysSinceMist}
           latestBehavior={view.latestBehavior}
         />
-      </section>
+      </section> : null}
 
       {showQuickActions && !readOnly ? (
-        <section className="space-y-2" aria-labelledby={`log-care-${spider.id}`}>
-          <h3
-            id={`log-care-${spider.id}`}
-            className="text-sm font-semibold text-[var(--midnight)]"
-          >
-            Log care
-          </h3>
+        <section
+          className="space-y-2"
+          aria-labelledby={showActionHeading ? `log-care-${spider.id}` : undefined}
+          aria-label={showActionHeading ? undefined : "Care actions"}
+        >
+          {showActionHeading ? (
+            <h3
+              id={`log-care-${spider.id}`}
+              className="text-sm font-semibold text-[var(--midnight)]"
+            >
+              Log care
+            </h3>
+          ) : null}
           <QuickLogButtons
             spiderId={spider.id}
             spiderName={spider.name}
             currentLifeStage={spider.instar}
             hasEnclosure={Boolean(spider.enclosure)}
+            actions={actions}
             lastFeeding={
               spider.feedings[0]
                 ? {
@@ -160,13 +184,27 @@ export function SpoodCareCard({
   readOnly?: boolean;
 }) {
   return (
-    <Card className="space-y-4">
-      <SpoodIdentity view={view} readOnly={readOnly} />
+    <Card className="relative space-y-4">
+      <Link
+        href={`/spoods/${view.spider.id}`}
+        className={buttonVariants({ variant: "soft", size: "sm", className: "absolute right-4 top-4" })}
+      >
+        Profile
+      </Link>
+      <div className="pr-20">
+        <SpoodIdentity
+          view={view}
+          readOnly={readOnly}
+          showCareCopy={false}
+        />
+      </div>
       <SpoodCareDetails
         view={view}
         readOnly={readOnly}
         showQuickActions={showQuickActions}
-        showProfileLink
+        showStatus={false}
+        showActionHeading={false}
+        actions={["feed", "hydrate"]}
       />
     </Card>
   );

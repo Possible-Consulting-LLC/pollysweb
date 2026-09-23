@@ -8,10 +8,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { completeCareDay } from "@/app/actions/constellation";
 import { Button } from "@/components/ui/button";
+import { SpoodImage } from "@/components/spoods/spood-image";
 
 export type ReviewItem = {
   id: string;
   name: string;
+  profilePhoto: string | null;
   due: { feeding: boolean; misting: boolean };
   reviewed?: boolean;
   caredFor?: boolean;
@@ -44,7 +46,18 @@ export function CareReview({ items, completedToday }: { items: ReviewItem[]; com
       }}><MutationContextInput />
         {items.map((item) => (
           <fieldset key={item.id} className="rounded-2xl bg-[var(--cream-deep)]/45 p-4">
-            <legend className="px-1 font-semibold text-[var(--midnight)]">{item.name}</legend>
+            <legend className="px-1 font-semibold text-[var(--midnight)]">
+              <span className="inline-flex items-center gap-2">
+                <span className="relative h-9 w-9 overflow-hidden rounded-full bg-[var(--lavender)] ring-1 ring-[var(--plum)]/10">
+                  <SpoodImage
+                    src={item.profilePhoto}
+                    alt=""
+                    className="h-full w-full"
+                  />
+                </span>
+                <span>{item.name}</span>
+              </span>
+            </legend>
             <label className="flex min-h-11 items-center gap-3 text-sm text-[var(--midnight)]">
               <input type="checkbox" name="reviewed" value={item.id} defaultChecked={item.reviewed} disabled={item.reviewed} className="h-5 w-5 accent-[var(--plum)]" />
               {item.reviewed ? "Checked in on" : "I checked in on"} {item.name}{item.caredFor ? " · Care complete" : ""}

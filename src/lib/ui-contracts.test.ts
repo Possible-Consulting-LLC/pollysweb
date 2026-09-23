@@ -41,4 +41,24 @@ test('home presents structured care actions and a clear journey entry point', ()
   assert.match(card, /Log care/);
   assert.match(card, /CareStatusGrid/);
   assert.doesNotMatch(card, />Last molt</);
+  assert.match(card, /showStatus=\{false\}/);
+  assert.match(card, /showActionHeading=\{false\}/);
+  assert.match(card, /actions=\{\["feed", "hydrate"\]\}/);
+  assert.match(card, /showCareCopy=\{false\}/);
+  assert.match(card, /absolute right-4 top-4/);
+});
+
+test("My Spoods uses a controlled semantic accordion", () => {
+  const accordion = source("components/spoods/spood-accordion.tsx");
+  assert.match(accordion, /aria-expanded=\{open\}/);
+  assert.match(accordion, /aria-controls=\{panelId\}/);
+  assert.match(accordion, /hidden=\{!open\}/);
+  assert.match(accordion, /open \? "−" : "\+"/);
+
+  const page = source("app/(app)/spoods/page.tsx");
+  assert.match(page, /SpoodAccordion/);
+  assert.match(page, /profileAction/);
+  assert.match(page, />\s*Profile\s*</);
+  assert.match(page, /showProfileLink/);
+  assert.doesNotMatch(page, /<SpoodCareCard/);
 });

@@ -121,6 +121,19 @@ test('quick housekeeping explains the enclosure prerequisite without rendering a
   assert.ok(elements(tree).some(element => textContent(element).includes('Add enclosure details')));
   assert.equal(elements(tree).some(element => element.type === 'form'), false);
 });
+test('home quick care can render only feed and hydrate actions', () => {
+  const f = clientFixture();
+  const component = load<typeof import('../components/spoods/quick-log')>('../components/spoods/quick-log.tsx', f.dependencies);
+  const tree = f.render(() => component.QuickLogButtons({
+    spiderId: 'demo-spider',
+    spiderName: 'Demo',
+    actions: ['feed', 'hydrate'],
+  }));
+  assert.deepEqual(
+    elements(tree).filter(element => element.type === 'button').map(textContent),
+    ['Feed', 'Hydrate'],
+  );
+});
 test('Start returns its typed rejection without redirect; accepted Start retains its intended redirect', async () => {
   const f = actionFixture(); let started = 0, redirects = 0;
   const actions = load<typeof import('../app/actions/admin-test-session')>('../app/actions/admin-test-session.ts', {
