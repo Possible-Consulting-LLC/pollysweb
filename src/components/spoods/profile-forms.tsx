@@ -25,6 +25,7 @@ import { getPhotoSizeError } from "@/lib/upload-limits";
 
 import { PreparedPhotoInput } from "./prepared-photo-input";
 import { PHOTO_HELP } from "@/lib/prepare-photo";
+import { MaintenanceFields } from "@/components/spoods/maintenance-fields";
 
 const bodyIcons: Record<string, string> = {
   "Very thin": "◦",
@@ -274,17 +275,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
         run(() => logEnclosureMaintenance(spiderId, fd));
       }}
     ><MutationContextInput />
-      <Field label="Maintenance" htmlFor="kind">
-        <Select id="kind" name="kind" defaultValue="cleaning">
-          <option value="cleaning">Cleaning</option>
-          <option value="rehouse">Rehouse</option>
-          <option value="maintenance">Maintenance</option>
-        </Select>
-      </Field>
-      <DateTimeField id="maint-date" name="date" label="When" />
-      <Field label="Notes" htmlFor="maint-notes">
-        <Textarea id="maint-notes" name="notes" />
-      </Field>
+      <MaintenanceFields idPrefix={`profile-maint-${spiderId}`} />
       <Feedback message={message} error={error} />
       <Button
         type="submit"

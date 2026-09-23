@@ -5,12 +5,22 @@ import { celebrateCare } from "@/components/constellation/celebrations";
 
 import { useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  BrushCleaning,
+  Droplets,
+  Eye,
+  Gamepad2,
+  Sparkles,
+  Worm,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   quickFeed,
   quickMist,
   quickObservation,
   quickInteraction,
+  logEnclosureMaintenance,
   logMolt,
   type ActionResult,
 } from "@/app/actions/care";
@@ -25,6 +35,7 @@ import {
 import { DateTimeField } from "@/components/ui/datetime-field";
 import { MoltStageFields } from "@/components/spoods/molt-stage-fields";
 import { INTERACTION_METHODS } from "@/lib/interaction";
+import { MaintenanceFields } from "@/components/spoods/maintenance-fields";
 
 export type LastFeedingDefaults = {
   preyType: string;
@@ -56,17 +67,19 @@ export function QuickLogButtons({
   currentLifeStage,
   lastFeeding,
   lastHydration,
+  hasEnclosure = true,
 }: {
   spiderId: string;
   spiderName: string;
   currentLifeStage?: string | null;
   lastFeeding?: LastFeedingDefaults | null;
   lastHydration?: LastHydrationDefaults | null;
+  hasEnclosure?: boolean;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [panel, setPanel] = useState<
-    "feed" | "hydrate" | "molt" | "note" | "play" | null
+    "feed" | "hydrate" | "molt" | "note" | "play" | "housekeeping" | null
   >(null);
   const [interactionMethod, setInteractionMethod] = useState<string>(INTERACTION_METHODS[0]);
   const [message, setMessage] = useState<string | null>(null);
@@ -138,16 +151,18 @@ export function QuickLogButtons({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Button
           type="button"
           variant="secondary"
           size="lg"
           className="w-full"
           aria-expanded={panel === "feed"}
+          aria-controls={`feed-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "feed"))}
         >
-          Fed
+          <Worm className="h-4 w-4" aria-hidden />
+          <span>Feed</span>
         </Button>
         <Button
           type="button"
@@ -155,42 +170,102 @@ export function QuickLogButtons({
           size="lg"
           className="w-full"
           aria-expanded={panel === "hydrate"}
+          aria-controls={`hydrate-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "hydrate"))}
         >
-          Hydration
+          <Droplets className="h-4 w-4" aria-hidden />
+          <span>Hydrate</span>
         </Button>
         <Button
           type="button"
           variant="secondary"
           size="lg"
           aria-expanded={panel === "molt"}
+          aria-controls={`molt-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "molt"))}
         >
-          Molt
+          <Sparkles className="h-4 w-4" aria-hidden />
+          <span>Molt</span>
         </Button>
         <Button
           type="button"
           variant="soft"
           size="lg"
           aria-expanded={panel === "note"}
+          aria-controls={`note-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "note"))}
         >
-          Observation
+          <Eye className="h-4 w-4" aria-hidden />
+          <span>Observe</span>
         </Button>
         <Button
           type="button"
           variant="soft"
           size="lg"
-          className="col-span-2 sm:col-span-1"
           aria-expanded={panel === "play"}
+          aria-controls={`play-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "play"))}
         >
-          Play
+          <Gamepad2 className="h-4 w-4" aria-hidden />
+          <span>Play</span>
+        </Button>
+        <Button
+          type="button"
+          variant="soft"
+          size="lg"
+          aria-expanded={panel === "housekeeping"}
+          aria-controls={`housekeeping-panel-${spiderId}`}
+          onClick={() => setPanel((p) => togglePanel(p, "housekeeping"))}
+        >
+          <BrushCleaning className="h-4 w-4" aria-hidden />
+          <span>Housekeeping</span>
         </Button>
       </div>
 
+      {panel === "housekeeping" ? (
+        hasEnclosure ? (
+          <form
+            id={`housekeeping-panel-${spiderId}`}
+            className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(() =>
+                logEnclosureMaintenance(
+                  spiderId,
+                  new FormData(event.currentTarget),
+                ),
+              );
+            }}
+          >
+            <MutationContextInput />
+            <p className="text-sm font-semibold text-[var(--midnight)]">
+              Log housekeeping for {spiderName}
+            </p>
+            <MaintenanceFields idPrefix={`quick-maint-${spiderId}`} />
+            <Button type="submit" disabled={saving} className="w-full">
+              {saving ? "Saving…" : "Save housekeeping"}
+            </Button>
+          </form>
+        ) : (
+          <p
+            id={`housekeeping-panel-${spiderId}`}
+            className="rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-950"
+          >
+            Add enclosure details from{" "}
+            <Link
+              href={`/spoods/${spiderId}`}
+              className="font-semibold underline underline-offset-2"
+            >
+              the full profile
+            </Link>{" "}
+            before logging housekeeping.
+          </p>
+        )
+      ) : null}
+
       {panel === "play" ? (
         <form
+          id={`play-panel-${spiderId}`}
           className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
           onSubmit={(event) => {
             event.preventDefault();
@@ -219,6 +294,7 @@ export function QuickLogButtons({
 
       {panel === "feed" ? (
         <form
+          id={`feed-panel-${spiderId}`}
           key={`feed-${defaultPrey}-${defaultQuantity}-${defaultOutcome}`}
           className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
           onSubmit={(event) => {
@@ -287,6 +363,7 @@ export function QuickLogButtons({
 
       {panel === "hydrate" ? (
         <form
+          id={`hydrate-panel-${spiderId}`}
           key={`hydrate-${hydrationDefaults.join("|")}`}
           className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
           onSubmit={(event) => {
@@ -340,6 +417,7 @@ export function QuickLogButtons({
 
       {panel === "molt" ? (
         <form
+          id={`molt-panel-${spiderId}`}
           className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
           onSubmit={(event) => {
             event.preventDefault();
@@ -377,6 +455,7 @@ export function QuickLogButtons({
 
       {panel === "note" ? (
         <form
+          id={`note-panel-${spiderId}`}
           className="space-y-3 rounded-2xl bg-[var(--cream-deep)]/50 p-3"
           onSubmit={(event) => {
             event.preventDefault();

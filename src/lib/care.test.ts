@@ -8,11 +8,24 @@ import {
   friendlyNeedCopy,
   isMistingDue,
   isSuccessfulFeeding,
+  latestBehaviorLabel,
   nextInstar,
   resolveSpiderStatus,
   shouldSuppressFeedingReminder,
   statusAfterSuccessfulMolt,
 } from "./care";
+
+describe("latestBehaviorLabel", () => {
+  it("skips optional play entries and labels the latest care observation", () => {
+    assert.equal(latestBehaviorLabel([
+      { kind: "play and interaction" },
+      { kind: "behavior note" },
+      { kind: "skittish" },
+    ]), "Behavior note");
+    assert.equal(latestBehaviorLabel([{ kind: "play and interaction" }]), null);
+    assert.equal(latestBehaviorLabel([]), null);
+  });
+});
 
 describe("isSuccessfulFeeding", () => {
   it("treats ate normally and partially as successful", () => {

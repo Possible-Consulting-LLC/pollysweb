@@ -4,6 +4,7 @@ import {
   deriveCareStatus,
   daysSince,
   isMistingDue,
+  latestBehaviorLabel,
   resolveSpiderStatus,
   type CareInputs,
 } from "@/lib/care";
@@ -54,6 +55,7 @@ export type SpiderCareView = {
   daysSinceMist: number | null;
   daysSinceMolt: number | null;
   latestBodyCondition: string | null;
+  latestBehavior: string | null;
 };
 
 function latestDate(events: { date: Date }[]): Date | null {
@@ -99,6 +101,7 @@ export function buildCareView(
     daysSinceMist: daysSince(lastMistedAt, new Date(), timeZone),
     daysSinceMolt: daysSince(lastMoltAt, new Date(), timeZone),
     latestBodyCondition: spider.bodyConditions[0]?.condition ?? null,
+    latestBehavior: latestBehaviorLabel(spider.observations),
   };
 }
 

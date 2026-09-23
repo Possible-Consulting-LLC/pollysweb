@@ -38,6 +38,12 @@ function elements(node: unknown): Element[] {
   const item = node as Element;
   return [item, ...(Array.isArray(item.props.children) ? item.props.children : [item.props.children]).flatMap(elements)];
 }
+function textContent(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (!node || typeof node !== 'object' || !('props' in node)) return '';
+  const children = (node as Element).props.children;
+  return (Array.isArray(children) ? children : [children]).map(textContent).join('');
+}
 function clientFixture() {
   const action = actionFixture();
   const states: unknown[] = [];
@@ -50,10 +56,11 @@ function clientFixture() {
     'react/jsx-runtime': jsx, react,
     'next/navigation': { useRouter: () => ({ refresh: () => { refreshes++; } }) },
     '@/components/mutation-context': { useMutationContext: () => 'a'.repeat(64), MutationContextInput: 'input' },
-    '@/app/actions/care': action.care, '@/components/ui/button': { Button: 'button' }, '@/components/ui/field': { Select: 'select', Field: 'label', Input: 'input', Textarea: 'textarea' },
+    '@/app/actions/care': { ...action.care, logEnclosureMaintenance: async () => ({ ok: true, message: 'Saved.' }) }, '@/components/ui/button': { Button: 'button' }, '@/components/ui/field': { Select: 'select', Field: 'label', Input: 'input', Textarea: 'textarea' },
     '@/lib/constants': constants, '@/components/constellation/celebrations': { celebrateCare: () => assert.fail('rejected work cannot celebrate') },
     '@/components/ui/datetime-field': { DateTimeField: 'input' }, '@/lib/utils': {}, '@/lib/upload-limits': {}, './prepared-photo-input': {}, '@/lib/prepare-photo': {},
-    '@/components/spoods/molt-stage-fields': {}, '@/lib/interaction': { INTERACTION_METHODS: ['walk'] },
+    '@/components/spoods/molt-stage-fields': {}, '@/components/spoods/maintenance-fields': { MaintenanceFields: 'maintenance-fields' }, '@/lib/interaction': { INTERACTION_METHODS: ['walk'] },
+    'lucide-react': new Proxy({}, { get: () => 'icon' }), 'next/link': 'a',
   };
   return { ...action, dependencies, states, render: <T>(work: () => T) => { index = 0; return work(); }, refreshes: () => refreshes };
 }
@@ -92,7 +99,7 @@ test('shared quick-log handler keeps the open panel and submitted note when cont
   const component = load<typeof import('../components/spoods/quick-log')>('../components/spoods/quick-log.tsx', f.dependencies, { FormData: SubmittedFormData });
   const render = () => f.render(() => component.QuickLogButtons({ spiderId: 'demo-spider', spiderName: 'Demo' }));
   let tree = render();
-  const button = elements(tree).find(element => element.type === 'button' && element.props.children === 'Play')!;
+  const button = elements(tree).find(element => element.type === 'button' && textContent(element) === 'Play')!;
   (button.props.onClick as () => void)();
   tree = render();
   (elements(tree).find(element => element.type === 'form')!.props.onSubmit as (event: unknown) => void)({ preventDefault() {}, currentTarget: {} });
@@ -101,6 +108,18 @@ test('shared quick-log handler keeps the open panel and submitted note when cont
   assert.ok(elements(tree).some(element => element.type === 'form'));
   assert.ok(elements(tree).some(element => element.props.role === 'alert' && String(element.props.children).includes('reload')));
   assert.equal(submitted.get('notes'), 'unsaved note'); assert.equal(f.helperCalls(), 0); assert.equal(f.refreshes(), 0);
+});
+test('quick housekeeping explains the enclosure prerequisite without rendering a save form', () => {
+  const f = clientFixture();
+  const component = load<typeof import('../components/spoods/quick-log')>('../components/spoods/quick-log.tsx', f.dependencies);
+  const render = () => f.render(() => component.QuickLogButtons({ spiderId: 'demo-spider', spiderName: 'Demo', hasEnclosure: false }));
+  let tree = render();
+  const button = elements(tree).find(element => element.type === 'button' && textContent(element) === 'Housekeeping');
+  assert.ok(button, 'Housekeeping action should be available');
+  (button.props.onClick as () => void)();
+  tree = render();
+  assert.ok(elements(tree).some(element => textContent(element).includes('Add enclosure details')));
+  assert.equal(elements(tree).some(element => element.type === 'form'), false);
 });
 test('Start returns its typed rejection without redirect; accepted Start retains its intended redirect', async () => {
   const f = actionFixture(); let started = 0, redirects = 0;

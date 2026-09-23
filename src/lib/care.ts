@@ -1,6 +1,7 @@
 import {
   PREMOLT_STATUSES,
   SUCCESSFUL_FEEDING_OUTCOMES,
+  observationLabel,
   type CareStatus,
   type PremoltStatus,
 } from "./constants";
@@ -8,6 +9,15 @@ import { daysBetween } from "./utils";
 
 /** Calendar days after a molt before Post-molt recovery returns to Normal. */
 export const POST_MOLT_RECOVERY_DAYS = 5;
+
+export function latestBehaviorLabel(
+  observations: { kind: string }[],
+): string | null {
+  const latest = observations.find(
+    (observation) => observation.kind !== "play and interaction",
+  );
+  return latest ? observationLabel(latest.kind) : null;
+}
 
 export function isSuccessfulFeeding(outcome: string): boolean {
   return (SUCCESSFUL_FEEDING_OUTCOMES as readonly string[]).includes(outcome);
