@@ -81,3 +81,15 @@ test("About read view supports two columns without splitting notes", () => {
   assert.match(about, /sm:grid-cols-2/);
   assert.match(about, /sm:col-span-2/);
 });
+
+test("Journey has one streak meter and a compact visible-requirement reward grid", () => {
+  const page = source("app/(app)/constellation/page.tsx");
+  const gallery = source("components/constellation/reward-gallery.tsx");
+  assert.match(page, /Your Care Journey/);
+  assert.match(page, /RecentCareMeter/);
+  assert.doesNotMatch(page, /<StreakCard/);
+  assert.doesNotMatch(gallery, /Care rhythm/);
+  assert.match(gallery, /grid-cols-3/);
+  assert.match(gallery, /progress\[reward\.id\]\.label/);
+  assert.match(gallery, /Physical interaction is optional/);
+});

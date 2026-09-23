@@ -12,12 +12,12 @@ const symbols = {
 export function Art({ symbol, earned }: { symbol: keyof typeof symbols; earned: boolean }) {
   const Icon = symbols[symbol];
   return (
-    <span aria-hidden className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full ${earned
+    <span aria-hidden className={`relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full ${earned
       ? "bg-[radial-gradient(circle_at_30%_25%,var(--gold),var(--plum)_75%)] text-[var(--on-accent)] shadow-lg shadow-[var(--plum)]/20"
       : "bg-[var(--lavender)]/50 text-[var(--midnight)]/45"}`}>
       <span className="absolute left-3 top-3 text-xs">✦</span>
       <span className="absolute bottom-3 right-3 text-sm">✧</span>
-      <Icon className="relative h-10 w-10" strokeWidth={1.5} />
+      <Icon className="relative h-7 w-7" strokeWidth={1.5} />
     </span>
   );
 }

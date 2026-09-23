@@ -118,6 +118,7 @@ export const STORY_REWARDS = [
   { id: "spoodiversary", title: "Spoodiversary", criterion: "One year together", symbol: "heart" },
   { id: "newChapter", title: "New Chapter", criterion: "Record a new enclosure", symbol: "move-right" },
 ] as const;
+export type StoryRewardId = (typeof STORY_REWARDS)[number]["id"];
 
 export const STREAK_REWARDS = [
   { days: 1, title: "First Spark", symbol: "sparkle" },
@@ -140,7 +141,20 @@ export type StorySpider = {
 };
 
 export type StoryEarned = { spiderId: string; spiderName: string; earnedAt: string };
-export type StoryRewardGroups = Record<(typeof STORY_REWARDS)[number]["id"], StoryEarned[]>;
+export type StoryRewardGroups = Record<StoryRewardId, StoryEarned[]>;
+export type StoryRewardProgress = Record<StoryRewardId, { label: string }>;
+
+function storyStartKey(spider: StorySpider, timeZone: string): string {
+  const acquisition = spider.acquisitionDate;
+  const isDateOnly = acquisition &&
+    acquisition.getUTCHours() === 0 && acquisition.getUTCMinutes() === 0 &&
+    acquisition.getUTCSeconds() === 0 && acquisition.getUTCMilliseconds() === 0;
+  return acquisition
+    ? isDateOnly
+      ? acquisition.toISOString().slice(0, 10)
+      : calendarDayKey(acquisition, timeZone)
+    : calendarDayKey(spider.createdAt, timeZone);
+}
 
 export function deriveStoryRewards(
   spiders: StorySpider[],
@@ -171,15 +185,7 @@ export function deriveStoryRewards(
 
     // Form-entered acquisition dates are UTC-midnight calendar values; older
     // fallback values may be real instants. Preserve both meanings.
-    const acquisition = spider.acquisitionDate;
-    const isDateOnly = acquisition &&
-      acquisition.getUTCHours() === 0 && acquisition.getUTCMinutes() === 0 &&
-      acquisition.getUTCSeconds() === 0 && acquisition.getUTCMilliseconds() === 0;
-    const startKey = acquisition
-      ? isDateOnly
-        ? acquisition.toISOString().slice(0, 10)
-        : calendarDayKey(acquisition, timeZone)
-      : calendarDayKey(spider.createdAt, timeZone);
+    const startKey = storyStartKey(spider, timeZone);
     const [year, month, day] = startKey.split("-").map(Number);
     const anniversary = new Date(Date.UTC(year + 1, month - 1, day)).toISOString().slice(0, 10);
     if (todayKey >= anniversary) {
@@ -190,4 +196,33 @@ export function deriveStoryRewards(
     result[reward.id].sort((a, b) => a.earnedAt.localeCompare(b.earnedAt));
   }
   return result;
+}
+
+export function deriveStoryProgress(
+  spiders: StorySpider[],
+  stories: StoryRewardGroups,
+  todayKey: string,
+  timeZone: string,
+): StoryRewardProgress {
+  const progress = {} as StoryRewardProgress;
+  for (const reward of STORY_REWARDS) {
+    const count = stories[reward.id].length;
+    progress[reward.id] = {
+      label: count > 0
+        ? `${count} spood${count === 1 ? "" : "s"} earned this`
+        : "0 of 1 qualifying moments",
+    };
+  }
+
+  if (stories.spoodiversary.length === 0) {
+    const today = ordinal(todayKey);
+    const elapsed = spiders.reduce((maximum, spider) => {
+      const start = ordinal(storyStartKey(spider, timeZone));
+      if (!Number.isFinite(start) || start > today) return maximum;
+      return Math.max(maximum, today - start);
+    }, 0);
+    progress.spoodiversary = { label: `${elapsed} day${elapsed === 1 ? "" : "s"} together` };
+  }
+
+  return progress;
 }

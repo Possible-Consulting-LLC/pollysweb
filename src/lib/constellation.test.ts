@@ -4,9 +4,11 @@ import {
   calendarDayKey,
   checkCareDay,
   careDueForReview,
+  deriveStoryProgress,
   deriveStoryRewards,
   reviewStateMatches,
   summarizeStreak,
+  type StorySpider,
 } from "./constellation";
 
 test("calendar day follows the keeper zone across midnight and DST", () => {
@@ -192,4 +194,29 @@ test("editing a hammock observation withdraws only badges with no remaining qual
 test("withdrawn care days lower milestones unless another qualifying streak remains", () => {
   assert.equal(summarizeStreak(['2026-09-18','2026-09-20'], '2026-09-20').earnedAt[3], undefined);
   assert.ok(summarizeStreak(['2026-09-10','2026-09-11','2026-09-12','2026-09-18','2026-09-20'], '2026-09-20').earnedAt[3]);
+});
+
+test("story progress stays truthful for locked and earned event badges", () => {
+  const spiders: StorySpider[] = [{
+    id: "star", name: "Star", createdAt: new Date("2026-09-01T12:00:00Z"), acquisitionDate: null,
+    photos: [], observations: [], molts: [], rehousings: [],
+  }];
+  const stories = deriveStoryRewards(spiders, "2026-09-16", "UTC");
+  const progress = deriveStoryProgress(spiders, stories, "2026-09-16", "UTC");
+  assert.equal(progress.firstPortrait.label, "0 of 1 qualifying moments");
+
+  spiders[0].photos.push({ date: new Date("2026-09-10T12:00:00Z") });
+  const earned = deriveStoryRewards(spiders, "2026-09-16", "UTC");
+  assert.equal(deriveStoryProgress(spiders, earned, "2026-09-16", "UTC").firstPortrait.label, "1 spood earned this");
+});
+
+test("locked anniversary progress reports elapsed keeper days without awarding early", () => {
+  const spiders: StorySpider[] = [{
+    id: "star", name: "Star", createdAt: new Date("2026-09-01T12:00:00Z"), acquisitionDate: null,
+    photos: [], observations: [], molts: [], rehousings: [],
+  }];
+  const stories = deriveStoryRewards(spiders, "2026-09-16", "UTC");
+  const progress = deriveStoryProgress(spiders, stories, "2026-09-16", "UTC");
+  assert.equal(progress.spoodiversary.label, "15 days together");
+  assert.equal(stories.spoodiversary.length, 0);
 });

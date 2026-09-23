@@ -62,7 +62,7 @@ export async function getConstellationData(userId: string, now = new Date()) {
     todayKey: rewards.todayKey, timeZone: rewards.timeZone, reviewItems,
     completedToday: rewards.days.some(day => day.dayKey === rewards.todayKey),
     completedDayKeys: rewards.days.map(day => day.dayKey),
-    streak: rewards.streak, stories: rewards.stories,
+    streak: rewards.streak, stories: rewards.stories, storyProgress: rewards.storyProgress,
   };
 }
 

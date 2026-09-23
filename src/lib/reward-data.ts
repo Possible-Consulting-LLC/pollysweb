@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db';
-import { calendarDayKey, deriveStoryRewards, summarizeStreak, type StorySpider } from './constellation';
+import { calendarDayKey, deriveStoryProgress, deriveStoryRewards, summarizeStreak, type StorySpider } from './constellation';
 import { resolveDisplayTimeZone } from './utils';
 
 /** Uses only the supplied client so reward locks never wait on a second pool connection. */
@@ -50,5 +50,13 @@ export async function readRewardState(userId: string, now = new Date(), db: Pris
       : [],
   }));
 
-  return { todayKey, timeZone, days, streak: summarizeStreak(days.map(day => day.dayKey), todayKey), stories: deriveStoryRewards(storySpiders, todayKey, timeZone, now) };
+  const stories = deriveStoryRewards(storySpiders, todayKey, timeZone, now);
+  return {
+    todayKey,
+    timeZone,
+    days,
+    streak: summarizeStreak(days.map(day => day.dayKey), todayKey),
+    stories,
+    storyProgress: deriveStoryProgress(storySpiders, stories, todayKey, timeZone),
+  };
 }
