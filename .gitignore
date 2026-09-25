@@ -51,6 +51,7 @@ next-env.d.ts
 .agents/
 .claude/
 .windsurf/
+/.superpowers/brainstorm/
 skills-lock.json
 AGENTS.md
 CLAUDE.md
