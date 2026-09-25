@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useRef,
   useState,
   useTransition,
   type ReactNode,
@@ -54,6 +55,10 @@ export function PhotoLightbox({
   actionError?: string | null;
 }) {
   const titleId = useId();
+  const thumbnailStrip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    thumbnailStrip.current?.children[index]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [index]);
   const photo = photos[index];
   const hasMany = photos.length > 1;
   const taken = formatTakenAt(photo?.takenAt);
@@ -91,10 +96,10 @@ export function PhotoLightbox({
     <ModalDialog labelledBy={titleId} onClose={onClose} className="backdrop:bg-[var(--panel)]/88">
       <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
       <div
-        className="relative flex max-h-[min(92dvh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] bg-[var(--panel)] shadow-2xl ring-1 ring-white/10"
+        className="relative flex h-[min(92dvh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] bg-[var(--panel)] shadow-2xl ring-1 ring-white/10"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 px-4 py-3 text-[var(--on-panel)]">
+        <div className="flex shrink-0 flex-col items-start justify-between gap-3 px-4 py-3 sm:flex-row text-[var(--on-panel)]">
           <div className="min-w-0">
             <p id={titleId} className="truncate text-sm font-semibold">
               {photo.caption || "Photo"}
@@ -106,7 +111,7 @@ export function PhotoLightbox({
               {isProfile ? `${hasMany || taken ? " · " : ""}Profile photo` : null}
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1 sm:w-auto">
             {onSetProfile ? (
               <Button
                 type="button"
@@ -166,7 +171,7 @@ export function PhotoLightbox({
             </button>
           ) : null}
 
-          <div className="relative h-[min(70dvh,720px)] w-full">
+          <div className="absolute inset-x-2 bottom-4 top-0 sm:inset-x-4">
             <SpoodImage
               src={photo.url}
               alt={photo.caption || "Spider photo"}
@@ -185,6 +190,18 @@ export function PhotoLightbox({
               <ChevronRight className="h-6 w-6" />
             </button>
           ) : null}
+        </div>
+        <div ref={thumbnailStrip} role="group" aria-label="Photo thumbnails" className="flex shrink-0 gap-2 overflow-x-auto border-t border-white/10 p-3">
+          {photos.map((item, itemIndex) => (
+            <button key={item.id} type="button"
+              aria-label={`Show photo ${itemIndex + 1}${item.caption ? `: ${item.caption}` : ""}`}
+              aria-current={itemIndex === index ? "true" : undefined}
+              onClick={() => onChangeIndex(itemIndex)}
+              className={cn("relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]", itemIndex === index ? "border-[var(--gold)]" : "border-transparent opacity-65 hover:opacity-100")}
+            >
+              <SpoodImage src={item.url} alt="" className="h-full w-full" />
+            </button>
+          ))}
         </div>
       </div>
       </div>
@@ -274,7 +291,7 @@ export function PhotoGallery({
   }
 
   if (items.length === 0) {
-    return <p className="text-sm text-[var(--midnight)]/55">{emptyLabel}</p>;
+    return <section className="mt-6 space-y-3"><h3 className="font-[family-name:var(--font-display)] text-xl text-[var(--midnight)]">Shooting Stars</h3><p className="text-sm text-[var(--midnight)]/55">{emptyLabel}</p></section>;
   }
 
   return (
@@ -287,8 +304,12 @@ export function PhotoGallery({
           {error}
         </p>
       ) : null}
+      <div className="mb-3 mt-6 flex items-center justify-between gap-3">
+        <h3 className="font-[family-name:var(--font-display)] text-xl text-[var(--midnight)]">Shooting Stars</h3>
+        <button type="button" onClick={() => { setError(null); setOpenIndex(0); }} className="min-h-11 shrink-0 text-sm font-semibold text-[var(--plum)] underline underline-offset-2">View all</button>
+      </div>
       <div className={cn("grid grid-cols-3 gap-2", className)}>
-        {items.map((photo, index) => (
+        {items.slice(0, 3).map((photo, index) => (
           <div
             key={photo.id}
             className="group relative aspect-square overflow-hidden rounded-2xl bg-[var(--lavender)]"

@@ -281,7 +281,7 @@ export default async function SpiderProfilePage({
               {spider.enclosure?.dimensions ? ` · ${spider.enclosure.dimensions}` : ""}
             </p>
           )}
-          {writable && spider.enclosure ? <MaintenanceForm spiderId={spider.id} /> : null}
+          {writable && spider.enclosure ? <div className="mt-6"><MaintenanceForm spiderId={spider.id} /></div> : null}
         </DisclosureCard>
       ) : null}
 
