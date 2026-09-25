@@ -125,3 +125,10 @@ Approved addition shows “X days on Spoodly Space” beneath the current streak
 
 
 The owner subsequently requested removal of the redundant badge title from the recent-care card; browser inspection confirmed that the streak, account age and seven markers remain. The owner approved committing this collection/Journey batch and deploying to staging only. The final local suite passed all 757 tests.
+
+
+## Profile and Universe refinements — September 25, 2026 (local, not deployed)
+
+Owner-approved profile layout puts care pills beside the photo on mobile, with name/identity details full-width below, preserves desktop placement, and prefixes the Story link with View. The mist reminder uses emerald100/emerald950 for green contrast. The Story page now shows the current portrait beside “Name’s Universe”, retains Spoodly Story, and removes the current portrait from Came home. Removing that incorrect association also restores its separate photo entry at the existing takenAt date. Profile-selection history is not recorded or fabricated.
+
+A regression reproduced suppression of the current photo and now verifies both dated photo entries survive switching the profile pointer. Full suite758 passed; types, scoped lint, webpack build, whitespace checks and independent review passed. Local browser339/1280 confirmed the responsive profile/header layouts and View link. Timeline evidence shows Came home without a photo, the welcome photo on September20 and the current portrait on September21. No keeper data was changed; existing open profile forms were preserved. These changes remain uncommitted and undeployed.

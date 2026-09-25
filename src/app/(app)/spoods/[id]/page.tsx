@@ -70,8 +70,8 @@ export default async function SpiderProfilePage({
         <span className="animate-twinkle absolute right-8 top-6 text-[var(--gold)]">
           ✦
         </span>
-        <div className="flex gap-4">
-          <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[1.5rem] bg-[var(--lavender)] shadow-lg">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 sm:gap-y-0">
+          <div className="relative h-24 w-24 sm:row-span-2 sm:h-28 sm:w-28 shrink-0 overflow-hidden rounded-[1.5rem] bg-[var(--lavender)] shadow-lg">
             <SpoodImage
               src={spider.profilePhoto}
               alt={spider.name}
@@ -79,24 +79,24 @@ export default async function SpiderProfilePage({
               priority
             />
           </div>
-          <div className="min-w-0">
+          <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--star)]">
               {memorialized ? "In memory" : "Spood profile"}
             </p>
-            <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-none">
+            <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-none [overflow-wrap:anywhere]">
               {spider.name}
             </h1>
-            <p className="mt-2 text-sm text-[var(--on-panel)]/70">{subtitle}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <StatusPill status={memorialized ? "In memory" : careStatus} />
-              {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
-                <StatusPill status="Mist today" />
-              ) : null}
-            </div>
+            <p className="mt-2 text-sm text-[var(--on-panel)]/70 [overflow-wrap:anywhere]">{subtitle}</p>
+          </div>
+          <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap content-center items-start gap-2 sm:row-start-2 sm:mt-3 sm:content-start">
+            <StatusPill status={memorialized ? "In memory" : careStatus} />
+            {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
+              <StatusPill status="Mist today" />
+            ) : null}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={`/spoods/${spider.id}/story`} className={buttonVariants({ variant: "gold", size: "sm" })}>{spider.name}&apos;s Story</Link>
+          <Link href={`/spoods/${spider.id}/story`} className={buttonVariants({ variant: "gold", size: "sm" })}>View {spider.name}&apos;s Story</Link>
         </div>
       </div>
 
@@ -166,7 +166,7 @@ export default async function SpiderProfilePage({
               </p>
             ) : null}
             {view.mistDue && careStatus !== "Mist today" ? (
-              <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="rounded-2xl bg-emerald-100 px-3 py-2 text-sm text-emerald-950">
                 {spider.name} could use a little mist today.
               </p>
             ) : null}

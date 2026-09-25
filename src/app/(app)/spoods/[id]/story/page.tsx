@@ -70,7 +70,6 @@ export default async function StoryPage({
       kind: "acquired",
       title: "Came home",
       detail: spider.source ? `From ${spider.source}` : "A new corner of the web",
-      photo: spider.profilePhoto,
     });
   }
 
@@ -231,19 +230,24 @@ export default async function StoryPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--plum)]/70">
             Spoodly Story
           </p>
-          <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl text-[var(--midnight)]">
-            {spider.name}&apos;s Story
-          </h1>
-          <p className="mt-1 text-sm text-[var(--midnight)]/60">
-            A scrapbook of little moments — tap Edit on any entry to fix dates or details.
-          </p>
         </div>
         <Link href={`/spoods/${spider.id}`} className={buttonVariants({ variant: "soft", size: "sm" })}>Profile</Link>
+        <div className="col-span-2 flex items-center gap-3">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-[var(--lavender)]">
+            <SpoodImage src={spider.profilePhoto} alt={`${spider.name}'s current profile photo`} className="h-full w-full" priority />
+          </div>
+          <h1 className="min-w-0 [overflow-wrap:anywhere] font-[family-name:var(--font-display)] text-3xl text-[var(--midnight)]">
+            {spider.name}&apos;s Universe
+          </h1>
+        </div>
+        <p className="col-span-2 text-sm text-[var(--midnight)]/60">
+          A scrapbook of little moments — tap Edit on any entry to fix dates or details.
+        </p>
       </div>
 
       <nav aria-label="Story pages" className="flex gap-4">
