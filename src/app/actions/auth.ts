@@ -342,7 +342,6 @@ export async function updateSettingsAction(formData: FormData) {
       data: {
         name,
         timezone,
-        theme: normalizeTheme(String(formData.get("theme") || "cosmic")),
         feedDefaultDays,
         mistDefaultDays,
       },

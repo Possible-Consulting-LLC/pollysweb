@@ -16,11 +16,11 @@ export function StreakCard({
   caredCount?: number;
 }) {
   const content = (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-wrap items-center gap-4">
       <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] bg-[var(--gold)]/20 text-[var(--gold)]">
         <Sparkles aria-hidden className="h-7 w-7" />
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[8rem] flex-1">
         <p className="text-sm font-semibold text-[var(--on-panel)]">Your care journey</p>
         <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--on-panel)]">
           {streak.current} day{streak.current === 1 ? "" : "s"} together
@@ -34,7 +34,7 @@ export function StreakCard({
         </p>
       </div>
       {compact ? (
-        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[var(--gold)]">
+        <span className="inline-flex w-full shrink-0 items-center justify-end sm:w-auto gap-1 text-sm font-semibold text-[var(--gold)]">
           View journey
           <ArrowRight aria-hidden className="h-5 w-5" />
         </span>

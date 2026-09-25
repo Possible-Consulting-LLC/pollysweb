@@ -37,3 +37,10 @@ test("choosing a theme previews and persists it without submitting profile field
   assert.match(page, /action=\{updateThemeAction\}/);
   assert.match(actions, /export async function updateThemeAction/);
 });
+
+// Theme autosave and profile submission can finish in either order.
+test("saving profile settings cannot overwrite an independently saved theme", () => {
+  const actions = readFileSync(new URL("../app/actions/auth.ts", import.meta.url), "utf8");
+  const profileAction = actions.split("export async function updateSettingsAction")[1].split("export async function updateThemeAction")[0];
+  assert.doesNotMatch(profileAction, /theme\s*:/);
+});

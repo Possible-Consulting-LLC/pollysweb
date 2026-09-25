@@ -121,6 +121,18 @@ test('quick housekeeping explains the enclosure prerequisite without rendering a
   assert.ok(elements(tree).some(element => textContent(element).includes('Add enclosure details')));
   assert.equal(elements(tree).some(element => element.type === 'form'), false);
 });
+test('quick housekeeping defaults to guidance when enclosure availability is unknown', () => {
+  const f = clientFixture();
+  const component = load<typeof import('../components/spoods/quick-log')>('../components/spoods/quick-log.tsx', f.dependencies);
+  const render = () => f.render(() => component.QuickLogButtons({ spiderId: 'demo-spider', spiderName: 'Demo' }));
+  let tree = render();
+  const button = elements(tree).find(element => element.type === 'button' && textContent(element) === 'Housekeeping');
+  assert.ok(button, 'Housekeeping action should be available');
+  (button.props.onClick as () => void)();
+  tree = render();
+  assert.ok(elements(tree).some(element => textContent(element).includes('Add enclosure details')));
+  assert.equal(elements(tree).some(element => element.type === 'form'), false);
+});
 test('home quick care can render only feed and hydrate actions', () => {
   const f = clientFixture();
   const component = load<typeof import('../components/spoods/quick-log')>('../components/spoods/quick-log.tsx', f.dependencies);

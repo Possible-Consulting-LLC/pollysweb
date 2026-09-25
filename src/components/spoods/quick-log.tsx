@@ -84,7 +84,7 @@ export function QuickLogButtons({
   currentLifeStage,
   lastFeeding,
   lastHydration,
-  hasEnclosure = true,
+  hasEnclosure = false,
   actions = ALL_QUICK_LOG_ACTIONS,
 }: {
   spiderId: string;
@@ -179,7 +179,7 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          className="w-full"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "feed"}
           aria-controls={`feed-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "feed"))}
@@ -191,7 +191,7 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
-          className="w-full"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "hydrate"}
           aria-controls={`hydrate-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "hydrate"))}
@@ -203,6 +203,7 @@ export function QuickLogButtons({
           type="button"
           variant="secondary"
           size="lg"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "molt"}
           aria-controls={`molt-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "molt"))}
@@ -214,6 +215,7 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "note"}
           aria-controls={`note-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "note"))}
@@ -225,6 +227,7 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "play"}
           aria-controls={`play-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "play"))}
@@ -236,6 +239,7 @@ export function QuickLogButtons({
           type="button"
           variant="soft"
           size="lg"
+          className="h-auto min-h-12 min-w-0 w-full flex-col gap-1 px-2 py-2 text-sm [overflow-wrap:anywhere] min-[400px]:flex-row sm:px-5 sm:text-base"
           aria-expanded={panel === "housekeeping"}
           aria-controls={`housekeeping-panel-${spiderId}`}
           onClick={() => setPanel((p) => togglePanel(p, "housekeeping"))}

@@ -29,15 +29,23 @@ export function RewardGallery({
       </p>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {STORY_REWARDS.map((reward) => {
-          const earned = stories[reward.id];
-          const unlocked = earned.length > 0;
+          const earnedStories = stories[reward.id];
+          const earned = earnedStories.length > 0;
           return (
             <details
               key={reward.id}
-              className="group relative overflow-hidden rounded-2xl border border-[var(--plum)]/15 bg-[var(--card)] text-center"
+              className="group min-w-0 [overflow-wrap:anywhere] relative overflow-hidden rounded-2xl border border-[var(--plum)]/15 bg-[var(--card)] text-center"
             >
               <summary className="flex min-h-32 cursor-pointer list-none flex-col items-center justify-center p-2 marker:content-none [&::-webkit-details-marker]:hidden">
-                <Art symbol={reward.symbol} earned={unlocked} />
+                <span className="relative block rounded-full">
+                  <Art symbol={reward.symbol} earned={earned} />
+                  {earned ? null : (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[var(--background)]/50"
+                    />
+                  )}
+                </span>
                 <span className="mt-2 block text-xs font-semibold leading-tight text-[var(--midnight)] sm:text-sm">
                   {reward.title}
                 </span>
@@ -45,10 +53,10 @@ export function RewardGallery({
               <div className="space-y-2 border-t border-[var(--plum)]/15 p-3 text-left text-xs text-[var(--midnight)] sm:text-sm">
                 <p>{reward.criterion}</p>
                 <p className="font-semibold text-[var(--plum)]">{progress[reward.id].label}</p>
-                <p>{earned.length ? `First earned ${earned[0].earnedAt}` : "Not earned yet"}</p>
-                {earned.length ? (
+                <p>{earned ? `First earned ${earnedStories[0].earnedAt}` : "Not earned yet"}</p>
+                {earned ? (
                   <ul className="space-y-1">
-                    {earned.map((item) => (
+                    {earnedStories.map((item) => (
                       <li key={item.spiderId}>
                         <Link
                           href={`/spoods/${item.spiderId}`}
@@ -62,12 +70,6 @@ export function RewardGallery({
                   </ul>
                 ) : null}
               </div>
-              {!unlocked ? (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[var(--background)]/50"
-                />
-              ) : null}
             </details>
           );
         })}

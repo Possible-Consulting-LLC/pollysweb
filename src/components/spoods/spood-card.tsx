@@ -26,7 +26,7 @@ export function SpoodIdentity({
     .filter(Boolean)
     .join(" · ");
   const name = (
-    <span className="font-[family-name:var(--font-display)] text-xl text-[var(--midnight)]">
+    <span className="[overflow-wrap:anywhere] font-[family-name:var(--font-display)] text-xl text-[var(--midnight)]">
       {spider.name}
     </span>
   );
@@ -41,7 +41,7 @@ export function SpoodIdentity({
   );
 
   return (
-    <div className="flex gap-3">
+    <div className="flex min-w-0 flex-col gap-3 min-[480px]:flex-row">
       {linkName ? (
         <Link href={`/spoods/${spider.id}`} className="shrink-0">
           {portrait}
@@ -58,7 +58,7 @@ export function SpoodIdentity({
             {name}
           </Link>
         ) : name}
-        <p className="truncate text-sm text-[var(--midnight)]/60">{subtitle}</p>
+        <p className="[overflow-wrap:anywhere] text-sm text-[var(--midnight)]/60">{subtitle}</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           <StatusPill status={memorialized ? "In memory" : careStatus} />
           {!memorialized && view.mistDue && careStatus !== "Mist today" ? (

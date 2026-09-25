@@ -174,6 +174,7 @@ export default async function SpiderProfilePage({
               spiderId={spider.id}
               spiderName={spider.name}
               currentLifeStage={spider.instar}
+              hasEnclosure={Boolean(spider.enclosure)}
               lastFeeding={
                 spider.feedings[0]
                   ? {

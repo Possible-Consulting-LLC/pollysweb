@@ -41,13 +41,13 @@ export function RecentCareMeter({
           <p className="text-sm text-[var(--midnight)]/70">{reward.title}</p>
         </div>
       </div>
-      <ol className="mt-5 grid grid-cols-7 gap-2">
+      <ol className="mt-5 grid grid-cols-7 gap-1 sm:gap-2">
         {recentDays(todayKey).map((day) => {
           const lit = completed.has(day);
           return (
-            <li key={day} className="text-center">
+            <li key={day} className="min-w-0 text-center">
               <span
-                className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full ${lit ? "bg-[var(--gold)] text-[var(--panel)]" : "bg-[var(--lavender)]/50 text-[var(--midnight)]/65"}`}
+                className={`mx-auto flex aspect-square w-full max-w-10 items-center justify-center rounded-full ${lit ? "bg-[var(--gold)] text-[var(--panel)]" : "bg-[var(--lavender)]/50 text-[var(--midnight)]/65"}`}
                 aria-label={`${day}: ${lit ? "care day completed" : "no completed care day"}`}
               >
                 {lit ? "✦" : "·"}
