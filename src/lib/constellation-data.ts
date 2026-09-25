@@ -2,7 +2,7 @@ import { readRewardState } from "./reward-data";
 import { withCareProgress } from "./care-progress-data";
 import { prisma } from "@/lib/db";
 import { listSpidersForUser, getUserDefaults, type SpiderCareView } from "@/lib/spiders";
-import { resolveDisplayTimeZone } from "@/lib/utils";
+import { daysBetween, resolveDisplayTimeZone } from "@/lib/utils";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
 import {
   calendarDayKey,
@@ -59,6 +59,7 @@ export async function getConstellationData(userId: string, now = new Date()) {
   ]);
   const reviewItems = await withCareProgress(userId, rewards.todayKey, rewards.timeZone, reviewItemsFor(views, defaults.feedDefaultDays, writeState), now);
   return {
+    daysTogether: Math.max(0, daysBetween(defaults.createdAt, now, rewards.timeZone)),
     todayKey: rewards.todayKey, timeZone: rewards.timeZone, reviewItems,
     completedToday: rewards.days.some(day => day.dayKey === rewards.todayKey),
     completedDayKeys: rewards.days.map(day => day.dayKey),

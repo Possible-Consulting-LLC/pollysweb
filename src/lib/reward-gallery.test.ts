@@ -40,3 +40,17 @@ test("earned streak badges survive a reset and locked badges show current progre
   assert.ok(html.includes("2 of 14 consecutive care days"));
   assert.ok(html.includes("Not earned yet"));
 });
+
+const { RecentCareMeter } = loadComponent("../components/constellation/recent-care-meter.tsx", {
+  "@/components/constellation/reward-art": art, "@/lib/constellation": rewards,
+});
+for (const [daysTogether, label] of [[0, "0 days on Spoodly Space"], [1, "1 day on Spoodly Space"], [10, "10 days on Spoodly Space"]] as const) {
+  test(`care meter shows account age separately from streak: ${daysTogether}`, () => {
+    const html = renderToStaticMarkup(RecentCareMeter({
+      todayKey: "2026-09-25", completedDayKeys: [], daysTogether,
+      streak: { current: 0, best: 0, earnedAt: {} },
+    }));
+    assert.ok(html.includes(label));
+    assert.ok(html.includes("0-day streak"));
+  });
+}

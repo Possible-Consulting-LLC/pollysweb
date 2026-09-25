@@ -110,3 +110,18 @@ Verification: four new Home regressions cover signup day, next local day, a UTC 
 Approved refinements add all six streak milestones to the existing Journey badge grid alongside the six story badges. Earned styling/date uses the derived milestone earnedAt evidence, so a reset current streak does not hide a previously earned milestone. Locked tiles show the current consecutive-day progress and requirement. The deferral placeholder is now “Why skip today?”. Reduced horizontal tile padding keeps “Spoodiversary” on one line at 320px and 339px without truncation.
 
 Verification: new rendered-component regressions failed before implementation and now pass; full suite 751 passed, zero failed/skipped. TypeScript, scoped lint, whitespace checks and webpack production build passed. Browser inspection confirmed all 12 tiles, earned First Spark date, locked Little Orbit requirement/progress, the new placeholder, no page overflow at 320px, and one-line Spoodiversary at both mobile widths. Independent review found no actionable regressions. No check-in or care data was submitted. Home and Journey refinements remain uncommitted and undeployed.
+
+
+## Collection refinements — September 25, 2026 (local, not deployed)
+
+Approved changes let mobile accordion identity/details span the full card width beneath the portrait and top-aligned expand/Profile controls. Search now suggests up to eight unique names from the effective keeper's already-loaded full collection, matching substrings without case sensitivity. Selecting a suggestion fills Search; the existing GET Filter form still applies name/species, status and sex filters. Keyboard arrows, Enter, Escape, blur dismissal and pointer selection are supported. Active keyboard suggestions scroll into view.
+
+Verification: substring, empty/unmatched, deduplication and bounded-list regressions passed; full suite 754 passed with zero failed/skipped. Types, scoped lint, webpack production build and whitespace checks passed. Local browser confirmed Star → Staging Star, ArrowDown/Enter selection without submitting, pointer selection of a name outside the currently filtered result, Escape dismissal, keyboard clearing plus Filter restoration, mobile accordion opening at 320px, full-width details at 339px, and intact desktop layout at 1280px. No page overflow at checked 320/1280 widths. Review's keyboard-scroll finding was fixed and re-reviewed with no remaining findings. The existing account had too few matching names to browser-exercise the eight-option scroll case; no fixture data was created. Changes remain uncommitted and undeployed.
+
+
+## Journey account age — September 25, 2026 (local, not deployed)
+
+Approved addition shows “X days on Spoodly Space” beneath the current streak headline. It uses the same nonnegative, timezone-aware calendar-day difference from keeper createdAt as Home, using the reward view's resolved timezone and request time. Streak calculation is unchanged. Rendered regressions cover 0, 1 and 10 days while retaining the independent 0-day streak. Full suite: 757 passed, zero failed/skipped; TypeScript, scoped lint, webpack build and whitespace checks passed. Browser339 showed “10 days on Spoodly Space”, matching Home; no page overflow at320. Independent review found no actionable issues. This addition and the collection refinements remain uncommitted and undeployed.
+
+
+The owner subsequently requested removal of the redundant badge title from the recent-care card; browser inspection confirmed that the streak, account age and seven markers remain. The owner approved committing this collection/Journey batch and deploying to staging only. The final local suite passed all 757 tests.

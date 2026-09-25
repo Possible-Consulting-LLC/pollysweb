@@ -23,7 +23,7 @@ export function SpoodAccordion({ items }: { items: SpoodAccordionItem[] }) {
             key={item.id}
             className="rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] shadow-[0_8px_30px_var(--shadow)]"
           >
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 p-3">
+            <div className="relative grid grid-cols-1 min-[480px]:grid-cols-[minmax(0,1fr)_auto] items-start gap-2 p-3">
               <button
                 id={headerId}
                 type="button"
@@ -36,14 +36,14 @@ export function SpoodAccordion({ items }: { items: SpoodAccordionItem[] }) {
                   <div className="min-w-0 flex-1">{item.identity}</div>
                   <span
                     aria-hidden
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-xl font-semibold leading-none text-[var(--plum-deep)]"
+                    className="absolute right-24 top-4 min-[480px]:static flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-xl font-semibold leading-none text-[var(--plum-deep)]"
                   >
                     {open ? "−" : "+"}
                   </span>
                   <span className="sr-only">{open ? "Collapse" : "Expand"}</span>
                 </div>
               </button>
-              {item.profileAction}
+              <div className="absolute right-3 top-3 min-[480px]:static">{item.profileAction}</div>
             </div>
             <div
               id={panelId}

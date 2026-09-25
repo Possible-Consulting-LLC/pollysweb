@@ -16,6 +16,7 @@ export default async function ConstellationPage() {
         subtitle="Shared progress for every spood in your care, gathered in one place."
       />
       <RecentCareMeter
+        daysTogether={data.daysTogether}
         todayKey={data.todayKey}
         completedDayKeys={data.completedDayKeys}
         streak={data.streak}

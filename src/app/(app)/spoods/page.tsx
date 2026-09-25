@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { SpoodCareDetails, SpoodIdentity } from "@/components/spoods/spood-card";
+import { SpoodSearch } from "@/components/spoods/spood-search";
 import { SpoodAccordion } from "@/components/spoods/spood-accordion";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Select } from "@/components/ui/field";
 import { listSpidersForUser } from "@/lib/spiders";
 import { requireUser } from "@/lib/session";
 import { PREMOLT_STATUSES, SEX_OPTIONS } from "@/lib/constants";
@@ -33,7 +34,7 @@ export default async function SpoodsPage({
 
       <form className="grid gap-2 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-3 sm:grid-cols-4">
         <Field label="Search" htmlFor="q">
-          <Input id="q" name="q" defaultValue={params.q} placeholder="Name or species" />
+          <SpoodSearch key={params.q ?? ""} initialQuery={params.q} names={collection.map(view => view.spider.name)} />
         </Field>
         <Field label="Status" htmlFor="status">
           <Select id="status" name="status" defaultValue={params.status || ""}>

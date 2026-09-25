@@ -12,10 +12,12 @@ function recentDays(todayKey: string): string[] {
 }
 
 export function RecentCareMeter({
+  daysTogether,
   todayKey,
   completedDayKeys,
   streak,
 }: {
+  daysTogether: number;
   todayKey: string;
   completedDayKeys: string[];
   streak: StreakSummary;
@@ -38,7 +40,9 @@ export function RecentCareMeter({
           <h2 className="font-[family-name:var(--font-display)] text-2xl text-[var(--midnight)]">
             {streak.current}-day streak
           </h2>
-          <p className="text-sm text-[var(--midnight)]/70">{reward.title}</p>
+          <p className="text-sm text-[var(--midnight)]/85">
+            {daysTogether} day{daysTogether === 1 ? "" : "s"} on Spoodly Space
+          </p>
         </div>
       </div>
       <ol className="mt-5 grid grid-cols-7 gap-1 sm:gap-2">
