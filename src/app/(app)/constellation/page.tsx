@@ -26,7 +26,7 @@ export default async function ConstellationPage() {
         </p>
       ) : null}
       <CareReview items={data.reviewItems} completedToday={data.completedToday} />
-      <RewardGallery stories={data.stories} progress={data.storyProgress} />
+      <RewardGallery streak={data.streak} stories={data.stories} progress={data.storyProgress} />
     </div>
   );
 }

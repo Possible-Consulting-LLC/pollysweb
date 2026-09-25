@@ -83,3 +83,30 @@ The parent also fixed the narrow Home teaser CTA after observing its squeezed te
 No migration is required. The full diff contains feature code/tests and its plan/documentation, with no environment files, Vercel metadata, credentials, schema/migrations, production configuration, or unrelated admin/security changes. Auth action changes are limited to the feature's guarded theme preference save.
 
 The final local commit should include the two handoff documents, the Task 7 review fixes, and their regressions. Do not mark all browser acceptance complete while the limits above remain. Owner approval for this reviewed local commit was received on September 25; request separate approval before staging deployment.
+
+
+## Staging deployment checkpoint — September 25, 2026
+
+The owner explicitly approved deploying commit `9fc6071189c96958789157e4e9a61c464c85e8b1`. It was deployed to the separate `spoodly-space-staging` Vercel project (`prj_WrjgdWSnmp1RV5C0qz9vPckFj2pO`) as `dpl_27qsebc1wkr9venCV3p48vCNKTGT`. Vercel reported READY after its configured webpack build, TypeScript check, static generation and packaging succeeded. The production target label belongs to this staging project only.
+
+- `vercel inspect staging.spoodlyspace.com` resolved to that exact deployment.
+- `https://staging.spoodlyspace.com/api/health` returned HTTP 200 and `{"ok":true}`.
+- Authenticated deployed-browser smoke checks passed for Home Feed disclosure, collection accordion/Housekeeping form, closed-by-default profile sections, and Journey badge progress. All four pages had no horizontal page overflow at a 320px viewport.
+- The live staging account currently has an existing enclosure (unlike the earlier localhost review state), and Housekeeping displays its form. No care event, check-in, enclosure edit, or preference change was submitted during this deployment smoke check. Successful housekeeping save/history acceptance remains unperformed.
+- The viewport was restored and the browser left on staging Home. Earlier full-matrix acceptance limitations still apply; this focused smoke check does not replace them.
+
+No migration, seed/reset, git push, or production project/database action was performed. These deployment notes were added after deployment and remain uncommitted; the deployed code is exactly the approved commit above. Next checkpoint is owner acceptance and any separately authorized remaining acceptance work, not an automatic production release.
+
+
+## Owner Home refinements — September 25, 2026 (local, not deployed)
+
+Following approved browser feedback, the Home card reserves Profile-button space only at the 480px horizontal identity breakpoint. Below that, the name, metadata and status pills use the full content width beneath the portrait. Home’s “days together” now counts calendar days since the effective keeper account’s `createdAt` in their resolved display timezone, with zero on signup day. Care streak calculations are unchanged; no schema change is needed.
+
+Verification: four new Home regressions cover signup day, next local day, a UTC midnight within the same local day, and account age when the care streak is zero. All 749 tests passed. TypeScript, scoped ESLint, `git diff --check`, and the webpack production build passed. Authenticated localhost browser checks at 339px and 1280px confirmed full-width mobile details, an intact desktop layout, no horizontal page overflow, and “10 days together” for the existing keeper. Independent review found no actionable issues. No account data was changed. These refinements remain uncommitted and have not been deployed; staging still serves `9fc6071`.
+
+
+## Owner Journey refinements — September 25, 2026 (local, not deployed)
+
+Approved refinements add all six streak milestones to the existing Journey badge grid alongside the six story badges. Earned styling/date uses the derived milestone earnedAt evidence, so a reset current streak does not hide a previously earned milestone. Locked tiles show the current consecutive-day progress and requirement. The deferral placeholder is now “Why skip today?”. Reduced horizontal tile padding keeps “Spoodiversary” on one line at 320px and 339px without truncation.
+
+Verification: new rendered-component regressions failed before implementation and now pass; full suite 751 passed, zero failed/skipped. TypeScript, scoped lint, whitespace checks and webpack production build passed. Browser inspection confirmed all 12 tiles, earned First Spark date, locked Little Orbit requirement/progress, the new placeholder, no page overflow at 320px, and one-line Spoodiversary at both mobile widths. Independent review found no actionable regressions. No check-in or care data was submitted. Home and Journey refinements remain uncommitted and undeployed.

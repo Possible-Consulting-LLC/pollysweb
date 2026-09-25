@@ -841,3 +841,16 @@ Task 7 fixed independent-review findings covering theme/profile save races, miss
 Fresh evidence: 745 tests passed; TypeScript passed; lint passed with 38 unchanged pre-existing image warnings and no errors; `git diff --check` passed; webpack production build passed. The standard Turbopack build still fails because its CSS worker cannot bind a port in this environment. Local browser review used a loopback-only webpack dev server on port 43123; a separate final authenticated smoke pass served the verified production bundle on loopback port 43124 and checked Home, collection, profile and Journey at 320 pixels, then stopped that temporary server. Home, collection, active profile, and Journey had no horizontal page overflow at 320/390/1280 pixels in Light and the dark palette. Drafts survived collection/profile disclosure closure, all six care panels opened exclusively, and no-enclosure guidance appeared on collection and profile. The owner-approved theme test restored the original System preference and verified it after reload.
 
 See [the smoke-test report](beta-care-navigation-smoke-test-2026-09-23.md) for exact procedure, fixes, review findings and limits. With-enclosure housekeeping writes, additional entitlement/collection fixtures, extreme names, a screen-reader session, and reduced-motion browser acceptance remain unperformed. No fixtures were seeded or altered to manufacture those states. The only intentional persisted browser changes were the approved theme switch/restoration. These results are a local review package, not production approval or a new staging-deployment acceptance result.
+
+
+## Staging deployment checkpoint — September 25, 2026
+
+The owner explicitly approved deploying commit `9fc6071189c96958789157e4e9a61c464c85e8b1`. It was deployed to the separate `spoodly-space-staging` Vercel project (`prj_WrjgdWSnmp1RV5C0qz9vPckFj2pO`) as `dpl_27qsebc1wkr9venCV3p48vCNKTGT`. Vercel reported READY after its configured webpack build, TypeScript check, static generation and packaging succeeded. The production target label belongs to this staging project only.
+
+- `vercel inspect staging.spoodlyspace.com` resolved to that exact deployment.
+- `https://staging.spoodlyspace.com/api/health` returned HTTP 200 and `{"ok":true}`.
+- Authenticated deployed-browser smoke checks passed for Home Feed disclosure, collection accordion/Housekeeping form, closed-by-default profile sections, and Journey badge progress. All four pages had no horizontal page overflow at a 320px viewport.
+- The live staging account currently has an existing enclosure (unlike the earlier localhost review state), and Housekeeping displays its form. No care event, check-in, enclosure edit, or preference change was submitted during this deployment smoke check. Successful housekeeping save/history acceptance remains unperformed.
+- The viewport was restored and the browser left on staging Home. Earlier full-matrix acceptance limitations still apply; this focused smoke check does not replace them.
+
+No migration, seed/reset, git push, or production project/database action was performed. These deployment notes were added after deployment and remain uncommitted; the deployed code is exactly the approved commit above. Next checkpoint is owner acceptance and any separately authorized remaining acceptance work, not an automatic production release.

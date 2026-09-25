@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
-import type { StreakSummary } from "@/lib/constellation";
 
 export function StreakCard({
-  streak,
+  daysTogether,
   completedToday,
   activeCount,
   compact = false,
   caredCount,
 }: {
-  streak: StreakSummary;
+  daysTogether: number;
   completedToday: boolean;
   activeCount: number;
   compact?: boolean;
@@ -23,7 +22,7 @@ export function StreakCard({
       <div className="min-w-[8rem] flex-1">
         <p className="text-sm font-semibold text-[var(--on-panel)]">Your care journey</p>
         <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--on-panel)]">
-          {streak.current} day{streak.current === 1 ? "" : "s"} together
+          {daysTogether} day{daysTogether === 1 ? "" : "s"} together
         </p>
         <p className="text-sm text-[var(--on-panel)]/75">
           {activeCount === 0

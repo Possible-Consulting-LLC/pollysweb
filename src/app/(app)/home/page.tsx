@@ -7,7 +7,7 @@ import { SpoodImage } from "@/components/spoods/spood-image";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
-import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
+import { daysBetween, formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { requireUser } from "@/lib/session";
 import { getStreakPreview, reviewItemsFor } from "@/lib/constellation-data";
 import { StreakCard } from "@/components/constellation/streak-card";
@@ -77,7 +77,7 @@ export default async function HomePage() {
       {verificationDeadline ? <EmailVerificationNotice deadline={new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "long", timeStyle: "short" }).format(verificationDeadline) + " UTC"} /> : null}
 
       <StreakCard
-        streak={constellation.streak}
+        daysTogether={Math.max(0, daysBetween(defaults.createdAt, new Date(), zone))}
         completedToday={constellation.completedToday}
         activeCount={reviewItems.length}
         caredCount={reviewItems.filter(item => item.caredFor).length}

@@ -71,7 +71,7 @@ export function CareReview({ items, completedToday }: { items: ReviewItem[]; com
                 {(["feeding", "misting"] as const).filter((kind) => item.due[kind]).map((kind) => (
                   <label key={kind} className="block text-sm text-[var(--midnight)]">
                     <span className="mb-1 block font-medium">If {kind} isn’t appropriate today, why?</span>
-                    <input name={`defer:${item.id}:${kind}`} defaultValue={item.deferred?.[kind] ?? ""} maxLength={240} placeholder="Optional until you choose to defer" className="min-h-11 w-full rounded-xl border border-[var(--plum)]/20 bg-[var(--input)] px-3 text-base text-[var(--midnight)] placeholder:text-[var(--midnight)]/50" />
+                    <input name={`defer:${item.id}:${kind}`} defaultValue={item.deferred?.[kind] ?? ""} maxLength={240} placeholder="Why skip today?" className="min-h-11 w-full rounded-xl border border-[var(--plum)]/20 bg-[var(--input)] px-3 text-base text-[var(--midnight)] placeholder:text-[var(--midnight)]/50" />
                   </label>
                 ))}
               </div>

@@ -120,6 +120,7 @@ export const getUserDefaults = cache(async (userId: string) => {
   return prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: {
+      createdAt: true,
       feedDefaultDays: true,
       mistDefaultDays: true,
       timezone: true,

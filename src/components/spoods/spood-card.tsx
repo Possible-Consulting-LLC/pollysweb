@@ -191,7 +191,7 @@ export function SpoodCareCard({
       >
         Profile
       </Link>
-      <div className="pr-20">
+      <div className="min-[480px]:pr-20">
         <SpoodIdentity
           view={view}
           readOnly={readOnly}
