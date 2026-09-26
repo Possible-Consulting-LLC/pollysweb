@@ -16,8 +16,8 @@ Every key below is a stable, long-lived identifier in the format `^[a-z][a-z0-9_
 | `photos` | 4 |
 | `journey` | 4 |
 | `activity` | 3 |
-| `settings` | 6 |
-| **Total** | **35** |
+| `settings` | 5 |
+| **Total** | **34** |
 
 ## Feature registry input
 
@@ -89,7 +89,6 @@ Every key below is a stable, long-lived identifier in the format `^[a-z][a-z0-9_
 | `settings.password.change` | Change password | Change the account password. | `src/app/actions/auth.ts` (`updatePasswordAction`), `src/components/settings/password-form.tsx` |
 | `settings.email.change` | Change email address | Request and confirm an email-address change (customer flow). | `src/app/actions/email-change.ts`, `src/components/settings/email-change-form.tsx`, `src/lib/email-change.ts`, `src/lib/email-challenge.ts` |
 | `settings.social.link` | Link and unlink social sign-in | Link a social provider to the account and disconnect it. | `src/app/actions/social-auth.ts` (`linkSocialProvider`), `src/app/actions/disconnect-provider.ts`, `src/components/settings/disconnect-provider-form.tsx`, `src/lib/social-disconnect.ts`, `src/lib/social-disconnect-policy.ts` |
-| `settings.billing.manage` | Manage billing and upgrade | View current plan, start checkout, and open the billing portal. | `src/app/(app)/upgrade/page.tsx`, `src/app/actions/billing.ts` (`startCheckoutAction`, `openBillingPortalAction`), `src/components/billing/checkout-buttons.tsx`, `src/lib/billing.ts`, `src/lib/billing-policy.ts` |
 
 ## Coverage checklist
 
@@ -100,13 +99,13 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `activity/page.tsx` → `activity.full_history.view`
 - [x] `constellation/page.tsx` → `universe.view`, `journey.streaks.view`, `journey.check_in`, `journey.badges.view`
 - [x] `home/page.tsx` → `care.status.view`, `journey.streaks.view`
-- [x] `settings/page.tsx` → `settings.profile.manage`, `settings.theme.customize`, `settings.password.change`, `settings.email.change`, `settings.social.link`, `settings.billing.manage`
+- [x] `settings/page.tsx` → `settings.profile.manage`, `settings.theme.customize`, `settings.password.change`, `settings.email.change`, `settings.social.link`; billing controls on this page are plan-independent (see ruling below)
 - [x] `spoods/page.tsx` → `spood.list.view`
 - [x] `spoods/new/page.tsx` → `spood.create`
 - [x] `spoods/[id]/page.tsx` → `spood.about.view`, `care.*` logs, `enclosure.view`, `photo.gallery.view`, `spood.memorialize`
 - [x] `spoods/[id]/story/page.tsx` → `spood.story.view`, `activity.edit`
 - [x] `today/page.tsx` + `today/layout.tsx` + `src/components/home/hub-scene.tsx` — navigation surface; covered by the features it opens (`spood.create`, `spood.list.view`, `activity.full_history.view`, `settings.*`)
-- [x] `upgrade/page.tsx` → `settings.billing.manage`
+- [x] `upgrade/page.tsx` → plan-independent (see billing ruling below)
 - [x] `layout.tsx`, `error.tsx`, `loading.tsx` — application shell (plan-independent infrastructure)
 
 ### Pages — plan-independent
@@ -116,6 +115,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `src/app/maintenance/page.tsx`, `src/app/testing-ended/`, `src/lib/site-status-*`, `src/components/layout/site-status.tsx` — platform maintenance/status, plan-independent
 - [x] `src/app/data-deletion/page.tsx`, `src/app/api/facebook/data-deletion/route.ts`, `src/lib/facebook-deletion.ts` — data-deletion compliance, plan-independent
 - [x] `src/components/feedback/feedback-button` + `src/app/actions/feedback.ts` — feedback, plan-independent
+- [x] **Customer billing surface — plan-independent per controller ruling:** `src/app/(app)/upgrade/page.tsx`, `src/app/actions/billing.ts` (`startCheckoutAction`, `openBillingPortalAction`), `src/components/billing/checkout-buttons.tsx`, `src/lib/billing.ts`, `src/lib/billing-policy.ts`. Billing is the destination the feature gate's "Upgrade" state points at, not itself a gated feature; every plan (including Free) must retain plan view, upgrade, and billing-portal access, and a plan configuration that could disable it would trap paying users. Consistent with the plan-independent classification already given to the Stripe webhook and billing cron.
 
 ### Admin surfaces — `src/app/admin/*`, `src/app/actions/admin-*.ts` (plan-independent, not gated features)
 
@@ -126,7 +126,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `about.ts` → `spood.about.edit`
 - [x] `activity.ts` → `activity.edit`, `activity.delete`
 - [x] `auth.ts` — `createSpiderAction` → `spood.create`; `updateSettingsAction` → `settings.profile.manage`; `updateThemeAction` → `settings.theme.customize`; `updatePasswordAction` → `settings.password.change`; remaining auth actions plan-independent
-- [x] `billing.ts` → `settings.billing.manage`
+- [x] `billing.ts` → plan-independent (see billing ruling below)
 - [x] `care-events.ts` → `care.feed.log`, `care.hydrate.log`, `care.observe.log`, `care.play.log`, `care.body_condition.log`, `care.molt.log`, `care.premolt.manage`
 - [x] `care-habitat.ts` → `enclosure.manage`, `housekeeping.log`, `photo.upload`, `photo.profile.set`, `photo.delete`, `spood.memorialize`, `spood.memorial.restore`
 - [x] `care-shared.ts` — shared helpers for care writes (mapped to the care/habitat features above); `rememberUserTimeZone` → `settings.profile.manage`
@@ -145,7 +145,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `health/route.ts` — health check, plan-independent
 - [x] `photos/route.ts` → `photo.gallery.view` (serves private photos)
 - [x] `site-status/route.ts`, `site-status/context/route.ts` — platform status, plan-independent
-- [x] `stripe/webhook/route.ts` — billing infrastructure backing `settings.billing.manage`, plan-independent (webhook, not user entry point)
+- [x] `stripe/webhook/route.ts` — billing infrastructure, plan-independent (webhook, not user entry point)
 
 ### Uploads — `src/lib/uploads.ts` and `src/lib/photo-*`
 
