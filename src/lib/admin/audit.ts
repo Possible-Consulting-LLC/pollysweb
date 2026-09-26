@@ -7,7 +7,8 @@ export type AuditInput = { actorId: string; targetId: string | null; action: str
 const safeFields = new Set(['role', 'previousRole', 'suspended', 'isDemo', 'demoPlan', 'previousDemoPlan', 'previousIsDemo', 'demoLabel', 'previousDemoLabel',
   'fieldsChanged', 'status', 'previousStatus', 'provider', 'operationId', 'deletedCount', 'cutoff',
   'spiderCount', 'photoCount', 'eventCount', 'subscriptionPresent', 'announcementEnabled',
-  'maintenanceDeadline', 'version', 'result', 'method', 'phase', 'testSessionId']);
+  'maintenanceDeadline', 'version', 'result', 'method', 'phase', 'testSessionId',
+  'featureKey', 'name', 'category', 'active', 'previousActive']);
 function safeText(value: string, max: number) {
   return value.length <= max && !/[\u0000-\u001f\u007f@]/.test(value) &&
     !/(?:bearer\s|password\s*[:=]|secret\s*[:=]|token\s*[:=]|\$2[aby]\$|eyJ[A-Za-z0-9_-]+\.)/i.test(value);

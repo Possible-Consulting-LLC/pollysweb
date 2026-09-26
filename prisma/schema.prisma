@@ -442,3 +442,18 @@ model SiteSettings {
  updatedBy String?
  updatedAt DateTime @updatedAt
 }
+
+// Code-owned feature catalog, mirrored from src/lib/features/registry.ts by
+// src/lib/admin/feature-sync.ts. Rows whose key leaves the registry stay as
+// reviewable orphans; assignment to plans references these keys.
+model Feature {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String
+  category    String
+  /// Global release state; a feature stays inactive until a super administrator releases it.
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
