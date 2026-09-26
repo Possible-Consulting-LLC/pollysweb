@@ -29,7 +29,7 @@ Every key below is a stable, long-lived identifier in the format `^[a-z][a-z0-9_
 | `spood.about.view` | View spood profile | View a spood's About section and profile details. | `src/app/(app)/spoods/[id]/page.tsx`, `src/app/(app)/spoods/page.tsx`, `src/components/spoods/spood-card.tsx`, `src/lib/spiders.ts` (`getSpiderCare`) |
 | `spood.about.edit` | Edit spood profile | Edit the About section and profile fields of an owned spood. | `src/app/actions/about.ts` (`updateSpiderAbout`), `src/components/spoods/about-form.tsx`, `src/components/spoods/species-fields.tsx`, `src/components/spoods/life-stage-field.tsx` |
 | `spood.list.view` | Browse spood collection | Browse, search, and filter the spood list. | `src/app/(app)/spoods/page.tsx`, `src/components/spoods/spood-search.tsx`, `src/components/spoods/spood-accordion.tsx`, `src/lib/spood-search.ts`, `src/lib/spiders.ts` (`listSpidersForUser`) |
-| `spood.story.view` | View spood story | View a spood's life-story timeline of events and photos. | `src/app/(app)/spoods/[id]/story/page.tsx`, `src/lib/spiders.ts` (`getSpiderStory`), `src/lib/story-photo-history.ts` |
+| `spood.story.view` | View spood story | View a spood's life-story timeline of events and photos. | `src/app/(app)/spoods/[id]/story/page.tsx`, `src/lib/spiders.ts` (`getSpiderStory`) |
 | `spood.memorialize` | Memorialize a spood | Memorialize a spood, which frees its active slot. | `src/app/actions/care-habitat.ts` (`memorializeSpider`), `src/components/spoods/memorial-panel.tsx` |
 | `spood.memorial.restore` | Restore a memorial | Restore a memorialized spood to active care (blocked when it would exceed the plan's allowance). | `src/app/actions/care-habitat.ts` (`restoreMemorializedSpider`), `src/components/spoods/memorial-panel.tsx` |
 
@@ -80,14 +80,14 @@ Every key below is a stable, long-lived identifier in the format `^[a-z][a-z0-9_
 | `activity.edit` | Edit activity entries | Correct the time or details of a past care event. | `src/app/actions/activity.ts` (`updateActivityAction`), `src/components/activity/activity-editor.tsx`, `src/lib/history-mutations.ts`, `src/app/(app)/spoods/[id]/story/page.tsx` (inline edit) |
 | `activity.delete` | Delete activity entries | Remove an incorrect care-event record. | `src/app/actions/activity.ts` (`deleteActivityAction`) |
 
-### `settings` (6)
+### `settings` (5)
 
 | Key | Name | Description | Entry points |
 | --- | --- | --- | --- |
 | `settings.profile.manage` | Manage account profile | Edit display name, default timezone, and account preferences. | `src/app/actions/auth.ts` (`updateSettingsAction`), `src/app/actions/care-shared.ts` (`rememberUserTimeZone`), `src/app/(app)/settings/page.tsx` |
-| `settings.theme.customize` | Customize theme | Switch between light and dark appearance. | `src/app/actions/auth.ts` (`updateThemeAction`), `src/components/settings/theme-toggle.tsx`, `src/lib/theme-toggle.ts` |
+| `settings.theme.customize` | Customize theme | Switch between light and dark appearance. | `src/app/actions/auth.ts` (`updateThemeAction`), `src/components/settings/theme-toggle.tsx` |
 | `settings.password.change` | Change password | Change the account password. | `src/app/actions/auth.ts` (`updatePasswordAction`), `src/components/settings/password-form.tsx` |
-| `settings.email.change` | Change email address | Request and confirm an email-address change (customer flow). | `src/app/actions/email-change.ts`, `src/components/settings/email-change-form.tsx`, `src/lib/email-change.ts`, `src/lib/email-challenge.ts` |
+| `settings.email.change` | Change email address | Request and confirm an email-address change (customer flow). | `src/app/actions/email-change.ts`, `src/components/settings/email-change-form.tsx`, `src/lib/email-challenge.ts` |
 | `settings.social.link` | Link and unlink social sign-in | Link a social provider to the account and disconnect it. | `src/app/actions/social-auth.ts` (`linkSocialProvider`), `src/app/actions/disconnect-provider.ts`, `src/components/settings/disconnect-provider-form.tsx`, `src/lib/social-disconnect.ts`, `src/lib/social-disconnect-policy.ts` |
 
 ## Coverage checklist
@@ -114,7 +114,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `src/app/(auth)/` (login, register, verify-email), `src/app/actions/auth.ts` (`registerAction`, `loginAction`, `logoutAction`, verification actions), `src/lib/social-auth.ts` (`startSocialSignIn`) — auth, plan-independent
 - [x] `src/app/maintenance/page.tsx`, `src/app/testing-ended/`, `src/lib/site-status-*`, `src/components/layout/site-status.tsx` — platform maintenance/status, plan-independent
 - [x] `src/app/data-deletion/page.tsx`, `src/app/api/facebook/data-deletion/route.ts`, `src/lib/facebook-deletion.ts` — data-deletion compliance, plan-independent
-- [x] `src/components/feedback/feedback-button` + `src/app/actions/feedback.ts` — feedback, plan-independent
+- [x] `src/components/feedback/feedback-button.tsx` + `src/app/actions/feedback.ts` — feedback, plan-independent
 - [x] **Customer billing surface — plan-independent per controller ruling:** `src/app/(app)/upgrade/page.tsx`, `src/app/actions/billing.ts` (`startCheckoutAction`, `openBillingPortalAction`), `src/components/billing/checkout-buttons.tsx`, `src/lib/billing.ts`, `src/lib/billing-policy.ts`. Billing is the destination the feature gate's "Upgrade" state points at, not itself a gated feature; every plan (including Free) must retain plan view, upgrade, and billing-portal access, and a plan configuration that could disable it would trap paying users. Consistent with the plan-independent classification already given to the Stripe webhook and billing cron.
 
 ### Admin surfaces — `src/app/admin/*`, `src/app/actions/admin-*.ts` (plan-independent, not gated features)
@@ -130,6 +130,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `care-events.ts` → `care.feed.log`, `care.hydrate.log`, `care.observe.log`, `care.play.log`, `care.body_condition.log`, `care.molt.log`, `care.premolt.manage`
 - [x] `care-habitat.ts` → `enclosure.manage`, `housekeeping.log`, `photo.upload`, `photo.profile.set`, `photo.delete`, `spood.memorialize`, `spood.memorial.restore`
 - [x] `care-shared.ts` — shared helpers for care writes (mapped to the care/habitat features above); `rememberUserTimeZone` → `settings.profile.manage`
+- [x] `care.ts` — re-export barrel over `care-events.ts` and `care-habitat.ts`; maps to the same care/habitat/photos/spoods keys those modules carry (`care.feed.log`, `care.hydrate.log`, `care.observe.log`, `care.play.log`, `care.body_condition.log`, `care.molt.log`, `care.premolt.manage`, `enclosure.manage`, `housekeeping.log`, `photo.upload`, `photo.profile.set`, `photo.delete`, `spood.memorialize`, `spood.memorial.restore`)
 - [x] `constellation.ts` → `journey.check_in`
 - [x] `disconnect-provider.ts` → `settings.social.link`
 - [x] `email-change.ts` → `settings.email.change`
