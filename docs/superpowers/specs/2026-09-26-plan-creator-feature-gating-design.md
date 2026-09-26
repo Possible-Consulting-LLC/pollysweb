@@ -355,6 +355,31 @@ Reports must distinguish raw impressions from clicks and successful opens. They 
 
 Retention, export, and deletion behavior must align with the application's privacy policy before production collection begins.
 
+## Implementation method: vertical-slice TDD
+
+Implementation must use test-driven development organized as thin vertical slices. Each slice starts with a failing test for an observable behavior, adds the minimum schema, server, UI, and analytics work needed to make that behavior pass, and ends with a working flow that can be demonstrated in the browser.
+
+Slices must produce user or administrator value independently. Avoid horizontal phases that build the entire database layer, then the entire service layer, then the entire interface before anything can be exercised end to end. Shared infrastructure should be introduced only when the current slice needs it and then expanded by later slices.
+
+Each slice must:
+
+1. name the user or super-admin behavior it delivers;
+2. begin with focused failing tests at the lowest useful boundary plus an end-to-end or browser-level acceptance check where the behavior crosses the UI;
+3. implement the complete path through persistence, authorization, server behavior, UI state, and analytics that the slice requires;
+4. preserve existing behavior outside the slice;
+5. finish with passing focused tests and relevant repository checks; and
+6. leave a demonstrable result that can be reviewed before the next slice begins.
+
+Recommended early slices are:
+
+1. resolve one code-registered feature into Available, Upgrade, or Coming Soon for a seeded plan;
+2. gate one visible entry point and its direct server route while recording engagement events;
+3. let a super administrator change that feature's plan assignment and immediately observe the gated result;
+4. create and publish one plan through the plan creator and render it on Pricing; and
+5. enforce one active-spood limit through both the visible Add Spood flow and its server mutation.
+
+Later slices expand the same proven path across the remaining feature inventory, billing states, trials, discounts, downgrades, and migration. A slice is not complete when only its mocks or internal services work; its promised behavior must be reviewable through the real application surface.
+
 ## Migration strategy
 
 Implementation should proceed in controlled stages:
@@ -407,7 +432,8 @@ Browser verification must cover mobile and desktop, light and dark themes, keybo
 11. Feature impressions, clicks, opens, gates, and upgrade interest are recorded with plan and access-state context.
 12. Inline impressions require at least 50% visibility for one continuous second.
 13. Existing billing and entitlement behavior remains operational until a reconciled migration explicitly replaces it.
+14. Implementation proceeds through test-first vertical slices that each produce a working, demonstrable user or super-admin behavior.
 
 ## OpenCode handoff
 
-Before implementation, convert this design into a repository-specific implementation plan using the Superpowers writing-plans workflow. The plan should begin with a code audit of current plan checks, Stripe integration, admin authorization/auditing, Prisma conventions, and all feature entry points. Do not implement from the old four-tier pricing document; it has been superseded by this file.
+Before implementation, convert this design into a repository-specific implementation plan using the Superpowers writing-plans workflow. Organize that plan as test-first vertical slices with a demonstrable acceptance outcome for every slice. The plan should begin with a code audit of current plan checks, Stripe integration, admin authorization/auditing, Prisma conventions, and all feature entry points. Do not implement from the old four-tier pricing document; it has been superseded by this file.
