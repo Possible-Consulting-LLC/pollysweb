@@ -17,7 +17,9 @@ import { Button } from '@/components/ui/button';
  * The reducer and the input view are pure (unit-tested); `useNarrowing` only
  * wires the debounce, request-id guard, and abort handling. */
 
-export type Suggestion = { id: string; title: string; subtitle?: string };
+export type Suggestion = { id: string; title: string; subtitle?: string;
+  /** Deleting accounts (users entity) arrive flagged so the picker greys them. */
+  disabled?: boolean };
 export type NarrowingResult = { rows: Suggestion[]; total: number };
 
 export const SUGGEST_DEBOUNCE_MS = 250;

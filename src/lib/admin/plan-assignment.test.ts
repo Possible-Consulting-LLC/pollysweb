@@ -462,7 +462,7 @@ const activeSub = (id: string, userId = 'user-1'): SubscriptionRow =>
     startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
     createdAt: new Date(0), updatedAt: new Date(0) });
 
-test('searchUsers matches name or email case-insensitively and excludes deleting users', async () => {
+test('searchUsers matches name or email case-insensitively; deleting users are included and flagged', async () => {
   const f = fixture('super_admin', { users: [
     userRow('u-name', 'Marta Keeper', 'marta@example.com'),
     userRow('u-email', 'Dan O.', 'keeper.marta@example.com'),
@@ -471,12 +471,14 @@ test('searchUsers matches name or email case-insensitively and excludes deleting
   ] });
   const { users, total } = await f.assignment.searchUsers(f.tx,
     { search: 'MARTA', page: 1, pageSize: 20 });
-  // Ordered by name; the deleting user never appears.
-  assert.deepEqual(users.map(row => row.id), ['u-email', 'u-name']);
-  assert.equal(total, 2);
-  assert.deepEqual(users.map(row => ({ name: row.name, email: row.email })),
-    [{ name: 'Dan O.', email: 'keeper.marta@example.com' },
-      { name: 'Marta Keeper', email: 'marta@example.com' }]);
+  // Ordered by name; deleting accounts appear flagged (greyed in the picker)
+  // and count in the total — the assignment action fails closed on them.
+  assert.deepEqual(users.map(row => row.id), ['u-email', 'u-gone', 'u-name']);
+  assert.equal(total, 3);
+  assert.deepEqual(users.map(row => ({ id: row.id, deleting: row.deleting })),
+    [{ id: 'u-email', deleting: false },
+      { id: 'u-gone', deleting: true },
+      { id: 'u-name', deleting: false }]);
 });
 
 test('searchUsers paginates with an exact total and matches either field for one term', async () => {

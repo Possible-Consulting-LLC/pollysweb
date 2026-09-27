@@ -13,7 +13,9 @@ import type { Prisma } from '@prisma/client';
  * subscription display columns, no pagination math beyond skip/take. See
  * performance-report.md findings 2/3 for the catalog-query budget. */
 
-export type Suggestion = { id: string; title: string; subtitle?: string };
+export type Suggestion = { id: string; title: string; subtitle?: string;
+  /** Deleting accounts (users entity) arrive flagged so the picker greys them. */
+  disabled?: boolean };
 
 export type NarrowingResult = { rows: Suggestion[]; total: number };
 
@@ -62,22 +64,24 @@ export async function narrowFeatures(tx: Pick<SuggestDb, 'feature'>, search: str
   return { total, rows: rows.map(row => ({ id: row.key, title: row.name, subtitle: row.key })) };
 }
 
-/** Keepers by name OR email (case-insensitive contains) over non-deleting
- * users, name order — searchUsers' where-clause. */
+/** Keepers by name OR email (case-insensitive contains), name order —
+ * searchUsers' where-clause. Deleting accounts are included and flagged
+ * (disabled) so the narrowed picker view greys them like the committed one. */
 export async function narrowUsers(tx: Pick<SuggestDb, 'user'>, search: string,
   page: number, pageSize: number): Promise<NarrowingResult> {
-  const where: Prisma.UserWhereInput = { deletingAt: null, OR: [
+  const where: Prisma.UserWhereInput = { OR: [
     { name: { contains: search, mode: 'insensitive' } },
     { email: { contains: search, mode: 'insensitive' } },
   ] };
   const [total, rows] = await Promise.all([
     tx.user.count({ where }),
-    tx.user.findMany({ where, select: { id: true, name: true, email: true },
+    tx.user.findMany({ where, select: { id: true, name: true, email: true, deletingAt: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
       skip: (page - 1) * pageSize, take: pageSize }),
   ]);
   return { total, rows: rows.map(row =>
-    ({ id: row.id, title: row.name ?? row.email, subtitle: row.email })) };
+    ({ id: row.id, title: row.name ?? row.email, subtitle: row.email,
+      disabled: row.deletingAt != null })) };
 }
 
 /** Active plans by name (case-insensitive contains), display order first —

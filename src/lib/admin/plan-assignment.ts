@@ -115,26 +115,30 @@ export async function listEffectiveSubscriptions(tx: AssignmentDb,
     optionPriceCents: row.billingOption?.basePriceCents ?? null })) };
 }
 
-/** Valid keepers for the assignment wizard's user step: name OR email contains
- * (case-insensitive) over non-deleting users, ordered by name. */
-export type UserSummary = { id: string; name: string; email: string };
+/** Keepers for the assignment wizard's user step: name OR email contains
+ * (case-insensitive), ordered by name. Deleting accounts are INCLUDED and
+ * flagged so the picker renders them greyed and unselectable (the mockup
+ * shows them visible but inert; the assignment action itself fails closed on
+ * a deleting target regardless). */
+export type UserSummary = { id: string; name: string; email: string; deleting: boolean };
 export type SearchUsersQuery = { search?: string; page: number; pageSize: number };
 export async function searchUsers(tx: Pick<AssignmentDb, 'user'>,
   query: SearchUsersQuery): Promise<{ users: UserSummary[]; total: number }> {
   const page = Math.max(1, Math.trunc(query.page) || 1);
   const pageSize = Math.max(1, Math.trunc(query.pageSize) || 1);
   const search = (query.search ?? '').trim();
-  const where: Prisma.UserWhereInput = { deletingAt: null, ...(search ? { OR: [
+  const where: Prisma.UserWhereInput = search ? { OR: [
     { name: { contains: search, mode: 'insensitive' } },
     { email: { contains: search, mode: 'insensitive' } },
-  ] } : {}) };
+  ] } : {};
   const [rows, total] = await Promise.all([
-    tx.user.findMany({ where, select: { id: true, name: true, email: true },
+    tx.user.findMany({ where, select: { id: true, name: true, email: true, deletingAt: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
     tx.user.count({ where }),
   ]);
   return { total, users: rows.map(row =>
-    ({ id: row.id, name: row.name ?? row.email, email: row.email })) };
+    ({ id: row.id, name: row.name ?? row.email, email: row.email,
+      deleting: row.deletingAt != null })) };
 }
 
 /** Active plans for the assignment wizard's plan step. Search, ordering, and

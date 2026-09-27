@@ -67,7 +67,7 @@ let capturedWizardProps: Array<Record<string, unknown>> = [];
 let capturedListProps: Array<Record<string, unknown>> = [];
 let servedRows: Row[] = [];
 let servedSubTotal = 0;
-let servedUsers: Array<{ id: string; name: string; email: string }> = [];
+let servedUsers: Array<{ id: string; name: string; email: string; deleting: boolean }> = [];
 let servedUserTotal = 0;
 let servedPlans: Array<{ id: string; name: string; planType: string; billingOptionCount: number;
   billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }> }> = [];
@@ -221,7 +221,7 @@ test('wizard params ride along on list navigation so an assignment survives', as
 test('＋ Add subscription unfolds the wizard above the list with the user step', async () => {
   capturedWizardProps = []; capturedUserQueries = [];
   servedRows = [row()]; servedSubTotal = 1;
-  servedUsers = [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }];
+  servedUsers = [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com', deleting: false }];
   servedUserTotal = 1;
   const tree = await render({ wizard: 'open' });
   // Resolving the tree invokes the stubs (wizard + list captures).
@@ -230,7 +230,7 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
     step: 1, listSearch: '', listPage: 1, selectedUser: null, selectedPlan: null,
     selectedOptionId: '',
     userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com',
-          leading: 'MK' }],
+          leading: 'MK', disabled: false }],
       total: 1, page: 1, pageSize: 20, search: '' },
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);

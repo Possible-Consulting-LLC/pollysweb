@@ -71,6 +71,7 @@ const prisma = {
       return [
         { id: 'u-1', name: 'Ada Keeper', email: 'ada@example.com' },
         { id: 'u-2', name: null, email: 'ada2@example.com' },
+        { id: 'u-3', name: 'Adaline Gone', email: 'gone@example.com', deletingAt: new Date('2026-01-01') },
       ];
     },
     count: async () => counts.user,
@@ -120,22 +121,25 @@ test('narrowRows(features) matches name OR key and keys the rows by feature key'
     total: 34 });
 });
 
-test('narrowRows(users) runs the keeper-validity rule over non-deleting users', async () => {
+test('narrowRows(users) includes deleting accounts flagged; the picker greys them', async () => {
   reset();
   const result = await suggest.narrowRows(prisma, 'users', 'ada', 1, 10);
   assert.equal(userCalls.length, 1);
   const query = userCalls[0] as { where: unknown; take: number;
     select: Record<string, unknown>; orderBy: unknown };
-  assert.deepEqual(plain(query.where), { deletingAt: null, OR: [
+  // No deletingAt filter — deleting accounts stay visible (mockup: greyed,
+  // unselectable) in the narrowed view exactly like the committed one.
+  assert.deepEqual(plain(query.where), { OR: [
     { name: { contains: 'ada', mode: 'insensitive' } },
     { email: { contains: 'ada', mode: 'insensitive' } },
   ] });
   assert.deepEqual(plain(query.orderBy), [{ name: 'asc' }, { id: 'asc' }]);
-  assert.deepEqual(Object.keys(query.select).sort(), ['email', 'id', 'name']);
+  assert.deepEqual(Object.keys(query.select).sort(), ['deletingAt', 'email', 'id', 'name']);
   assert.deepEqual(plain(result), {
     rows: [
-      { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' },
-      { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com' },
+      { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com', disabled: false },
+      { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com', disabled: false },
+      { id: 'u-3', title: 'Adaline Gone', subtitle: 'gone@example.com', disabled: true },
     ], total: 7 });
 });
 

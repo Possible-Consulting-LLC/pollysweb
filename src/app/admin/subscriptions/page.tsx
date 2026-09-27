@@ -105,7 +105,8 @@ export default async function SubscriptionsPage({ searchParams }:
     userPicker: userList
       ? { rows: userList.data.users.map((user: UserSummary) =>
           ({ id: user.id, title: user.name, subtitle: user.email,
-            leading: initialsOf(user.name || user.email) })),
+            leading: initialsOf(user.name || user.email),
+            disabled: user.deleting })),
           total: userList.data.total, page: userList.page,
           pageSize: userPickerQuery.pageSize, search: userPickerQuery.search }
       : { ...emptyPicker, page: userPickerQuery.page, search: userPickerQuery.search },
