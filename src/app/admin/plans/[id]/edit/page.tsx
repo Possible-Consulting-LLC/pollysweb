@@ -2,16 +2,23 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireAdminActor } from '@/lib/admin/actor';
 import { prisma } from '@/lib/db';
+import { isRegisteredFeatureKey } from '@/lib/features/registry';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
+import { FeatureMatrix } from '@/components/admin/feature-matrix';
 import { saveBillingOptionAction, updatePlanAction } from '../../actions';
 export const dynamic = 'force-dynamic';
 
 export default async function EditPlanPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdminActor('super_admin');
   const { id } = await params;
-  const plan = await prisma.plan.findUnique({ where: { id }, include: { billingOptions: true } });
+  const plan = await prisma.plan.findUnique({ where: { id },
+    include: { billingOptions: true, featureTranslations: { include: { feature: { select: { key: true } } } } } });
   if (!plan) notFound();
+  // Orphaned keys (in the DB but no longer in the registry) never seed the matrix.
+  const initialEnabledKeys = plan.featureTranslations
+    .filter(translation => translation.enabled && isRegisteredFeatureKey(translation.feature.key))
+    .map(translation => translation.feature.key);
   return <>
     <header className="space-y-2">
       <h2 className="text-2xl font-semibold">Edit {plan.name}</h2>
@@ -61,5 +68,9 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
         <button className="rounded-xl bg-[var(--plum)] px-4 py-2 text-[var(--on-accent)] sm:col-span-2">Save billing option</button>
       </MutationForm>
     </section>
+    <FeatureMatrix planId={plan.id} planName={plan.name}
+      options={plan.billingOptions.map(option => ({ planId: option.planId, interval: option.interval,
+        basePriceCents: option.basePriceCents, active: option.active }))}
+      initialEnabledKeys={initialEnabledKeys} />
   </>;
 }

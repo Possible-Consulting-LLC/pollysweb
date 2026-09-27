@@ -12,6 +12,8 @@ type PlanRow = { id: string; name: string; description: string; planType: string
   createdAt: Date; updatedAt: Date };
 type OptionRow = { id: string; planId: string; interval: string; basePriceCents: number;
   active: boolean; sortOrder: number; createdAt: Date; updatedAt: Date };
+type TranslationRow = { id: string; planId: string; featureId: string; enabled: boolean;
+  createdAt: Date; updatedAt: Date };
 
 function load(relativePath: string, deps: Record<string, unknown>): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
@@ -34,20 +36,25 @@ const PLAN: PlanRow = { id: 'plan-1', name: 'Standard', description: 'Baseline s
 const MONTHLY: OptionRow = { id: 'opt-1', planId: 'plan-1', interval: 'MONTHLY', basePriceCents: 900,
   active: true, sortOrder: 0, createdAt: new Date(0), updatedAt: new Date(0) };
 
-function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]) {
+function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY],
+  translations: TranslationRow[] = []) {
   type ActorFixture = { id: string; role: 'admin' | 'super_admin'; owner: boolean; suspended: boolean;
     credentialVersion: string; reauthenticatedAt: number };
   const actor: ActorFixture = { id: 'owner-1', role, owner: role === 'super_admin', suspended: false,
     credentialVersion: 'credential', reauthenticatedAt: Date.now() } as ActorFixture;
   const planStore = new Map<string, PlanRow>([[PLAN.id, { ...PLAN }]]);
   const optionStore = new Map<string, OptionRow>(options.map(option => [option.id, { ...option }]));
+  const translationStore = new Map<string, TranslationRow>(
+    translations.map(translation => [translation.id, { ...translation }]));
   const audits: Array<{ action: string; targetId: string | null; reason: string;
     changes: Record<string, unknown> }> = [];
   const revalidated: string[] = [];
   const mutations: string[] = [];
   let nextId = 100;
   const snapshot = (row: PlanRow) => ({ ...row, billingOptions: [...optionStore.values()]
-    .filter(option => option.planId === row.id).map(option => ({ ...option })) });
+    .filter(option => option.planId === row.id).map(option => ({ ...option })),
+    featureTranslations: [...translationStore.values()]
+      .filter(translation => translation.planId === row.id).map(translation => ({ ...translation })) });
   const matches = (where: Record<string, unknown>, row: OptionRow) =>
     (where.planId === undefined || where.planId === row.planId) &&
     (where.interval === undefined || where.interval === row.interval) &&
@@ -71,6 +78,8 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
         if (!row) throw new Error('Row not found.');
         planStore.delete(id);
         for (const [key, option] of [...optionStore.entries()]) if (option.planId === id) optionStore.delete(key);
+        for (const [key, translation] of [...translationStore.entries()])
+          if (translation.planId === id) translationStore.delete(key);
         return snapshot(row);
       },
       aggregate: async () => ({ _max: { sortOrder: Math.max(-1,
@@ -100,6 +109,10 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
   };
   const audit = load('./audit.ts', { 'server-only': {} });
   const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
+  const registry = load('../features/registry.ts', {});
+  const pricing = load('../features/pricing.ts', { './registry': registry });
+  const planFeatures = load('./plan-features.ts', { 'server-only': {}, './audit': audit,
+    './plans': plansModule, '../features/registry': registry, '../features/pricing': pricing });
   const api = load('../../app/admin/plans/actions.ts', {
     'next/cache': { revalidatePath: (path: string) => revalidated.push(path) },
     '@/lib/admin/maintenance-policy': maintenancePolicy,
@@ -112,6 +125,8 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     } },
     '@/lib/admin/audit': audit,
     '@/lib/admin/plans': plansModule,
+    '@/lib/admin/plan-features': planFeatures,
+    '@/lib/features/registry': registry,
   }) as typeof actions;
   return { api, plans: plansModule, tx: tx as never, planStore, optionStore, audits, revalidated, mutations };
 }
@@ -217,14 +232,18 @@ test('deletePlan with zero history deletes the plan and its options and audits p
     changes: { planName: 'Standard', result: 'deleted' } }]);
 });
 
-test('listPlans includes billing option counts and zeroed feature and subscription counts', async () => {
-  const f = fixture('super_admin');
+test('listPlans counts billing options and real enabled translations, subscriptions still zero', async () => {
+  const f = fixture('super_admin', [MONTHLY], [
+    { id: 'trans-1', planId: PLAN.id, featureId: 'feature-a', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'trans-2', planId: PLAN.id, featureId: 'feature-b', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'trans-3', planId: PLAN.id, featureId: 'feature-c', enabled: false, createdAt: new Date(0), updatedAt: new Date(0) },
+  ]);
   const summaries = jsonOf(await f.plans.listPlans(f.tx));
   assert.equal(summaries.length, 1);
   const summary = summaries[0];
   assert.equal(summary.name, 'Standard');
   assert.equal(summary.billingOptionCount, 1);
-  assert.equal(summary.enabledFeatureCount, 0);
+  assert.equal(summary.enabledFeatureCount, 2);
   assert.equal(summary.subscriptionCount, 0);
   assert.deepEqual(summary.billingOptions, [{ interval: 'MONTHLY', basePriceCents: 900, active: true }]);
 });

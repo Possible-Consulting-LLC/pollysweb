@@ -5,6 +5,8 @@ import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
 import { createPlan, deletePlan, duplicatePlan, reorderPlan, saveBillingOption,
   setBillingOptionActive, updatePlan } from '@/lib/admin/plans';
+import { applyFeatureMatrix } from '@/lib/admin/plan-features';
+import { FEATURE_REGISTRY } from '@/lib/features/registry';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
 
 type Result = { error?: string; success?: boolean };
@@ -178,4 +180,34 @@ export async function reorderPlanAction(form: FormData): Promise<Result> {
       return failure(error, 'The plan order was not changed. Reload and check your administrator access.');
     }
   });
+}
+
+/** Checkboxes named "feature" submit only the enabled keys; the matrix is
+ * reconstructed over the full code registry so every save covers every
+ * registered feature. A save that removes access from current subscribers
+ * still succeeds and returns a warning (never a silent subscriber change). */
+export async function saveFeatureMatrixAction(form: FormData): Promise<Result & { warning?: string }> {
+  return withMutation(form, 'admin', 'savefeaturematrix',
+    async (): Promise<Result & { warning?: string }> => {
+      try {
+        const { planId, reason } = planIdentity(form);
+        if (!reason || reason.length > 500) throw Error('Enter a short reason without personal information.');
+        const enabledKeys = new Set(form.getAll('feature').map(entry => String(entry)));
+        const entries = FEATURE_REGISTRY.map(definition =>
+          ({ key: definition.key, enabled: enabledKeys.has(definition.key) }));
+        const applied = await withAdminControl(async (tx, actor) => {
+          const result = await applyFeatureMatrix(tx, actor.id, planId, { entries }, reason);
+          if (isServiceError(result)) throw result;
+          return result;
+        });
+        revalidatePath('/admin/plans');
+        const warning = applied.removedAccess.length
+          ? `Removed access: ${applied.removedAccess.join(', ')}. Accounts assigned to this plan lose these features on their next gate check; their subscription rows were not modified.`
+          : undefined;
+        return { success: true, warning };
+      } catch (error) {
+        if (error instanceof MaintenanceError) throw error;
+        return failure(error, 'The feature matrix was not saved. Reload and check your administrator access.');
+      }
+    });
 }

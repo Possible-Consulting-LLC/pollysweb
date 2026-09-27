@@ -112,8 +112,9 @@ export async function updatePlan(tx: PlansDb, actorId: string, planId: string,
   return 'updated';
 }
 
-/** Copies identity (suffixed " (copy)", inactive, not public), billing options,
- * and — once Task 4 lands — feature translations. Audits plan.duplicate. */
+/** Copies identity (suffixed " (copy)", inactive, not public) and billing options.
+ * Feature translations are not copied — the matrix save is per-plan, so a copy
+ * starts with the default disabled matrix. Audits plan.duplicate. */
 export async function duplicatePlan(tx: PlansDb, actorId: string, planId: string,
   reason: string): Promise<string | Error> {
   const row = await loadPlan(tx, planId);
@@ -217,17 +218,17 @@ export async function reorderPlan(tx: PlansDb, actorId: string, planId: string,
   return 'moved';
 }
 
-/** Billing-option, enabled-feature, and subscription counts. Feature and
- * subscription tables arrive in Tasks 4–5; both count as zero until then. */
+/** Billing-option, enabled-feature, and subscription counts. The feature count
+ * reads real FeaturePlanTranslation rows; subscriptions arrive in Task 5. */
 export async function listPlans(tx: PlansDb): Promise<PlanSummary[]> {
-  const rows = await tx.plan.findMany({ include: { billingOptions: true },
+  const rows = await tx.plan.findMany({ include: { billingOptions: true, featureTranslations: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
   return rows.map(row => ({
     id: row.id, name: row.name, description: row.description,
     planType: row.planType as PlanType, maxSpiders: row.maxSpiders,
     active: row.active, public: row.public, sortOrder: row.sortOrder, updatedAt: row.updatedAt,
     billingOptionCount: row.billingOptions.length,
-    enabledFeatureCount: 0,
+    enabledFeatureCount: row.featureTranslations.filter(translation => translation.enabled).length,
     subscriptionCount: 0,
     billingOptions: row.billingOptions.map(option => ({ interval: option.interval as BillingInterval,
       basePriceCents: option.basePriceCents, active: option.active })),
