@@ -60,6 +60,8 @@ function loadAccordionView() {
   return exports as {
     PlansAccordionView: (props: Record<string, unknown>) => unknown;
     PlansAccordion: (props: Record<string, unknown>) => unknown;
+    formatUpdatedAt: (date: Date, now?: Date) => string;
+    priceSummary: (options: Array<{ interval: string; basePriceCents: number; active: boolean }>) => string;
   };
 }
 
@@ -140,7 +142,7 @@ const deps: Record<string, unknown> = {
     reorderPlanAction: 'reorder-plan', bulkSetPlanFlagsAction: 'bulk-set-plan-flags' },
 };
 
-const { PlansAccordionView, PlansAccordion } = loadAccordionView();
+const { PlansAccordionView, PlansAccordion, formatUpdatedAt, priceSummary } = loadAccordionView();
 
 type PlanLike = { id: string; name: string; description: string; planType: string;
   maxSpiders: number | null; active: boolean; public: boolean; sortOrder: number;
@@ -397,4 +399,101 @@ test('detail cards are soft-bordered labeled kv grids at mockup density', () => 
   }
   const grids = elements(tree).filter((item) => item.type === 'dl' && item.props['data-kv-grid']);
   assert.equal(grids.length, 3, 'each detail card renders a labeled kv grid');
+});
+
+// --- Fix round 2, chunk P: mockup presentation parity (P1, P2, P4, P5) ---
+
+const planWithPrices = (overrides: Partial<PlanLike> = {}): PlanLike => ({
+  ...plans(1)[0], ...overrides,
+});
+
+test('P1: each row meta line carries a price summary from active billing options', () => {
+  const priced = planWithPrices({ billingOptions: [
+    { interval: 'MONTHLY', basePriceCents: 199, active: true },
+    { interval: 'ANNUAL', basePriceCents: 1999, active: true },
+  ] });
+  const body = textOf(render({ plans: [priced] }));
+  assert.equal(body.includes('Unlimited · $1.99/mo · $19.99/yr'), true,
+    'the mockup meta shows spoods · prices');
+  // Inactive-only options still summarize (draft rows in the mockup show a price).
+  const draft = planWithPrices({ active: false, billingOptions: [
+    { interval: 'MONTHLY', basePriceCents: 999, active: false },
+  ] });
+  assert.equal(textOf(render({ plans: [draft] })).includes('$9.99/mo (inactive)'), true);
+});
+
+test('P1: zero-price and option-less rows stay truthful ($0 and n/a)', () => {
+  const free = planWithPrices({ billingOptions: [
+    { interval: 'MONTHLY', basePriceCents: 0, active: true },
+  ] });
+  assert.equal(textOf(render({ plans: [free] })).includes('$0'), true);
+  const bare = planWithPrices({ billingOptions: [] });
+  const body = textOf(render({ plans: [bare] }));
+  assert.equal(body.includes('· n/a'), true, 'no billing options render as n/a');
+});
+
+test('P1: priceSummary picks active options per interval in mockup format', () => {
+  assert.equal(priceSummary([
+    { interval: 'MONTHLY', basePriceCents: 199, active: true },
+    { interval: 'ANNUAL', basePriceCents: 1999, active: true },
+  ]), '$1.99/mo · $19.99/yr');
+  assert.equal(priceSummary([{ interval: 'MONTHLY', basePriceCents: 0, active: true }]), '$0');
+  assert.equal(priceSummary([
+    { interval: 'MONTHLY', basePriceCents: 999, active: false },
+  ]), '$9.99/mo (inactive)');
+  assert.equal(priceSummary([]), 'n/a');
+});
+
+test('P2: every extra detail action is kept and restyled into the mockup language', () => {
+  const tree = render({ openId: 'plan-1' });
+  const buttons = elementsOf(tree).buttons;
+  const variants: Record<string, { variant: string; size: string }> = {};
+  for (const button of buttons) variants[text(button)] =
+    { variant: String(button.props['data-variant']), size: String(button.props['data-size']) };
+  // Mockup: Edit plan is the btn-primary btn-sm link; the kept extra actions
+  // sit beside it as soft sm buttons.
+  const editLink = elementsOf(tree).links.find(link =>
+    String(link.props.href).endsWith('/edit'));
+  assert.ok(editLink, 'edit link missing');
+  assert.equal(text(editLink), 'Edit plan');
+  const editClass = String(editLink.props.className);
+  assert.equal(editClass.includes('variant-primary'), true);
+  assert.equal(editClass.includes('size-sm'), true, 'mockup uses btn-sm');
+  assert.deepEqual(variants['Duplicate'], { variant: 'soft', size: 'sm' });
+  assert.deepEqual(variants['Delete or deactivate'], { variant: 'soft', size: 'sm' },
+    'delete/deactivate keeps its function and drops the danger styling');
+  assert.ok(Object.keys(variants).some(label => label.startsWith('Move ')),
+    'reorder actions remain present');
+  const move = Object.keys(variants).find(label => label.startsWith('Move '))!;
+  assert.deepEqual(variants[move], { variant: 'soft', size: 'sm' });
+});
+
+test('P4: the committed footer carries the mockup "Sorted by display order" note', () => {
+  const tree = render();
+  assert.equal(textOf(tree).includes('Sorted by display order'), true,
+    'mockup footer note missing');
+});
+
+test('P5: last-updated renders human dates, not ISO slices', () => {
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+  const body = textOf(render({ plans: [planWithPrices({ updatedAt: twoHoursAgo })] }));
+  assert.equal(body.includes('updated 2h ago'), true, 'row meta uses relative dates');
+  assert.match(body, /2h ago/);
+  assert.equal(body.includes('updated 1970-01-01'), false, 'no ISO date in the row meta');
+  const open = textOf(render({ openId: 'plan-1',
+    plans: [planWithPrices({ updatedAt: twoHoursAgo })] }));
+  assert.equal((open.match(/Last updated 2h ago/g) ?? []).length, 1,
+    'the detail card Last updated row is a human date too');
+});
+
+test('P5: formatUpdatedAt is relative within a week, a short date beyond', () => {
+  const now = new Date('2026-09-27T12:00:00Z');
+  assert.equal(formatUpdatedAt(new Date(now.getTime() - 30_000), now), 'just now');
+  assert.equal(formatUpdatedAt(new Date(now.getTime() - 5 * 60_000), now), '5m ago');
+  assert.equal(formatUpdatedAt(new Date(now.getTime() - 2 * 3_600_000), now), '2h ago');
+  assert.equal(formatUpdatedAt(new Date(now.getTime() - 3 * 86_400_000), now), '3d ago');
+  assert.equal(formatUpdatedAt(new Date('2026-09-12T10:00:00Z'), now), 'Sep 12',
+    'older than a week falls back to a short human date');
+  assert.equal(formatUpdatedAt(new Date(now.getTime() + 86_400_000), now), 'just now',
+    'clock skew / future dates stay sensible, never "negative ago"');
 });

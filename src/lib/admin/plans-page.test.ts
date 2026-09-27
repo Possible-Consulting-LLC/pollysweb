@@ -106,6 +106,26 @@ test('plans page feeds the accordion the server page and the URL open plan', asy
   assert.deepEqual(capturedQueries, [{ search: '', page: 1, pageSize: 20 }]);
 });
 
+// --- Fix round 2, chunk P: mockup presentation parity (P3) ---
+
+test('P3: the create action is the mockup head-row "＋ New plan" btn-sm primary', async () => {
+  const tree = await render();
+  const createLinks = elements(tree).filter(item => item.type === 'a' &&
+    item.props.href === '/admin/plans/new');
+  assert.equal(createLinks.length, 1, 'exactly one create affordance');
+  const create = createLinks[0];
+  assert.equal(text(create), '＋ New plan', 'mockup button label');
+  const className = String(create.props.className);
+  assert.equal(className.includes('variant-primary'), true);
+  assert.equal(className.includes('size-sm'), true, 'mockup uses btn-sm in the head row');
+  // The head row pairs the title with the button (mockup .head) — no full-size
+  // standalone "Create a plan" paragraph below the header.
+  const body = textOf(tree);
+  assert.equal(body.includes('Create a plan'), false, 'old full-size link label removed');
+  const headerText = text(elements(tree).find(item => item.type === 'header')!);
+  assert.equal(headerText.includes('Plans'), true);
+});
+
 function elementsOf(tree: unknown) {
   const all = elements(tree);
   return {

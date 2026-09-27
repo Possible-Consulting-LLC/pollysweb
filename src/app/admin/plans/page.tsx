@@ -20,11 +20,14 @@ export default async function PlansPage({ searchParams }:
   const page = clampPage(parsed.page, total, parsed.pageSize);
   if (page !== parsed.page) ({ plans, total } = await listPlans(prisma, { ...query, page }));
   return <>
-    <header className="space-y-2">
+    {/* Mockup .head row: the title pairs with the ＋ New plan btn-sm primary. */}
+    <header className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-2xl font-semibold">Plans</h2>
-      <p>Plan identity is the id; display names may repeat. Active billing options are limited to one per interval, and plans with subscription history are deactivated instead of deleted. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
+      <Link href="/admin/plans/new" className={buttonVariants({ variant: 'primary', size: 'sm' })}>＋ New plan</Link>
     </header>
-    <p><Link href="/admin/plans/new" className={buttonVariants({ variant: 'primary', size: 'md' })}>Create a plan</Link></p>
+    <div className="space-y-2">
+      <p>Plan identity is the id; display names may repeat. Active billing options are limited to one per interval, and plans with subscription history are deactivated instead of deleted. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
+    </div>
     {/* Search lives in the accordion's live toolbar (mockup-exact): typing
         narrows the rendered list live, Enter is the explicit full-page
         fallback navigation. */}

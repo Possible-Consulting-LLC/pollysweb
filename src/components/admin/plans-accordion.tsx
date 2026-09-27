@@ -18,6 +18,38 @@ import { bulkSetPlanFlagsAction, deletePlanAction, duplicatePlanAction,
 
 const typeLabel: Record<string, string> = { STANDARD: 'Standard', CUSTOM: 'Custom', INTERNAL: 'Internal' };
 
+/** Mockup row-meta price summary: "$X.XX/mo · $X.XX/yr" from the active
+ * billing options (one per interval); inactive-only rows keep their price with
+ * an "(inactive)" marker; no options at all render as the mockup's "n/a". */
+export function priceSummary(options: PlanSummary['billingOptions']): string {
+  if (options.length === 0) return 'n/a';
+  const active = options.filter(option => option.active);
+  const usable = active.length > 0 ? active : options;
+  const parts = usable.map(option => {
+    const dollars = option.basePriceCents / 100;
+    if (dollars === 0) return '$0';
+    return `$${dollars.toFixed(2)}/${option.interval === 'ANNUAL' ? 'yr' : 'mo'}`;
+  });
+  const suffix = active.length > 0 ? '' : ' (inactive)';
+  return `${parts.join(' · ')}${suffix}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const shortDate = (date: Date) => `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+
+/** Mockup "updated 2h ago" style: relative within a week, a short human date
+ * beyond it; anything in the future (incl. clock skew) reads "just now". */
+export function formatUpdatedAt(date: Date, now: Date = new Date()): string {
+  const diffMs = now.getTime() - date.getTime();
+  const minute = 60_000, hour = 3_600_000, day = 86_400_000;
+  if (diffMs < minute) return 'just now';
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m ago`;
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}h ago`;
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}d ago`;
+  return shortDate(date);
+}
+
 /** Row toggles preserve search/page; pager links drop `open` (paging folds the accordion). */
 const listHref = (search: string, page: number, open?: string) =>
   `/admin/plans?${new URLSearchParams({ ...(search ? { search } : {}), page: String(page),
@@ -77,22 +109,25 @@ function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
     <DetailCard title="Usage" rows={[
       { label: 'Enabled features', value: `${plan.enabledFeatureCount} of ${FEATURE_COUNT}` },
       { label: 'Effective subscriptions', value: plan.subscriptionCount },
-      { label: 'Last updated', value: plan.updatedAt.toISOString().slice(0, 10) },
+      { label: 'Last updated', value: formatUpdatedAt(plan.updatedAt) },
     ]} />
+    {/* Mockup drow: soft sm actions beside the sm primary edit (P2 ruling —
+        keep every extra action, adopt the mockup's visual language). */}
     <div className="flex flex-wrap gap-2 pt-1">
-      <Link href={`/admin/plans/${plan.id}/edit`} className={buttonVariants({ variant: 'primary', size: 'md' })}>Edit plan</Link>
+      <Link href={`/admin/plans/${plan.id}/edit`}
+        className={cn(buttonVariants({ variant: 'primary', size: 'sm' }))}>Edit plan</Link>
       <MutationForm action={duplicatePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
         <input type="hidden" name="planId" value={plan.id} />
-        <Button variant="secondary" size="sm">Duplicate</Button>
+        <Button variant="soft" size="sm">Duplicate</Button>
       </MutationForm>
       <MutationForm action={deletePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
         <input type="hidden" name="planId" value={plan.id} />
-        <Button variant="danger" size="sm">Delete or deactivate</Button>
+        <Button variant="soft" size="sm">Delete or deactivate</Button>
       </MutationForm>
       <MutationForm action={reorderPlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
         <input type="hidden" name="planId" value={plan.id} />
         <input type="hidden" name="direction" value={index === 0 ? 'down' : 'up'} />
-        <Button variant="ghost" size="sm">Move {index === 0 ? 'down' : 'up'}</Button>
+        <Button variant="soft" size="sm">Move {index === 0 ? 'down' : 'up'}</Button>
       </MutationForm>
     </div>
   </div>;
@@ -195,8 +230,10 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
               </span>
               <span className="w-full text-[11.5px] leading-relaxed opacity-70 md:w-auto md:text-right">
                 {plan.maxSpiders === null ? 'Unlimited' : `${plan.maxSpiders} spoods`} ·
-                {' '}{plan.enabledFeatureCount} features · {plan.subscriptionCount} subscriber{plan.subscriptionCount === 1 ? '' : 's'} ·
-                {' '}updated {plan.updatedAt.toISOString().slice(0, 10)}
+                {' '}{priceSummary(plan.billingOptions)}
+                <br />
+                {plan.enabledFeatureCount} features · {plan.subscriptionCount} subscriber{plan.subscriptionCount === 1 ? '' : 's'} ·
+                {' '}updated {formatUpdatedAt(plan.updatedAt)}
               </span>
             </Link>
           </div>
@@ -208,7 +245,7 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
             {search ? <>Nothing matches “{search}”.</> : 'No plans yet.'}
           </p>
         : null}
-      <nav className="mt-4 flex items-center gap-3 border-t border-[var(--hover)] pt-3.5"
+      <nav className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--hover)] pt-3.5"
         aria-label="Plans pagination">
         {page <= 1
           ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
@@ -217,6 +254,7 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
         {page >= lastPage
           ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
           : <Link href={listHref(search, page + 1)} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>Next</Link>}
+        <span className="ml-auto text-xs opacity-55">Sorted by display order</span>
       </nav>
     </>}
   </>;
