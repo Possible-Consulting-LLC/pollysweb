@@ -4,14 +4,14 @@
  *   npx tsx --test scripts/staging-legacy-subscriptions.test.ts */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { LEGACY_PLAN_SPECS, mapLegacyTier } from '../src/lib/admin/legacy-entitlements';
+import type { LegacyTier } from '../src/lib/admin/legacy-entitlements';
 import {
-  LEGACY_PLAN_SPECS,
   ORPHANED_FEATURE_KEYS,
   assertLegacyBackfillEnvironment,
   backfillReason,
   decideUserAction,
   effectiveSubscription,
-  mapLegacyTier,
   validateDesignatedFeatures,
 } from './staging-legacy-subscriptions';
 
@@ -64,6 +64,18 @@ test('decideUserAction supersedes an effective subscription on any other plan', 
 
 test('decideUserAction creates when no effective subscription exists', () => {
   assert.equal(decideUserAction('plan-pro-legacy', null), 'create');
+});
+
+test('a tier change since backfill is corrected in both directions (free→pro and pro→free)', () => {
+  // Each user's CURRENT tier decides the target plan; any active subscription
+  // on the other tier's legacy plan is superseded, never skipped.
+  const planIdFor = (tier: LegacyTier) => `plan-${tier}-legacy`;
+  assert.equal(
+    decideUserAction(planIdFor(mapLegacyTier('pro')), { planId: planIdFor(mapLegacyTier('free')) }),
+    'supersede', 'free→pro upgrade must supersede the Free – Legacy subscription');
+  assert.equal(
+    decideUserAction(planIdFor(mapLegacyTier('free')), { planId: planIdFor(mapLegacyTier('pro')) }),
+    'supersede', 'pro→free downgrade must supersede the Pro – Legacy subscription');
 });
 
 test('effectiveSubscription only honors TRIALING/ACTIVE/PAST_DUE rows that have not expired', () => {

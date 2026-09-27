@@ -11,7 +11,10 @@
  * reads always run). Safe to execute repeatedly; users already holding the
  * mapped legacy plan are skipped.
  *
- * Run with (the react-server condition is required so the admin services'
+ * Run via the npm script (dry-run by default; pass --apply after `--` to write):
+ *   npm run db:legacy-sync              # dry-run
+ *   npm run db:legacy-sync -- --apply   # converge
+ * or directly (the react-server condition is required so the admin services'
  * 'server-only' markers resolve to no-ops under tsx):
  *   npx tsx --conditions=react-server scripts/staging-legacy-subscriptions.ts [--apply]
  *
@@ -26,39 +29,17 @@ import dotenv from 'dotenv';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { assertStagingEnvironment } from '../src/lib/staging-guard';
 import { isRegisteredFeatureKey } from '../src/lib/features/registry';
+import { isEffectiveSubscription, LEGACY_PLAN_SPECS, mapLegacyTier } from '../src/lib/admin/legacy-entitlements';
+import type { LegacyTier } from '../src/lib/admin/legacy-entitlements';
 
 // ---------------------------------------------------------------------------
-// Pure mapping / decision logic (unit-tested in staging-legacy-subscriptions.test.ts)
+// Pure decision logic (unit-tested in staging-legacy-subscriptions.test.ts).
+// The tier → legacy-plan mapping itself lives in
+// src/lib/admin/legacy-entitlements.ts — the single source of truth shared
+// with the read-time resolver; only the backfill-specific decisions remain here.
 // ---------------------------------------------------------------------------
 
 export type Environment = Record<string, string | undefined>;
-
-/** The legacy tiers map onto exactly these plan names. */
-export const LEGACY_PLAN_SPECS = {
-  free: {
-    name: 'Free – Legacy',
-    description: 'Backfilled from the legacy staging free tier.',
-    maxSpiders: 1,
-    featureKeys: ['spood.list.view', 'care.feed.log'],
-  },
-  pro: {
-    name: 'Pro – Legacy',
-    description: 'Backfilled from the legacy staging pro tier.',
-    maxSpiders: null,
-    featureKeys: [
-      'spood.list.view', 'care.feed.log', 'care.hydrate.log', 'care.molt.log',
-      'care.observe.log', 'care.play.log', 'care.body_condition.log',
-      'enclosure.view', 'enclosure.manage', 'housekeeping.log',
-      'photo.gallery.view', 'photo.profile.set', 'photo.delete',
-      'spood.memorialize', 'journey.check_in', 'journey.streaks.view',
-      'journey.badges.view', 'universe.view', 'activity.full_history.view',
-      'activity.edit', 'activity.delete',
-    ],
-  },
-} as const satisfies Record<string, {
-  name: string; description: string; maxSpiders: number | null; featureKeys: readonly string[];
-}>;
-export type LegacyTier = keyof typeof LEGACY_PLAN_SPECS;
 
 /** Registry-listed keys that must never be assigned to a plan. photo.upload
  * is orphaned (deliberately unassignable); reject it loudly if it ever shows
@@ -73,24 +54,14 @@ export function assertLegacyBackfillEnvironment(env: Environment): void {
   assertStagingEnvironment(env);
 }
 
-/** Legacy User.plan tier → normalized Legacy tier key. Strict: only the exact
- * legacy values 'free'/'pro' map; anything else (including null/empty or case
- * variants) fails loudly so an unexpected tier aborts the run. */
-export function mapLegacyTier(tier: string | null | undefined): LegacyTier {
-  if (typeof tier !== 'string' || !TIERS.includes(tier))
-    throw new Error(`Unmapped legacy plan tier ${JSON.stringify(tier ?? null)}; aborting.`);
-  return tier as LegacyTier;
-}
-
 export type SubscriptionPlanRef = { planId: string };
 
 /** The one effective subscription per the assignment service's semantics
- * (TRIALING/ACTIVE/PAST_DUE and not expired), or null when none applies. */
+ * (TRIALING/ACTIVE/PAST_DUE and not expired), or null when none applies.
+ * Delegates the row predicate to the shared entitlements module. */
 export function effectiveSubscription<T extends { status: string; expiresAt: Date | null }>(
   rows: readonly T[], now: Date): T | null {
-  return rows.find(row =>
-    ['TRIALING', 'ACTIVE', 'PAST_DUE'].includes(row.status) &&
-    (row.expiresAt === null || row.expiresAt.getTime() > now.getTime())) ?? null;
+  return rows.find(row => isEffectiveSubscription(row, now)) ?? null;
 }
 
 /** Backfill decision for one user: 'skip' only when the user's effective
