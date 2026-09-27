@@ -200,8 +200,11 @@ test('popup view renders combobox semantics on the input and a listbox of option
   assert.equal(input.props['aria-expanded'], true);
   assert.equal(input.props['aria-controls'], 'test-search-listbox');
   assert.equal(input.props['aria-autocomplete'], 'list');
+  assert.equal(input.props.maxLength, 80, 'the live-search input keeps the old search input cap');
   const listbox = elements(tree).find(item => item.props.role === 'listbox');
   assert.ok(listbox, 'listbox missing while open');
+  assert.equal(listbox.props['aria-label'], 'Search suggestions',
+    'the suggestions listbox carries an accessible name');
   const options = elements(tree).filter(item => item.props.role === 'option');
   assert.deepEqual(options.map(option => option.props.id),
     ['test-search-option-s-1', 'test-search-option-s-2']);

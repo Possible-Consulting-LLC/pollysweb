@@ -114,17 +114,18 @@ test('the tray is a soft bordered panel — no card enclosure', () => {
   assert.equal(cls.includes('bg-[var(--card)]'), true, 'mockup tray background');
 });
 
-test('chips are hover-tinted pills with the plum-tinted border and plum removal', () => {
+test('chips are gold-highlighted pills on the hover ground (plan line 199: gold-highlighted chips)', () => {
   const tree = SelectionTray({ items, onDeselect: () => {}, collapsed: false,
     onCollapsedToggle: () => {} }) as unknown;
   const chip = elements(tree).find((item) => item.props['data-tray-chip'] === 'plan-1');
   assert.ok(chip, 'chip missing');
   const cls = String(chip.props.className);
   assert.equal(cls.includes('bg-[var(--hover)]'), true);
-  assert.equal(cls.includes('border-[var(--plum)]/25'), true);
+  assert.equal(cls.includes('border-[var(--gold)]'), true, 'gold-highlighted border');
   assert.equal(cls.includes('rounded-full'), true);
   const remove = elements(chip).find((item) => item.type === 'button');
-  assert.equal(String(remove?.props.className).includes('text-[var(--plum)]'), true);
+  assert.equal(String(remove?.props.className).includes('text-[var(--gold)]'), true,
+    'the removal affordance carries the gold accent');
 });
 
 test('an optional trailing control renders in the tray head (the "Selected only" toggle)', () => {

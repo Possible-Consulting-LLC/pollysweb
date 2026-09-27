@@ -326,9 +326,9 @@ test('the fallback submit navigates the full-page URL search', () => {
   assert.deepEqual(pushed, ['/admin/features?search=feed&page=1']);
 });
 
-test('the counter chip is gold and always in the toolbar', () => {
+test('the counter chip is gold and always in the toolbar (unified selected-count testid)', () => {
   const none = render();
-  const chip = elements(none).find((item) => item.props['data-testid'] === 'selection-counter');
+  const chip = elements(none).find((item) => item.props['data-testid'] === 'selected-count');
   assert.ok(chip, 'counter chip missing');
   assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
   assert.equal(textOf(chip).includes('34 features'), true);

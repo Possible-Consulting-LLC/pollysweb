@@ -4,9 +4,10 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
 
-/** Live-search suggestion services: one lightweight, indexed `contains` query
- * per debounced typing pause, spanning ALL rows (no pagination math, no count
- * aggregation, no joins) and capped at SUGGESTION_LIMIT results. */
+/** Live-search suggestion services: ONE lightweight, indexed `contains` query
+ * per debounced typing pause, spanning ALL rows — no pagination math, no count
+ * aggregation, no joins, for EVERY entity (plans, features, users,
+ * assignable-plans) — and capped at SUGGESTION_LIMIT results. */
 
 /** Values crossing the vm realm carry a foreign prototype; normalize before
  * structural comparison. */
@@ -36,30 +37,12 @@ type Captured = Record<string, unknown>;
 let planCalls: Captured[] = [];
 let featureCalls: Captured[] = [];
 let userCalls: Captured[] = [];
-let assignableCalls: Captured[] = [];
 
 const reset = () => {
-  planCalls = []; featureCalls = []; userCalls = []; assignableCalls = [];
+  planCalls = []; featureCalls = []; userCalls = [];
 };
 
-const stubs: Record<string, unknown> = {
-  './plan-assignment': {
-    searchUsers: async (_tx: unknown, query: Captured) => {
-      userCalls.push(query);
-      return { total: 2, users: [
-        { id: 'u-1', name: 'Ada Keeper', email: 'ada@example.com' },
-        { id: 'u-2', name: 'Ada Second', email: 'ada2@example.com' },
-      ] };
-    },
-    listAssignablePlans: async (_tx: unknown, query: Captured) => {
-      assignableCalls.push(query);
-      return { total: 1, plans: [
-        { id: 'p-1', name: 'Basic', planType: 'STANDARD',
-          billingOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 199, active: true }] },
-      ] };
-    },
-  },
-};
+const stubs: Record<string, unknown> = {};
 
 const prisma = {
   plan: {
@@ -76,7 +59,16 @@ const prisma = {
     },
     count: async () => { throw new Error('suggestions must never run a count aggregation'); },
   },
-  user: {},
+  user: {
+    findMany: async (args: Captured) => {
+      userCalls.push(args);
+      return [
+        { id: 'u-1', name: 'Ada Keeper', email: 'ada@example.com' },
+        { id: 'u-2', name: null, email: 'ada2@example.com' },
+      ];
+    },
+    count: async () => { throw new Error('suggestions must never run a count aggregation'); },
+  },
 };
 
 const suggest = loadSuggest();
@@ -109,28 +101,43 @@ test('suggestFeatures matches name OR key, case-insensitive, capped, ordered by 
   assert.deepEqual(plain(suggestions), [{ id: 'feature-1', title: 'Log feeding', subtitle: 'care.feed.log' }]);
 });
 
-test('suggestionsFor users reuses searchUsers over one capped page (name or email)', async () => {
+test('suggestionsFor users runs one count-free query over non-deleting users (name or email)', async () => {
   reset();
   const suggestions = await suggest.suggestionsFor(prisma, 'users', 'ada');
-  assert.deepEqual(plain(userCalls), [{ search: 'ada', page: 1, pageSize: suggest.SUGGESTION_LIMIT }]);
+  assert.equal(userCalls.length, 1);
+  const query = userCalls[0] as { where: unknown; take: number;
+    select: Record<string, unknown>; orderBy: unknown };
+  // Same keeper-validity rule as searchUsers, minus the discarded count.
+  assert.deepEqual(plain(query.where), { deletingAt: null, OR: [
+    { name: { contains: 'ada', mode: 'insensitive' } },
+    { email: { contains: 'ada', mode: 'insensitive' } },
+  ] });
+  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
+  assert.deepEqual(Object.keys(query.select).sort(), ['email', 'id', 'name']);
+  assert.deepEqual(plain(query.orderBy), [{ name: 'asc' }, { id: 'asc' }]);
+  // Title falls back to the email when the name is missing (searchUsers parity).
   assert.deepEqual(plain(suggestions), [
     { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' },
-    { id: 'u-2', title: 'Ada Second', subtitle: 'ada2@example.com' },
+    { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com' },
   ]);
 });
 
-test('suggestionsFor assignable-plans reuses listAssignablePlans over one capped page', async () => {
+test('suggestionsFor assignable-plans runs one count-free query over active plans', async () => {
   reset();
   const suggestions = await suggest.suggestionsFor(prisma, 'assignable-plans', 'bas');
-  assert.deepEqual(plain(assignableCalls), [{ search: 'bas', page: 1, pageSize: suggest.SUGGESTION_LIMIT }]);
-  assert.deepEqual(plain(suggestions), [{ id: 'p-1', title: 'Basic', subtitle: 'STANDARD' }]);
+  assert.equal(planCalls.length, 1);
+  const query = planCalls[0] as { where: unknown; take: number };
+  assert.deepEqual(plain(query.where), { active: true,
+    name: { contains: 'bas', mode: 'insensitive' } });
+  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
+  assert.deepEqual(plain(suggestions), [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }]);
 });
 
 test('a blank query suggests nothing and queries nothing', async () => {
   reset();
   for (const entity of ['plans', 'features', 'users', 'assignable-plans'])
     assert.deepEqual(plain(await suggest.suggestionsFor(prisma, entity, '   ')), []);
-  assert.equal(planCalls.length + featureCalls.length + userCalls.length + assignableCalls.length, 0);
+  assert.equal(planCalls.length + featureCalls.length + userCalls.length, 0);
 });
 
 test('an unknown entity is rejected (fail closed)', async () => {

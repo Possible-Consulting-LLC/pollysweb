@@ -9,7 +9,9 @@ export type SelectionTrayItem = { id: string; title: string; subtitle?: string }
  * the parent owns the selection and the collapsed flag, this component only
  * renders chips and hosts the parent's bulk actions as children (plus an
  * optional trailing control, e.g. the "Selected only" toggle). Mockup parity:
- * a soft bordered panel with hover-tinted plum-bordered chips. Hidden
+ * a soft bordered panel with gold-highlighted chips (plan line 199: plum
+ * toggle, gold-highlighted chips) — gold border and gold removal accent on the
+ * hover ground, token-driven for both themes. Hidden
  * entirely while the selection is empty. */
 export function SelectionTray({ items, onDeselect, collapsed = false, onCollapsedToggle,
   children, trailing, label = 'Selected' }: {
@@ -38,13 +40,13 @@ export function SelectionTray({ items, onDeselect, collapsed = false, onCollapse
     </div>
     {!collapsed ? <div className="mt-2 flex flex-wrap gap-1.5">
       {items.map(item => <span key={item.id} data-tray-chip={item.id}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--plum)]/25 bg-[var(--hover)] px-2.5 py-1 text-xs font-semibold text-[var(--foreground)]">
+        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gold)] bg-[var(--hover)] px-2.5 py-1 text-xs font-semibold text-[var(--foreground)]">
         <span>
           {item.title}{item.subtitle ? <span className="opacity-60"> — {item.subtitle}</span> : null}
         </span>
         <button type="button" aria-label={`Deselect ${item.title}`} data-id={item.id}
           onClick={() => onDeselect(item.id)}
-          className="rounded-full px-1 text-sm leading-none font-extrabold text-[var(--plum)] hover:text-[var(--plum-deep)]">×</button>
+          className="rounded-full px-1 text-sm leading-none font-extrabold text-[var(--gold)] hover:opacity-70">×</button>
       </span>)}
     </div> : null}
   </section>;

@@ -140,6 +140,7 @@ export function LiveSearchView({ state, id, label, placeholder, mode = 'popup',
       value={state.text}
       placeholder={placeholder}
       aria-label={label}
+      maxLength={80}
       role={popup ? 'combobox' : undefined}
       aria-autocomplete={popup ? 'list' : undefined}
       aria-expanded={popup ? state.open : undefined}
@@ -173,6 +174,7 @@ export function LiveSearchView({ state, id, label, placeholder, mode = 'popup',
         <ul
           role="listbox"
           id={`${id}-listbox`}
+          aria-label="Search suggestions"
           data-live-search-listbox={id}
           className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-2xl border border-[var(--lavender-deep)] bg-[var(--card-solid)] p-1 shadow-[0_8px_30px_var(--shadow)]"
         >

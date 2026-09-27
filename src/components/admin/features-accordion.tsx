@@ -130,7 +130,7 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
         source={suggestViaEndpoint('features')} selectedIds={selected}
         onPick={suggestion => onToggleSelected(suggestion.id)}
         onFallbackSubmit={onSearchSubmit} />
-      <span className={counterChipClass} data-testid="selection-counter">
+      <span className={counterChipClass} data-testid="selected-count">
         {selectedItems.length > 0
           ? `${selectedItems.length} of ${total} selected`
           : `${total} feature${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}
@@ -194,10 +194,10 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
 /** Client state owner, expressed as a pure reducer so the persistence
  * guarantee is directly testable: the selection map changes only through
  * toggles (copy-on-write) and is never pruned by props — it survives
- * pagination and accordion navigation (both URL-driven). A fresh search
- * submit is the live search's explicit fallback navigation, so selection
- * resets there by design (the mockup's own behavior); live-suggest picking
- * never navigates and never resets. */
+ * pagination and accordion navigation (both URL-driven). Plain typing in the
+ * live search never navigates; the Enter fallback is a soft router.push, so
+ * this client island (and its selection map) survives the full-page filtered
+ * view — only a hard reload starts a fresh selection. */
 export type AccordionState = {
   selection: Map<string, { title: string; subtitle: string }>;
   trayCollapsed: boolean;

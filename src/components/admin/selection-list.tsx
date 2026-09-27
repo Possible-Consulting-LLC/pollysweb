@@ -136,6 +136,12 @@ export function SelectionList({
       : [];
   const renderRow = (row: SelectionRow) => single ? (
     <li key={row.id} data-row-id={row.id}>
+      {/* Deliberate deviation from the "ui/button only" constraint (Task 8
+       * parity ledger): picker rows render as raw row-styled buttons because
+       * the approved mockup's picker rows are rows, not action buttons —
+       * variant chrome (background pill, etc.) would break the mockup's row
+       * anatomy (hover tint + plum selected border). Still a semantic button
+       * with aria-pressed, so keyboard/screen-reader behavior is unchanged. */}
       <button
         type="button"
         aria-pressed={Boolean(row.selected)}
