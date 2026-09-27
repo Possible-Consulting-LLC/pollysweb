@@ -12,6 +12,7 @@ import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
+import { isRegisteredFeatureKey } from '@/lib/features/registry';
 import { bulkSetFeatureReleaseAction, saveFeatureMetadataAction,
   setFeatureReleaseAction } from '@/app/admin/features/actions';
 
@@ -167,20 +168,28 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
         ? <p className="py-3 text-sm text-[var(--midnight)]/70">
             {narrowing.loading ? 'Searching…' : <>Nothing matches “{narrowing.query}”.</>}
           </p>
-        : narrowing.rows.map(row =>
-          <div key={row.id} data-row-id={row.id}
-            className="flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors hover:bg-[var(--hover)]">
-            <input type="checkbox" checked={selected.has(row.id)}
-              onChange={() => onPick(row)}
-              aria-label={`Select ${row.title}`}
-              className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{row.title}</span>
-              {row.subtitle
-                ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
-                : null}
-            </span>
-          </div>)}
+        : narrowing.rows.map(row => {
+            // The orphan lock holds while narrowing: a key absent from the code
+            // registry renders exactly like a committed orphan row — visible,
+            // greyed, inert — and its pick is a no-op, so it can never enter
+            // the selection map behind the bulk Release/Unrelease forms.
+            const orphan = !isRegisteredFeatureKey(row.id);
+            return <div key={row.id} data-row-id={row.id}
+              className={cn('flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors',
+                !orphan && 'hover:bg-[var(--hover)]', orphan && 'opacity-70')}>
+              <input type="checkbox" checked={selected.has(row.id)} disabled={orphan}
+                onChange={() => { if (!orphan) onPick(row); }}
+                aria-label={`Select ${row.title}`}
+                className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold">{row.title}</span>
+                {row.subtitle
+                  ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
+                  : null}
+              </span>
+              {orphan ? <span className={cn(badgeOffClass, 'ml-auto shrink-0')}>Orphaned</span> : null}
+            </div>;
+          })}
       <NarrowPager page={narrowing.page} total={narrowing.total} pageSize={pageSize}
         onPageChange={narrowing.onPageChange} label="narrowed features" />
     </div> : <>

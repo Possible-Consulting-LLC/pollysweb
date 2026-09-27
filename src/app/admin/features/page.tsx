@@ -88,11 +88,10 @@ export default async function FeatureCatalogPage({ searchParams }:
         : <p>Every registry feature is in the database.</p>}
     </section>
     {/* Search lives in the accordion's live toolbar (mockup-exact): typing
-        suggests live, Enter is the explicit full-page fallback navigation. */}
-    {total === 0
-      ? <p>{parsed.search ? 'No features match this search.' : 'No features in the database yet. Run Sync registry to create all ' + FEATURE_REGISTRY.length + ' registry features as inactive.'}</p>
-      : null}
-    {/* Selection state lives in the client wrapper; rows, tray, and counter render there. */}
+        narrows the rendered list live, Enter is the explicit full-page
+        fallback navigation. */}
+    {/* Selection state lives in the client wrapper; rows, tray, counter, and
+        the empty states (committed + narrowed) render there. */}
     <FeaturesAccordion features={features} total={total} search={parsed.search} page={page}
       pageSize={parsed.pageSize} openKey={openKey} />
     {/* The committed pager lives inside the accordion's client island so the

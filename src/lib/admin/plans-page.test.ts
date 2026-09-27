@@ -154,3 +154,15 @@ test('search is URL-owned with no form state — the live toolbar owns the input
   assert.equal(inputs.length, 0, 'no search form on the page; the accordion toolbar owns it');
   assert.equal((capturedProps[0] as { search: string }).search, 'plan');
 });
+
+// --- Fix round 1b: the island is the single owner of the empty state ---
+
+test('the server page renders no empty-state message — the island owns it in both modes', async () => {
+  servedPlans = []; servedTotal = 0;
+  const plain = textOf(await render({}));
+  assert.equal(plain.includes('No plans yet'), false,
+    'the committed empty state belongs to the plans accordion island');
+  const searched = textOf(await render({ search: 'molt' }));
+  assert.equal(searched.includes('No plans match this search'), false,
+    'no duplicate server message beside the island’s own empty state');
+});

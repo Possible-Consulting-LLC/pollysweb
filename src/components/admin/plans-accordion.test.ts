@@ -321,6 +321,20 @@ test('an empty narrowed set echoes the query; clearing restores the committed vi
   assert.match(committed, /Plan 1/, 'the committed page returns');
 });
 
+// --- Fix round 1b: the island is the single owner of the empty states ---
+
+test('committed-empty and narrowed-empty each render exactly one message', () => {
+  const committedEmpty = textOf(render({ plans: [], search: '' }));
+  assert.equal((committedEmpty.match(/No plans yet\./g) ?? []).length, 1,
+    'exactly one committed empty message');
+  const committedSearchEmpty = textOf(render({ plans: [], search: 'molt' }));
+  assert.equal((committedSearchEmpty.match(/Nothing matches/g) ?? []).length, 1,
+    'exactly one committed search-empty message');
+  const narrowedEmpty = textOf(render({ narrowing: liveNarrowing({ rows: [], total: 0 }) }));
+  assert.equal((narrowedEmpty.match(/Nothing matches/g) ?? []).length, 1,
+    'exactly one narrowed empty message');
+});
+
 test('the shell wires the narrowing endpoint; the fallback submit navigates the URL search', () => {
   pushed = [];
   lastNarrowSource = null;

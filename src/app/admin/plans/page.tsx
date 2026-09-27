@@ -26,13 +26,11 @@ export default async function PlansPage({ searchParams }:
     </header>
     <p><Link href="/admin/plans/new" className={buttonVariants({ variant: 'primary', size: 'md' })}>Create a plan</Link></p>
     {/* Search lives in the accordion's live toolbar (mockup-exact): typing
-        suggests live, Enter is the explicit full-page fallback navigation. */}
+        narrows the rendered list live, Enter is the explicit full-page
+        fallback navigation. */}
     {/* Selection state lives in the client wrapper; rows, tray, counter, and
-        both pagers (committed + live narrowing) render there. */}
+        the empty states (committed + narrowed) render there. */}
     <PlansAccordion plans={plans} total={total} search={parsed.search} page={page}
       pageSize={parsed.pageSize} openId={openId} />
-    {plans.length === 0
-      ? <p>{total === 0 && parsed.search ? 'No plans match this search.' : 'No plans yet. Create the first plan to start the catalog.'}</p>
-      : null}
   </>;
 }

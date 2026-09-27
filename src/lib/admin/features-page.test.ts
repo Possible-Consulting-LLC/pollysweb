@@ -220,3 +220,17 @@ test('the committed pager lives in the accordion island; empty searches skip the
   await render({});
   assert.equal(featureQueries[0].where, undefined, 'no search → unfiltered query');
 });
+
+// --- Fix round 1b: the island is the single owner of the empty state ---
+
+test('the server page renders no empty-state message — the island owns it in both modes', async () => {
+  featureQueries = []; capturedProps = []; servedRows = []; servedTotal = 0;
+  const plain = textOf(await render({}));
+  assert.equal(plain.includes('No features in the database yet'), false,
+    'the committed empty state belongs to the accordion island');
+  assert.equal(plain.includes('No features match this search'), false,
+    'the searched empty state belongs to the accordion island');
+  const searched = textOf(await render({ search: 'molt' }));
+  assert.equal(searched.includes('No features match this search'), false,
+    'no duplicate server message beside the island’s own empty state');
+});

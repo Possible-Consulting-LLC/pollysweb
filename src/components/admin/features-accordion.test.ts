@@ -127,6 +127,12 @@ const deps: Record<string, unknown> = {
   '@/app/admin/features/actions': { setFeatureReleaseAction: 'set-feature-release',
     saveFeatureMetadataAction: 'save-feature-metadata',
     bulkSetFeatureReleaseAction: 'bulk-set-feature-release' },
+  // The narrowed view derives the orphan flag from the code registry at render
+  // time; the stub mirrors the fixtures: feature.key-* registered, anything
+  // else (e.g. legacy.bulk_import) orphaned.
+  '@/lib/features/registry': {
+    isRegisteredFeatureKey: (key: string) => key.startsWith('feature.key-'),
+  },
 };
 
 const { FeaturesAccordionView, FeaturesAccordion, accordionReducer } = loadFeaturesAccordion();
@@ -376,14 +382,14 @@ test('a narrowed pick forwards the full suggestion {id, title, subtitle} — nev
   const picked: Array<Record<string, unknown>> = [];
   const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
     narrowing: liveNarrowing({
-      rows: [{ id: 'legacy.bulk_import', title: 'Old import', subtitle: 'legacy.bulk_import' }],
+      rows: [{ id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' }],
       total: 1, page: 1 }) });
   const box = elements(tree).find(item => item.type === 'input' &&
-    item.props['aria-label'] === 'Select Old import');
+    item.props['aria-label'] === 'Select Feature 2');
   assert.ok(box, 'narrowed row checkbox missing');
   (box.props.onChange as () => void)();
-  assert.deepEqual(picked, [{ id: 'legacy.bulk_import', title: 'Old import',
-    subtitle: 'legacy.bulk_import' }]);
+  assert.deepEqual(picked, [{ id: 'feature.key-2', title: 'Feature 2',
+    subtitle: 'feature.key-2' }]);
 });
 
 test('an empty narrowed set echoes the query; clearing restores the committed view', () => {
@@ -440,4 +446,87 @@ test('detail cards are soft-bordered labeled kv grids at mockup density', () => 
   }
   const grids = elements(tree).filter((item) => item.type === 'dl' && item.props['data-kv-grid']);
   assert.equal(grids.length, 3);
+});
+
+// --- Fix round 1b: the orphan lock holds in the narrowed features view ---
+
+const narrowedRows = (over: Record<string, unknown> = {}): Record<string, unknown> =>
+  liveNarrowing({ rows: [
+    { id: 'legacy.bulk_import', title: 'Old import', subtitle: 'legacy.bulk_import' },
+    { id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' },
+  ], total: 2, ...over });
+
+test('a narrowed orphan row renders greyed, inert, and marked — picking it is a no-op', () => {
+  const picked: Array<Record<string, unknown>> = [];
+  const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
+    narrowing: narrowedRows() });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-features');
+  assert.ok(narrowed, 'narrowed list missing');
+  const rows = elements(narrowed).filter(item => item.props['data-row-id']);
+  assert.deepEqual(rows.map(row => row.props['data-row-id']),
+    ['legacy.bulk_import', 'feature.key-2'],
+    'the orphan stays VISIBLE in the narrowed list (mockup-exact), never filtered out');
+  assert.equal(String(rows[0].props.className).includes('opacity-70'), true,
+    'the orphan row is greyed like a committed orphan row');
+  assert.equal(String(rows[1].props.className).includes('opacity-70'), false);
+  const boxes = elements(narrowed).filter(item => item.type === 'input' &&
+    item.props.type === 'checkbox');
+  assert.equal(boxes[0].props.disabled, true, 'the orphan checkbox is disabled');
+  (boxes[0].props.onChange as () => void)();
+  assert.deepEqual(picked, [],
+    'even a forced pick on an orphaned narrowed row never reaches the selection map');
+  assert.ok(!boxes[1].props.disabled, 'registered rows stay selectable');
+  (boxes[1].props.onChange as () => void)();
+  assert.deepEqual(picked, [{ id: 'feature.key-2', title: 'Feature 2',
+    subtitle: 'feature.key-2' }]);
+  assert.equal(textOf(narrowed).includes('Orphaned'), true,
+    'the orphan marker is visible on the key line');
+});
+
+test('an orphaned narrowed pick never appears in the bulk Release/Unrelease form inputs', () => {
+  const picked: Array<Record<string, unknown>> = [];
+  const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
+    selectedItems: [{ id: 'feature.key-1', title: 'Feature 1', subtitle: 'feature.key-1' }],
+    narrowing: narrowedRows() });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-features');
+  const orphanBox = elements(narrowed).find(item => item.type === 'input' &&
+    item.props.type === 'checkbox' && item.props['aria-label'] === 'Select Old import');
+  assert.equal(orphanBox?.props.disabled, true);
+  assert.ok(orphanBox, 'orphan narrowed checkbox missing');
+  (orphanBox.props.onChange as () => void)();
+  const bulkForms = elementsOf(tree).forms.filter(form =>
+    form.props.action === 'bulk-set-feature-release');
+  for (const form of bulkForms) {
+    const keys = elements(form).filter(item => item.type === 'input' && item.props.name === 'key')
+      .map(item => String(item.props.value));
+    assert.deepEqual(keys, ['feature.key-1'],
+      'the bulk forms submit exactly the selection map — no orphan ever enters it');
+  }
+});
+
+test('counter semantics agree across views: orphaned rows count in the total in both', () => {
+  // Committed: the denominator is the server total prop, orphans included —
+  // the committed view never filters orphans out of the count.
+  const committed = textOf(render({ features: [...features(2), orphanRow], total: 34 }));
+  assert.equal(committed.includes('0 of 34 selected'), true,
+    'committed denominator includes orphan rows');
+  // Narrowed: the denominator is the server match total, orphans included —
+  // the narrowed view must not subtract the rows it greys out.
+  const narrowed = textOf(render({ narrowing: narrowedRows() }));
+  assert.equal(narrowed.includes('0 of 2 selected'), true,
+    'narrowed denominator includes orphan rows (same semantics as the committed view)');
+});
+
+// --- Fix round 1b: the island is the single owner of the empty states ---
+
+test('committed-empty and narrowed-empty each render exactly one message', () => {
+  const committedEmpty = textOf(render({ features: [], search: '' }));
+  assert.equal((committedEmpty.match(/No features in the database yet\./g) ?? []).length, 1,
+    'exactly one committed empty message');
+  const committedSearchEmpty = textOf(render({ features: [], search: 'molt' }));
+  assert.equal((committedSearchEmpty.match(/Nothing matches/g) ?? []).length, 1,
+    'exactly one committed search-empty message');
+  const narrowedEmpty = textOf(render({ narrowing: liveNarrowing({ rows: [], total: 0 }) }));
+  assert.equal((narrowedEmpty.match(/Nothing matches/g) ?? []).length, 1,
+    'exactly one narrowed empty message');
 });
