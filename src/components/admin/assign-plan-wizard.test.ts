@@ -1,0 +1,380 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import test from 'node:test';
+import ts from 'typescript';
+import * as jsx from 'react/jsx-runtime';
+import type { AssignPlanWizardViewProps } from './assign-plan-wizard';
+
+type Element = { type: string; props: Record<string, unknown> & { children?: unknown } };
+
+function elements(node: unknown): Element[] {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!node || typeof node !== 'object' || !('props' in node)) return [];
+  const item = node as Element;
+  if (typeof item.type === 'function') return elements((item.type as (props: unknown) => unknown)(item.props));
+  const children = Array.isArray(item.props.children) ? item.props.children : [item.props.children];
+  return [item, ...children.flatMap((child) => elements(child))];
+}
+
+function text(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(text).filter(Boolean).join(' ');
+  if (!node || typeof node !== 'object' || !('props' in node)) return '';
+  const item = node as Element & { type?: unknown };
+  if (typeof item.type === 'function') return text((item.type as (props: unknown) => unknown)(item.props));
+  return text(item.props.children);
+}
+
+function textOf(tree: unknown): string {
+  return text(tree).replace(/\s+/g, ' ').trim();
+}
+
+const cn = (...parts: unknown[]) => parts.filter(Boolean).join(' ');
+
+/** Transpile-and-run a component module against stubbed dependencies. */
+function loadModule(path: string, deps: Record<string, unknown>): Record<string, unknown> {
+  const exports: Record<string, unknown> = {};
+  const code = ts.transpileModule(
+    readFileSync(new URL(path, import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } },
+  ).outputText;
+  runInNewContext(code, {
+    exports,
+    URLSearchParams,
+    require: (name: string) => {
+      assert.ok(name in deps, `unexpected dependency ${name}`);
+      return deps[name];
+    },
+  });
+  return exports;
+}
+
+// The real shared SelectionList runs (single mode is the point of the wizard);
+// only its own dependencies are stubbed.
+const buttonStub = {
+  Button: ({ variant, size, className, ...props }: Record<string, unknown>) =>
+    jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', className, ...props }),
+  buttonVariants: ({ variant, size }: { variant?: string; size?: string } = {}) =>
+    `variant-${variant ?? 'primary'} size-${size ?? 'md'}`,
+};
+const selectionTray = loadModule('./selection-tray.tsx', {
+  'react/jsx-runtime': jsx,
+  '@/lib/utils': { cn },
+  '@/components/ui/card': { cardClassName: 'card' },
+});
+const selectionList = loadModule('./selection-list.tsx', {
+  'react/jsx-runtime': jsx,
+  '@/lib/utils': { cn },
+  '@/components/ui/card': { cardClassName: 'card' },
+  '@/components/ui/button': buttonStub,
+  '@/components/admin/selection-tray': selectionTray,
+});
+
+const deps: Record<string, unknown> = {
+  // Hook stubs: only the thin client wrapper uses hooks; tests drive the
+  // hook-free view, exactly like the plans accordion tests.
+  react: {
+    useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
+    useActionState: () => [undefined, () => {}, false],
+  },
+  'react/jsx-runtime': jsx,
+  'next/navigation': { useRouter: () => ({ push: () => {} }) },
+  'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
+    jsx.jsx('a', { href, className, ...rest, children }) },
+  '@/lib/utils': { cn },
+  '@/components/admin/selection-list': selectionList,
+  '@/components/admin/selection-tray': selectionTray,
+  '@/components/ui/card': { cardClassName: 'card' },
+  '@/components/ui/button': buttonStub,
+  '@/components/mutation-form': { MutationForm: ({ action, children, ...props }: Record<string, unknown>) =>
+    jsx.jsx('form', { ...props, 'data-action': String(action), children }) },
+  '@/components/mutation-context': { MutationContextInput: () => null },
+  '@/app/admin/subscriptions/actions': { assignSubscriptionAction: 'assign-action' },
+};
+
+const wizardModule = loadModule('./assign-plan-wizard.tsx', deps);
+const AssignPlanWizardView = wizardModule.AssignPlanWizardView as
+  (props: Record<string, unknown>) => unknown;
+const subscriptionsHref = wizardModule.subscriptionsHref as
+  (list: { search: string; page: number }) => string;
+const wizardHref = wizardModule.wizardHref as
+  (list: { search: string; page: number }, nav: Record<string, unknown>) => string;
+
+const list = { search: '', page: 1 };
+
+const baseUserPicker = {
+  rows: [
+    { id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com' },
+    { id: 'u-2', title: 'Dan O.', subtitle: 'dan@example.com' },
+  ],
+  total: 2, page: 1, pageSize: 20, search: '',
+};
+const basePlanPicker = {
+  rows: [
+    { id: 'p-1', title: 'Pro', subtitle: 'Standard · 2 active billing options' },
+    { id: 'p-2', title: 'Basic', subtitle: 'Standard · 2 active billing options' },
+  ],
+  total: 2, page: 1, pageSize: 20, search: '',
+};
+const planWithTwoOptions = {
+  id: 'p-1', name: 'Pro', planType: 'STANDARD',
+  billingOptions: [
+    { id: 'o-monthly', interval: 'MONTHLY', basePriceCents: 499, active: true },
+    { id: 'o-annual', interval: 'ANNUAL', basePriceCents: 4999, active: true },
+    { id: 'o-dead', interval: 'MONTHLY', basePriceCents: 999, active: false },
+  ],
+};
+const selectedUser = { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' };
+
+const base: Partial<AssignPlanWizardViewProps> = {
+  step: 1, listSearch: '', listPage: 1,
+  selectedUser: null, selectedPlan: null, selectedOptionId: '',
+  userPicker: baseUserPicker, planPicker: basePlanPicker,
+  effectiveAt: '', onEffectiveAtChange: () => {},
+  navigate: () => {}, navigateSearch: () => {},
+  assignDispatch: () => {}, assignResult: undefined,
+  assignPending: false,
+};
+
+const render = (overrides: Partial<AssignPlanWizardViewProps> = {}) => {
+  const nav: string[] = [];
+  const navSearch: string[] = [];
+  const dispatched: FormData[] = [];
+  const tree = AssignPlanWizardView({ ...base, ...overrides,
+    navigate: (href: string) => { nav.push(href); },
+    navigateSearch: (href: string) => { navSearch.push(href); },
+    assignDispatch: (form: FormData) => { dispatched.push(form); } }) as unknown;
+  return { tree, nav, navSearch, dispatched,
+    buttons: () => elements(tree).filter((item) => item.type === 'button'),
+    links: () => elements(tree).filter((item) => item.type === 'a'),
+    inputs: () => elements(tree).filter((item) => item.type === 'input'),
+    byLabel: (label: string) => elements(tree).find((item) => item.props['aria-label'] === label),
+  };
+};
+
+// --- URL builders ---
+
+test('URL builders preserve the list location and drop empty wizard params', () => {
+  assert.equal(subscriptionsHref({ search: 'x', page: 1 }), '/admin/subscriptions?search=x');
+  assert.equal(subscriptionsHref({ search: '', page: 2 }), '/admin/subscriptions?page=2');
+  assert.equal(subscriptionsHref({ search: '', page: 1 }), '/admin/subscriptions');
+  assert.equal(wizardHref(list, { step: 2, user: 'u-1' }),
+    '/admin/subscriptions?wizard=open&step=2&user=u-1');
+  assert.equal(wizardHref({ search: 'x', page: 3 }, { step: 1 }),
+    '/admin/subscriptions?search=x&page=3&wizard=open&step=1');
+  assert.equal(wizardHref(list, { step: 3, user: 'u-1', plan: 'p-1', option: 'o-1',
+    usearch: 'ma', upage: 2, psearch: 'pro', ppage: 2 }),
+    '/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1&option=o-1&usearch=ma&upage=2&psearch=pro&ppage=2');
+});
+
+// --- Step 1: user ---
+
+test('step 1 lists keepers through the single-mode SelectionList', () => {
+  const { tree, buttons } = render();
+  assert.equal(elements(tree).some((item) => item.props.role === 'checkbox'), false);
+  assert.match(textOf(tree), /Marta Keeper/);
+  assert.match(textOf(tree), /marta@example\.com/);
+  assert.ok(buttons().find((item) => textOf(item) === 'Continue to plan'), 'continue affordance missing');
+});
+
+test('clicking a keeper navigates with the selection and keeps the picker view', () => {
+  const { nav, byLabel } = render();
+  (byLabel('Select Marta Keeper')!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&user=u-1']);
+  const paged = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  (paged.byLabel('Select Marta Keeper')!.props.onClick as () => void)();
+  assert.deepEqual(paged.nav,
+    ['/admin/subscriptions?wizard=open&step=1&user=u-1&usearch=ma&upage=2']);
+});
+
+test('keeper search resets to page 1 and pagination preserves the search', () => {
+  const { navSearch, nav, tree } = render();
+  const searchInput = elements(tree).find((item) => item.type === 'input');
+  assert.ok(searchInput, 'keeper search input missing');
+  (searchInput!.props.onChange as (event: unknown) => void)({ target: { value: 'ma' } });
+  // Dropping upage returns the picker to page 1.
+  assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=ma']);
+  const pager = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  (pager.byLabel('Next page')!.props.onClick as () => void)();
+  assert.deepEqual(pager.nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=3']);
+  void nav;
+});
+
+test('a selected keeper folds the list into the focused view with a change affordance', () => {
+  const { tree, nav } = render({ selectedUser });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Marta Keeper/);
+  assert.match(rendered, /marta@example\.com/);
+  assert.doesNotMatch(rendered, /Dan O\./);
+  const change = elements(tree).find((item) => item.type === 'button' && textOf(item) === 'Change');
+  assert.ok(change, 'focused-view change affordance missing');
+  (change.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
+  // Continue advances to the plan step with the keeper carried along.
+  const continueLink = elements(tree).find((item) => item.type === 'a' && textOf(item) === 'Continue to plan');
+  assert.equal(continueLink?.props.href, '/admin/subscriptions?wizard=open&step=2&user=u-1');
+});
+
+test('changing the keeper restores the picker view the user came from', () => {
+  const { tree, nav } = render({ selectedUser,
+    userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  const changeButton = elements(tree).find((item) => item.type === 'button' && textOf(item) === 'Change');
+  (changeButton!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=2']);
+});
+
+// --- Step 2: plan + context bar ---
+
+test('step 2 shows the keeper context bar and the active plan list', () => {
+  const { tree, nav, byLabel } = render({ step: 2, selectedUser });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Assigning to/);
+  assert.match(rendered, /Marta Keeper/);
+  assert.match(rendered, /marta@example\.com/);
+  assert.match(rendered, /Pro/);
+  const change = byLabel('Change keeper');
+  assert.ok(change, 'context bar change affordance missing');
+  (change.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
+  (byLabel('Select Pro')!.props.onClick as () => void)();
+  assert.deepEqual(nav.slice(1), ['/admin/subscriptions?wizard=open&step=2&user=u-1&plan=p-1']);
+});
+
+test('picking a plan clears a stale option and resets the plan search to page 1', () => {
+  const { nav, byLabel } = render({ step: 2, selectedUser, selectedOptionId: 'o-monthly' });
+  (byLabel('Select Pro')!.props.onClick as () => void)();
+  const href = nav[0];
+  assert.ok(href.includes('plan=p-1'), href);
+  assert.equal(href.includes('option='), false, 'stale option must be cleared');
+  const { navSearch, tree } = render({ step: 2, selectedUser });
+  const searchInput = elements(tree).find((item) => item.type === 'input');
+  assert.ok(searchInput, 'plan search input missing');
+  (searchInput!.props.onChange as (event: unknown) => void)({ target: { value: 'pro' } });
+  assert.deepEqual(navSearch,
+    ['/admin/subscriptions?wizard=open&step=2&user=u-1&psearch=pro']);
+});
+
+test('a selected plan folds the plan list; back returns to the keeper step', () => {
+  const { tree, nav, links } = render({ step: 2, selectedUser, selectedPlan: planWithTwoOptions });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Pro/);
+  assert.doesNotMatch(rendered, /Basic/);
+  // The plan focused view's Change (not the context bar's, which carries an
+  // aria-label) unfolds the plan list again.
+  const change = elements(tree).find((item) => item.type === 'button' &&
+    textOf(item) === 'Change' && !item.props['aria-label']);
+  (change!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&user=u-1']);
+  const back = links().find((item) => textOf(item) === 'Back to user');
+  assert.equal(back?.props.href, '/admin/subscriptions?wizard=open&step=1&user=u-1');
+});
+
+// --- Step 3: options, summary, assign ---
+
+const step3: Partial<AssignPlanWizardViewProps> = {
+  step: 3, selectedUser, selectedPlan: planWithTwoOptions, selectedOptionId: '',
+  effectiveAt: '', onEffectiveAtChange: () => {}, assignResult: undefined,
+};
+
+test('step 3 lists only the chosen plan\'s active billing options', () => {
+  const { tree } = render(step3);
+  const rendered = textOf(tree);
+  assert.match(rendered, /Monthly — \$4\.99/);
+  assert.match(rendered, /Annual — \$49\.99/);
+  assert.doesNotMatch(rendered, /\$9\.99/, 'inactive option must not render');
+  assert.doesNotMatch(rendered, /o-dead/);
+});
+
+test('picking an option folds the option list and updates the live summary', () => {
+  const selected = render({ ...step3, selectedOptionId: 'o-monthly' });
+  const rendered = textOf(selected.tree);
+  assert.match(rendered, /Monthly — \$4\.99/);
+  assert.doesNotMatch(rendered, /Annual — \$49\.99/);
+  assert.match(rendered, /Assigning: Pro \(Monthly — \$4\.99\)/);
+  assert.match(rendered, /To: Marta Keeper \(marta@example\.com\)/);
+  assert.match(rendered, /Effective: now/);
+  assert.match(rendered, /row-locked/);
+  const change = elements(selected.tree).find((item) => item.type === 'button' &&
+    textOf(item) === 'Change' && !item.props['aria-label']);
+  (change!.props.onClick as () => void)();
+  assert.deepEqual(selected.nav, ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1']);
+  const unfolded = render(step3);
+  (unfolded.byLabel('Select Annual — $49.99')!.props.onClick as () => void)();
+  assert.deepEqual(unfolded.nav,
+    ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1&option=o-annual']);
+});
+
+test('the assign form carries the selection as hidden inputs and gates the submit', () => {
+  const gated = render(step3);
+  const form = elements(gated.tree).find((item) => item.type === 'form');
+  assert.ok(form, 'assign form missing');
+  const hidden = elements(form).filter((item) => item.type === 'input');
+  // MutationContextInput is stubbed to null here; the wizard's own fields are
+  // what carry the selection.
+  assert.deepEqual(hidden.map((item) => ({ name: item.props.name, value: item.props.value })), [
+    { name: 'userQuery', value: 'u-1' },
+    { name: 'planId', value: 'p-1' },
+    { name: 'planBillingOptionId', value: '' },
+    { name: 'effectiveAt', value: '' },
+  ]);
+  const submit = gated.buttons().find((item) => textOf(item) === 'Assign plan');
+  assert.equal(submit?.props.disabled, true);
+  const ready = render({ ...step3, selectedOptionId: 'o-monthly' });
+  const readySubmit = ready.buttons().find((item) => textOf(item) === 'Assign plan');
+  assert.equal(readySubmit?.props.disabled, false);
+  const readyForm = elements(ready.tree).find((item) => item.type === 'form');
+  assert.deepEqual(elements(readyForm).filter((item) => item.type === 'input')
+    .map((item) => ({ name: item.props.name as string, value: item.props.value }))
+    .filter((item) => item.name === 'planBillingOptionId'),
+    [{ name: 'planBillingOptionId', value: 'o-monthly' }]);
+});
+
+test('the effective date is a controlled field and feeds the summary', () => {
+  let changed = '';
+  const { inputs } = render({ ...step3,
+    onEffectiveAtChange: (value: string) => { changed = value; } });
+  const field = inputs().find((item) => item.props.name === 'effectiveAt');
+  assert.ok(field, 'effective date field missing');
+  (field.props.onChange as (event: unknown) => void)({ target: { value: '2026-10-01T10:00' } });
+  assert.equal(changed, '2026-10-01T10:00');
+  const withDate = render({ ...step3, selectedOptionId: 'o-monthly', effectiveAt: '2026-10-01T10:00' });
+  assert.match(textOf(withDate.tree), /Effective: 2026-10-01 10:00/);
+});
+
+test('step 3 navigates back to the plan step and cancel folds the wizard', () => {
+  const { nav, links, buttons } = render({ ...step3, selectedOptionId: 'o-monthly',
+    listSearch: 'x', listPage: 2 });
+  const back = links().find((item) => textOf(item) === 'Back to plan');
+  assert.equal(back?.props.href,
+    '/admin/subscriptions?search=x&page=2&wizard=open&step=2&user=u-1&plan=p-1');
+  const cancel = buttons().find((item) => textOf(item) === 'Cancel');
+  assert.ok(cancel, 'cancel affordance missing');
+  (cancel.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?search=x&page=2']);
+});
+
+test('a failed assign renders the error and keeps the wizard open', () => {
+  const { tree } = render({ ...step3, selectedOptionId: 'o-monthly',
+    assignResult: { error: 'Choose an active billing option.' } });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Choose an active billing option\./);
+  assert.match(rendered, /Assigning: Pro/);
+});
+
+test('a successful assign folds the wizard away', () => {
+  const { tree } = render({ ...step3, selectedOptionId: 'o-monthly',
+    assignResult: { success: true } });
+  assert.equal(textOf(tree), '');
+});
+
+test('the step chips mark the current step', () => {
+  const { tree } = render(step3);
+  const chips = elements(tree).filter((item) => item.props['aria-current'] === 'step');
+  assert.equal(chips.length, 1);
+  assert.match(textOf(chips[0]), /3 · Options/);
+  assert.match(textOf(tree), /1 · User/);
+  assert.match(textOf(tree), /2 · Plan/);
+});

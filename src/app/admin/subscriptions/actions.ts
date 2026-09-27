@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
-import { assignPlanSubscription } from '@/lib/admin/plan-assignment';
+import { assignPlanSubscription, endSubscription } from '@/lib/admin/plan-assignment';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
 
 type Result = { error?: string; success?: boolean };
@@ -49,6 +49,35 @@ export async function assignSubscriptionAction(form: FormData): Promise<Result> 
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
       return failure(error, 'The subscription was not assigned. Reload and check your administrator access.');
+    }
+  });
+}
+
+/** Ends one effective subscription. No reason field: the audit reason is
+ * derived from the row's own context (keeper, plan, interval). */
+export async function endSubscriptionAction(form: FormData): Promise<Result> {
+  return withMutation(form, 'admin', 'endsubscription', async () => {
+    try {
+      const subscriptionId = value(form, 'subscriptionId');
+      if (!subscriptionId || subscriptionId.length > 128) throw Error('A subscription is required.');
+      await withAdminControl(async (tx, actor) => {
+        // Load the row's context for the derived reason inside the authorized
+        // transaction; endSubscription re-validates endability under the lock.
+        const row = await tx.userSubscription.findUnique({ where: { id: subscriptionId },
+          select: { userId: true, planId: true, status: true, expiresAt: true,
+            plan: { select: { name: true } }, billingOption: { select: { interval: true } } } });
+        if (!row) throw Error('That subscription no longer exists. Reload the page.');
+        const reason =
+          `Ended subscription for user ${row.userId} (${row.plan?.name ?? row.planId} ${row.billingOption?.interval ?? ''})`.trim();
+        const result = await endSubscription(tx, actor.id, subscriptionId, reason);
+        if (isServiceError(result)) throw result;
+      });
+      revalidatePath('/admin/subscriptions');
+      revalidatePath('/admin/plans');
+      return { success: true };
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      return failure(error, 'The subscription was not ended. Reload and check your administrator access.');
     }
   });
 }

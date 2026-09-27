@@ -7,8 +7,10 @@ import type * as assignment from './plan-assignment';
 import type * as plans from './plans';
 import * as maintenancePolicy from './maintenance-policy';
 
-type UserRow = { id: string; email: string; role: string; deletingAt: Date | null };
-type PlanRow = { id: string; name: string; active: boolean; public: boolean; planType: string };
+type UserRow = { id: string; name: string | null; email: string; role: string;
+  deletingAt: Date | null };
+type PlanRow = { id: string; name: string; active: boolean; public: boolean; planType: string;
+  sortOrder: number };
 type OptionRow = { id: string; planId: string; interval: string; basePriceCents: number;
   active: boolean };
 type SubscriptionRow = { id: string; userId: string; planId: string; planBillingOptionId: string;
@@ -30,9 +32,12 @@ const isFailure = (value: unknown) => Object.prototype.toString.call(value) === 
 /** Results returned from the sandbox live in another realm; JSON copies keep strict comparisons local. */
 const jsonOf = (value: unknown) => JSON.parse(JSON.stringify(value));
 
-const ACTOR: UserRow = { id: 'owner-1', email: 'owner@example.com', role: 'super_admin', deletingAt: null };
-const TARGET: UserRow = { id: 'user-1', email: 'user@example.com', role: 'user', deletingAt: null };
-const PLAN: PlanRow = { id: 'plan-1', name: 'Standard', active: true, public: true, planType: 'STANDARD' };
+const ACTOR: UserRow = { id: 'owner-1', name: 'Owner One', email: 'owner@example.com',
+  role: 'super_admin', deletingAt: null };
+const TARGET: UserRow = { id: 'user-1', name: 'Target Keeper', email: 'user@example.com',
+  role: 'user', deletingAt: null };
+const PLAN: PlanRow = { id: 'plan-1', name: 'Standard', active: true, public: true,
+  planType: 'STANDARD', sortOrder: 0 };
 const MONTHLY: OptionRow = { id: 'opt-1', planId: 'plan-1', interval: 'MONTHLY', basePriceCents: 900, active: true };
 const NOW = Date.UTC(2026, 8, 26, 12, 0, 0);
 
@@ -56,25 +61,74 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
   const effective = (row: SubscriptionRow) =>
     ['TRIALING', 'ACTIVE', 'PAST_DUE'].includes(row.status) &&
     (row.expiresAt === null || row.expiresAt.getTime() > NOW);
-  const whereMatches = (where: Record<string, unknown>, row: SubscriptionRow) => {
+  const contains = (value: string | null | undefined, needle: string | undefined) =>
+    needle !== undefined && (value ?? '').toLowerCase().includes(needle.toLowerCase());
+  const userWhereMatches = (where: Record<string, unknown>, row: UserRow) => {
+    if (where.deletingAt === null && row.deletingAt !== null) return false;
+    if (Array.isArray(where.OR) && !where.OR.some((clause: { name?: { contains?: string };
+        email?: { contains?: string } }) =>
+      contains(row.name, clause.name?.contains) || contains(row.email, clause.email?.contains)))
+      return false;
+    return true;
+  };
+  const planWhereMatches = (where: Record<string, unknown>, row: PlanRow) => {
+    if (where.active !== undefined && row.active !== where.active) return false;
+    const search = (where.name as { contains?: string } | undefined)?.contains;
+    if (search !== undefined && !row.name.toLowerCase().includes(String(search).toLowerCase()))
+      return false;
+    return true;
+  };
+  const planRowsMatching = (where: Record<string, unknown> = {}) => {
+    const rows = [...planStore.values()].filter(row => planWhereMatches(where, row));
+    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
+    return rows;
+  };
+  const searchClause = (clause: Record<string, unknown>, row: SubscriptionRow) => {
+    if (clause.expiresAt !== undefined) {
+      if (clause.expiresAt === null) return row.expiresAt === null;
+      const gt = (clause.expiresAt as { gt?: Date } | undefined)?.gt;
+      return row.expiresAt !== null && gt !== undefined && row.expiresAt.getTime() > gt.getTime();
+    }
+    if (clause.user) {
+      const keeper = userStore.get(row.userId);
+      const or = (clause.user as { OR?: Array<{ name?: { contains?: string };
+        email?: { contains?: string } }> }).OR ?? [];
+      return or.some(part => contains(keeper?.name, part.name?.contains) ||
+        contains(keeper?.email, part.email?.contains));
+    }
+    if (clause.plan)
+      return contains(planStore.get(row.planId)?.name,
+        (clause.plan as { name?: { contains?: string } }).name?.contains);
+    if (clause.status && typeof clause.status === 'object')
+      return contains(row.status, (clause.status as { contains?: string }).contains);
+    return false;
+  };
+  const whereMatches = (where: Record<string, unknown>, row: SubscriptionRow): boolean => {
+    if (Array.isArray(where.AND) && !where.AND.every(clause =>
+      whereMatches(clause as Record<string, unknown>, row))) return false;
+    if (Array.isArray(where.OR) && !where.OR.some(clause =>
+      searchClause(clause as Record<string, unknown>, row))) return false;
     if (where.userId !== undefined && where.userId !== row.userId) return false;
     if (where.planId !== undefined && where.planId !== row.planId) return false;
     if (where.id !== undefined && where.id !== row.id) return false;
     if (where.status !== undefined) {
-      const statuses = (where.status as { in?: string[] }).in;
-      if (statuses && !statuses.includes(row.status)) return false;
-      if (!statuses && row.status !== where.status) return false;
-    }
-    if (Array.isArray(where.OR)) {
-      const ok = where.OR.some((clause: { expiresAt?: unknown }) => {
-        if (clause.expiresAt === null) return row.expiresAt === null;
-        const gt = (clause.expiresAt as { gt?: Date } | undefined)?.gt;
-        return row.expiresAt !== null && gt !== undefined && row.expiresAt.getTime() > gt.getTime();
-      });
-      if (!ok) return false;
+      if (typeof where.status === 'string') {
+        if (row.status !== where.status) return false;
+      } else {
+        const statuses = (where.status as { in?: string[] }).in;
+        if (statuses && !statuses.includes(row.status)) return false;
+      }
     }
     return true;
   };
+  const withSubscriptionRelations = (row: SubscriptionRow,
+    shape?: Record<string, unknown>): Record<string, unknown> => ({
+    ...row,
+    ...(shape?.user ? { user: userStore.has(row.userId) ? { ...userStore.get(row.userId) } : null } : {}),
+    ...(shape?.plan ? { plan: planStore.has(row.planId) ? snapshotPlan(planStore.get(row.planId)!) : null } : {}),
+    ...(shape?.billingOption ? { billingOption: optionStore.has(row.planBillingOptionId)
+      ? { ...optionStore.get(row.planBillingOptionId)! } : null } : {}),
+  });
   const tx = {
     user: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
@@ -87,22 +141,54 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
           : userStore.get(id ?? '');
         return row ? { id: row.id } : null;
       },
+      findMany: async ({ where = {}, skip = 0, take }: { where?: Record<string, unknown>;
+        skip?: number; take?: number } = {}) => {
+        const matched = [...userStore.values()].filter(row => userWhereMatches(where, row));
+        matched.sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email) ||
+          (a.id < b.id ? -1 : 1));
+        return matched.slice(skip, take === undefined ? undefined : skip + take)
+          .map(row => ({ ...row }));
+      },
+      count: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
+        [...userStore.values()].filter(row => userWhereMatches(where, row)).length,
     },
     plan: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         planStore.has(id) ? snapshotPlan(planStore.get(id)!) : null,
-      findMany: async () => [...planStore.values()].map(snapshotPlan),
-      count: async () => planStore.size,
+      findMany: async ({ where = {}, skip = 0, take }: { where?: Record<string, unknown>;
+        skip?: number; take?: number } = {}) =>
+        planRowsMatching(where).slice(skip, take === undefined ? undefined : skip + take)
+          .map(snapshotPlan),
+      count: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
+        planRowsMatching(where).length,
     },
     planBillingOption: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         optionStore.has(id) ? { ...optionStore.get(id)! } : null,
     },
     userSubscription: {
-      findMany: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
-        [...subscriptionStore.values()].filter(row => whereMatches(where, row)).map(row => ({ ...row })),
+      findUnique: async ({ where: { id }, select }: { where: { id: string };
+        select?: Record<string, unknown> }) => {
+        const row = subscriptionStore.get(id);
+        return row ? withSubscriptionRelations(row, select) : null;
+      },
+      findMany: async ({ where = {}, include, skip = 0, take }: { where?: Record<string, unknown>;
+        include?: Record<string, unknown>; skip?: number; take?: number } = {}) => {
+        const matched = [...subscriptionStore.values()].filter(row => whereMatches(where, row));
+        matched.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime() ||
+          (a.id < b.id ? -1 : 1));
+        return matched.slice(skip, take === undefined ? undefined : skip + take)
+          .map(row => withSubscriptionRelations(row, include));
+      },
       count: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
         [...subscriptionStore.values()].filter(row => whereMatches(where, row)).length,
+      update: async ({ where: { id }, data }: { where: { id: string };
+        data: Partial<SubscriptionRow> }) => {
+        const row = subscriptionStore.get(id);
+        if (!row) throw new Error(`no subscription ${id}`);
+        Object.assign(row, data);
+        return { ...row };
+      },
       updateMany: async ({ where = {}, data }: { where?: Record<string, unknown>;
         data: Partial<SubscriptionRow> }) => {
         const matched = [...subscriptionStore.values()].filter(row => whereMatches(where, row));
@@ -127,7 +213,8 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
   };
   const audit = load('./audit.ts', { 'server-only': {} });
   const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
-  const assignmentModule = load('./plan-assignment.ts', { 'server-only': {}, './audit': audit }) as typeof assignment;
+  const assignmentModule = load('./plan-assignment.ts',
+    { 'server-only': {}, './audit': audit, './plans': plansModule }) as typeof assignment;
   return { assignment: assignmentModule, plans: plansModule, tx: tx as never, userStore, planStore,
     optionStore, subscriptionStore, audits, effective };
 }
@@ -227,8 +314,8 @@ test('assignPlanSubscription rejects a missing or deleting target user', async (
   const missing = await f.assignment.assignPlanSubscription(f.tx, 'owner-1',
     { ...validInput, targetUserId: 'user-missing' });
   assert.ok(isFailure(missing));
-  f.userStore.set('user-2', { id: 'user-2', email: 'x@example.com', role: 'user',
-    deletingAt: new Date(NOW) });
+  f.userStore.set('user-2', { id: 'user-2', name: 'Deleting Keeper', email: 'x@example.com',
+    role: 'user', deletingAt: new Date(NOW) });
   const deleting = await f.assignment.assignPlanSubscription(f.tx, 'owner-1',
     { ...validInput, targetUserId: 'user-2' });
   assert.ok(isFailure(deleting));
@@ -279,7 +366,7 @@ test('assignSubscriptionAction derives the audit reason from context without a f
     changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-26T12:00:00.000Z' } }]);
 });
 
-test('listEffectiveSubscriptions returns only currently effective rows', async () => {
+test('listEffectiveSubscriptions returns only currently effective rows with joined details', async () => {
   const f = fixture('super_admin', { subscriptions: [
     { id: 'sub-1', userId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1', status: 'ACTIVE',
       startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
@@ -296,9 +383,55 @@ test('listEffectiveSubscriptions returns only currently effective rows', async (
       startedAt: new Date(Date.now() - 86_400_000), renewsAt: null,
       expiresAt: new Date(Date.now() + 86_400_000), createdAt: new Date(0), updatedAt: new Date(0) },
   ] });
-  const summaries = await f.assignment.listEffectiveSubscriptions(f.tx);
-  assert.deepEqual(summaries.map(row => row.id).sort(), ['sub-1', 'sub-4']);
-  assert.ok(summaries.every(row => typeof row.planId === 'string'));
+  const { rows, total } = await f.assignment.listEffectiveSubscriptions(f.tx);
+  assert.deepEqual(rows.map(row => row.id).sort(), ['sub-1', 'sub-4']);
+  assert.equal(total, 2);
+  assert.ok(rows.every(row => typeof row.planId === 'string'));
+  // Joined display details ride along for the page's rows.
+  const first = JSON.parse(JSON.stringify(rows.find(row => row.id === 'sub-1')));
+  assert.equal(first.userName, 'Target Keeper');
+  assert.equal(first.userEmail, 'user@example.com');
+  assert.equal(first.planName, 'Standard');
+  assert.equal(first.optionInterval, 'MONTHLY');
+  assert.equal(first.optionPriceCents, 900);
+});
+
+test('listEffectiveSubscriptions searches keeper name, email, plan name, and status', async () => {
+  const f = fixture('super_admin', { users: [
+    { id: 'u-2', name: 'Marta K.', email: 'marta@example.com', role: 'user', deletingAt: null },
+  ], subscriptions: [
+    { id: 'sub-1', userId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1', status: 'ACTIVE',
+      startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'sub-2', userId: 'u-2', planId: 'plan-1', planBillingOptionId: 'opt-1', status: 'PAST_DUE',
+      startedAt: new Date(NOW - 2 * 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'sub-3', userId: 'u-2', planId: 'plan-2', planBillingOptionId: 'opt-9', status: 'ACTIVE',
+      startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+  ] });
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Founding', planType: 'CUSTOM', sortOrder: 1 });
+  f.optionStore.set('opt-9', { ...MONTHLY, id: 'opt-9', planId: 'plan-2' });
+  const byName = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'marta', page: 1, pageSize: 20 });
+  assert.deepEqual(byName.rows.map(row => row.id), ['sub-3', 'sub-2']);
+  const byEmail = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'user@example.com', page: 1, pageSize: 20 });
+  assert.deepEqual(byEmail.rows.map(row => row.id), ['sub-1']);
+  const byPlan = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'founding', page: 1, pageSize: 20 });
+  assert.deepEqual(byPlan.rows.map(row => row.id), ['sub-3']);
+  const byStatus = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'past', page: 1, pageSize: 20 });
+  assert.deepEqual(byStatus.rows.map(row => row.id), ['sub-2']);
+  const nothing = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'zzz', page: 1, pageSize: 20 });
+  assert.deepEqual(nothing.rows, []);
+  assert.equal(nothing.total, 0);
+  // Pagination over the effective rows with an exact total.
+  const page2 = await f.assignment.listEffectiveSubscriptions(f.tx, { page: 2, pageSize: 2 });
+  assert.deepEqual(page2.rows.map(row => row.id), ['sub-2']);
+  assert.equal(page2.total, 3);
 });
 
 test('planHistoryCount and listPlans subscriptionCount read real effective subscriptions', async () => {
@@ -316,5 +449,155 @@ test('planHistoryCount and listPlans subscriptionCount read real effective subsc
     await f.plans.listPlans(f.tx, { page: 1, pageSize: 20 })));
   assert.deepEqual(summaries.map((row: { id: string; subscriptionCount: number }) =>
     ({ id: row.id, subscriptionCount: row.subscriptionCount })),
-    [{ id: 'plan-1', subscriptionCount: 1 }, { id: 'plan-2', subscriptionCount: 1 }]);
+    [{ id: 'plan-2', subscriptionCount: 1 }, { id: 'plan-1', subscriptionCount: 1 }]);
+});
+
+// --- Task 5: wizard sources ---
+
+const userRow = (id: string, name: string | null, email: string,
+  deletingAt: Date | null = null): UserRow =>
+  ({ id, name, email, role: 'user', deletingAt });
+const activeSub = (id: string, userId = 'user-1'): SubscriptionRow =>
+  ({ id, userId, planId: 'plan-1', planBillingOptionId: 'opt-1', status: 'ACTIVE',
+    startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+    createdAt: new Date(0), updatedAt: new Date(0) });
+
+test('searchUsers matches name or email case-insensitively and excludes deleting users', async () => {
+  const f = fixture('super_admin', { users: [
+    userRow('u-name', 'Marta Keeper', 'marta@example.com'),
+    userRow('u-email', 'Dan O.', 'keeper.marta@example.com'),
+    userRow('u-gone', 'Marta Gone', 'gone@example.com', new Date(NOW)),
+    userRow('u-none', null, 'noname@example.com'),
+  ] });
+  const { users, total } = await f.assignment.searchUsers(f.tx,
+    { search: 'MARTA', page: 1, pageSize: 20 });
+  // Ordered by name; the deleting user never appears.
+  assert.deepEqual(users.map(row => row.id), ['u-email', 'u-name']);
+  assert.equal(total, 2);
+  assert.deepEqual(users.map(row => ({ name: row.name, email: row.email })),
+    [{ name: 'Dan O.', email: 'keeper.marta@example.com' },
+      { name: 'Marta Keeper', email: 'marta@example.com' }]);
+});
+
+test('searchUsers paginates with an exact total and matches either field for one term', async () => {
+  // The fixture seeds the default actor/target users; they participate in
+  // name-ordered results like any other row.
+  const f = fixture('super_admin', { users: [
+    userRow('u1', 'Keeper Marta', 'a@example.com'),
+    userRow('u2', 'Dan O.', 'keeper.marta@example.com'),
+    userRow('u3', 'Zebra', 'z@example.com'),
+  ] });
+  // 'keeper' matches u1 by name, u2 by email, and the default 'Target Keeper'.
+  const both = await f.assignment.searchUsers(f.tx, { search: 'keeper', page: 1, pageSize: 20 });
+  assert.deepEqual(both.users.map(row => row.id), ['u2', 'u1', 'user-1']);
+  assert.equal(both.total, 3);
+  const page2 = await f.assignment.searchUsers(f.tx, { search: '', page: 2, pageSize: 3 });
+  // Name order: Dan O.(u2), Keeper Marta(u1), Owner One(owner-1), Target Keeper(user-1), Zebra(u3).
+  assert.deepEqual(page2.users.map(row => row.id), ['user-1', 'u3']);
+  assert.equal(page2.total, 5);
+  const nothing = await f.assignment.searchUsers(f.tx, { search: 'nobody', page: 1, pageSize: 20 });
+  assert.deepEqual(nothing.users, []);
+  assert.equal(nothing.total, 0);
+});
+
+test('endSubscription cancels the row with a now expiry and audits subscription.end', async () => {
+  const f = fixture('super_admin', { subscriptions: [activeSub('sub-1')] });
+  const before = Date.now();
+  const result = await f.assignment.endSubscription(f.tx, 'owner-1', 'sub-1',
+    'Ended subscription for user user-1 (Standard MONTHLY)');
+  assert.equal(result, 'ended');
+  const row = f.subscriptionStore.get('sub-1')!;
+  assert.equal(row.status, 'CANCELED');
+  assert.ok(row.expiresAt !== null && row.expiresAt.getTime() >= before &&
+    row.expiresAt.getTime() <= Date.now(), 'expiresAt should be the wall-clock now');
+  assert.deepEqual(f.audits, [{ action: 'subscription.end', targetId: 'sub-1',
+    reason: 'Ended subscription for user user-1 (Standard MONTHLY)',
+    changes: { planId: 'plan-1', status: 'CANCELED',
+      effectiveAt: row.expiresAt!.toISOString() } }]);
+});
+
+test('endSubscription fails closed on already-ended or missing subscriptions', async () => {
+  const f = fixture('super_admin', { subscriptions: [
+    { ...activeSub('sub-already'), status: 'CANCELED', expiresAt: new Date(NOW) },
+    { ...activeSub('sub-expired'), status: 'EXPIRED' },
+    { ...activeSub('sub-stale'), status: 'ACTIVE', expiresAt: new Date(NOW - 1000) },
+  ] });
+  for (const id of ['sub-already', 'sub-expired', 'sub-stale', 'sub-missing']) {
+    const result = await f.assignment.endSubscription(f.tx, 'owner-1', id,
+      'Ended subscription for user user-1 (Standard MONTHLY)');
+    assert.ok(isFailure(result), id);
+  }
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.subscriptionStore.get('sub-already')!.status, 'CANCELED');
+  assert.equal(f.subscriptionStore.get('sub-expired')!.status, 'EXPIRED');
+  assert.equal(f.subscriptionStore.get('sub-stale')!.status, 'ACTIVE');
+});
+
+test('endSubscription rejects an empty or unsafe reason without writes', async () => {
+  const f = fixture('super_admin', { subscriptions: [activeSub('sub-1')] });
+  for (const reason of ['', '   ', 'x'.repeat(501), 'Ended @user']) {
+    assert.ok(isFailure(await f.assignment.endSubscription(f.tx, 'owner-1', 'sub-1', reason)),
+      JSON.stringify(reason));
+  }
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.subscriptionStore.get('sub-1')!.status, 'ACTIVE');
+});
+
+test('a non-super-admin actor cannot end a subscription', async () => {
+  const f = fixture('admin', { subscriptions: [activeSub('sub-1')] });
+  const result = await f.assignment.endSubscription(f.tx, 'owner-1', 'sub-1',
+    'Ended subscription for user user-1 (Standard MONTHLY)');
+  assert.ok(isFailure(result));
+  assert.equal(f.subscriptionStore.get('sub-1')!.status, 'ACTIVE');
+  assert.equal(f.audits.length, 0);
+});
+
+test('ending a subscription acquires the subscription row lock inside the transaction', async () => {
+  const f = fixture('super_admin', { subscriptions: [activeSub('sub-1')] });
+  const locks: Array<{ strings: string[]; values: unknown[] }> = [];
+  (f.tx as { $queryRaw: unknown }).$queryRaw = (strings: string[], ...values: unknown[]) => {
+    locks.push({ strings, values }); return Promise.resolve([]);
+  };
+  await f.assignment.endSubscription(f.tx, 'owner-1', 'sub-1',
+    'Ended subscription for user user-1 (Standard MONTHLY)');
+  assert.equal(locks.length, 1);
+  assert.ok(locks[0].strings.join('').includes('FOR UPDATE'));
+  assert.ok(locks[0].strings.join('').includes('UserSubscription'));
+  assert.ok(locks[0].values.includes('sub-1'));
+});
+
+test('endSubscriptionAction derives the audit reason from context without a form reason', async () => {
+  const f = fixture('super_admin', { subscriptions: [activeSub('sub-1')] });
+  const api = load('../../app/admin/subscriptions/actions.ts', {
+    'next/cache': { revalidatePath: () => {} },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, _kind: unknown,
+      _action: string, work: () => Promise<unknown>) => work() },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
+      work(f.tx, { id: 'owner-1' }) },
+    '@/lib/admin/plan-assignment': f.assignment,
+  }) as { endSubscriptionAction: (form: FormData) => Promise<unknown> };
+  const form = new FormData();
+  form.set('subscriptionId', 'sub-1');
+  assert.deepEqual(jsonOf(await api.endSubscriptionAction(form)), { success: true });
+  assert.equal(f.subscriptionStore.get('sub-1')!.status, 'CANCELED');
+  assert.deepEqual(f.audits, [{ action: 'subscription.end', targetId: 'sub-1',
+    reason: 'Ended subscription for user user-1 (Standard MONTHLY)',
+    changes: { planId: 'plan-1', status: 'CANCELED',
+      effectiveAt: f.subscriptionStore.get('sub-1')!.expiresAt!.toISOString() } }]);
+});
+
+test('listAssignablePlans returns only active plans with an active-only total', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Archived', active: false, sortOrder: 1 });
+  f.planStore.set('plan-3', { ...PLAN, id: 'plan-3', name: 'Zebra', sortOrder: 2 });
+  const all = await f.assignment.listAssignablePlans(f.tx, { page: 1, pageSize: 20 });
+  assert.deepEqual(all.plans.map(plan => plan.id), ['plan-1', 'plan-3']);
+  assert.equal(all.total, 2);
+  const searched = await f.assignment.listAssignablePlans(f.tx, { search: 'zeb', page: 1, pageSize: 20 });
+  assert.deepEqual(searched.plans.map(plan => plan.id), ['plan-3']);
+  assert.equal(searched.total, 1);
+  const paginated = await f.assignment.listAssignablePlans(f.tx, { page: 2, pageSize: 1 });
+  assert.deepEqual(paginated.plans.map(plan => plan.id), ['plan-3']);
+  assert.equal(paginated.total, 2);
 });
