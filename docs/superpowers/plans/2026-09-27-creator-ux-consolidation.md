@@ -230,3 +230,29 @@ Method — surface by surface, interaction by interaction:
 - [ ] **Step 3: Final parity verdict** — every interaction MIRRORs, committed ledger as the standing record
 
 (After Task 6; together with Task 7 this closes the slice's fidelity obligations before the GLM 5.3 final review.)
+
+---
+
+### Task 9: Plan-builder page modernization (owner directive 2026-09-27 — must complete BEFORE the final whole-branch review)
+
+**Binding spec:** `.superpowers/sdd/2026-09-26-plan-creator/plan-builder-page-mockup.html` (mockup #7, owner-approved "looks way better"). The whole plan-builder page (`/admin/plans/[id]/edit`) currently renders parent-slice styling with no mockup behind it — only its embedded SelectionList inherits Task 8's component fixes.
+
+**Files:**
+- Modify: `src/app/admin/plans/[id]/edit/page.tsx` (header, plan-details card, billing-options card), `src/components/admin/feature-matrix.tsx` (section heading/hint density, pricing-preview as kv card, Save-matrix in the shared footer action slot from S9), tests
+- Reference: mockup #7; parent-slice behavior specs (two save boundaries; one-active-option-per-interval; save submits complete enabled set from any state; pricing preview recomputes from enabled set + active billing rows)
+
+**Requirements:**
+- Mirror mockup #7 element-by-element: clean header + quiet View/Back links; plan-details as one soft card with labeled inputs, plum flag checkboxes, primary Save-plan in card footer; billing options as freestanding hover rows with Active/Inactive pill badges + add-option form + one-active-per-interval hint; features section = compact pricing kv card, 44px search + gold counter, tray (plum toggle, gold chips), category-grouped click-to-toggle rows with orphan suffix, footer pager + Save matrix + save feedback
+- Standing rulings apply: no dropdown (live narrowing), display titles never ids, truthful counters, single-page lists hide the pager, empty state echoes query
+- Footer omits toggle-all unless the owner ratifies it (mockup #7 is faithful to the interactive selection-list footer anatomy)
+- All colors via theme tokens; both themes render correctly by construction
+
+**Owner amendments (2026-09-27, ratified):**
+- **Plan detail page retired**: the standalone `/admin/plans/[id]` view is redundant with the plans-list accordion detail card; its only unique capability (billing-option Activate/Deactivate) moves into the builder's billing card (mockup #7 already depicts the deactivate affordance). "View plan" links repoint to `/admin/plans?open=<id>` (accordion open state is URL-owned → deep link opens the plans list with that plan expanded). Verify and repoint any other inbound links to `/admin/plans/[id]` at implementation; retire the page (also removes its hardcoded emerald badge — a palette-literal violation).
+- **Select All / Select None** in the features toolbar (owner-ratified addition; mockup #7 amended to include them): act on the WHOLE registry set, orphaned keys excluded; tray, counter, and pricing preview follow. This is builder-scoped — the shared component's S10 toggle-all ruling on the bulk list pages is unchanged (keep + restyle, still veto-able).
+
+- [ ] **Step 1: Failing tests** pinning the mockup structure (page sections, matrix footer save slot, pricing preview, billing rows)
+- [ ] **Step 2–4: RED → implement → GREEN → full gates →** commit `feat: plan-builder page modernization per mockup #7`
+- [ ] **Step 5: Review** per subagent-driven development; ledger status updated
+
+(Sequenced AFTER Task 8 fix rounds land — shared files, sequential per context-budget rule; BEFORE the Task 6-finale baseline re-capture so pixel changes are captured once; BEFORE the GLM 5.3 final review per owner directive.)
