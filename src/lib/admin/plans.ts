@@ -11,9 +11,9 @@ export type PlanSummary = {
   id: string; name: string; description: string; planType: PlanType;
   maxSpiders: number | null; active: boolean; public: boolean; sortOrder: number; updatedAt: Date;
   billingOptionCount: number; enabledFeatureCount: number; subscriptionCount: number;
-  billingOptions: Array<{ interval: BillingInterval; basePriceCents: number; active: boolean }>;
+  billingOptions: Array<{ id: string; interval: BillingInterval; basePriceCents: number; active: boolean }>;
 };
-type PlansDb = Pick<Prisma.TransactionClient, 'plan' | 'planBillingOption' | 'featurePlanTranslation'>;
+type PlansDb = Pick<Prisma.TransactionClient, 'plan' | 'planBillingOption' | 'featurePlanTranslation' | 'userSubscription'>;
 /** appendAudit accepts the full client; plan services only need these delegates. */
 const auditTx = (tx: PlansDb): Prisma.TransactionClient => tx as Prisma.TransactionClient;
 
@@ -62,10 +62,16 @@ export function deleteActionFor(historyCount: number): 'deactivated' | 'deleted'
   return historyCount > 0 ? 'deactivated' : 'deleted';
 }
 
-/** Task 5 rewires this to the real UserSubscription count; until then no plan has history. */
-export async function planHistoryCount(tx: PlansDb, planId: string): Promise<number> {
-  void tx; void planId; // Interface is fixed now; Task 5 fills in the real count.
-  return 0;
+const effectiveSubscriptionWhere = (): Prisma.UserSubscriptionWhereInput => ({
+  status: { in: ['TRIALING', 'ACTIVE', 'PAST_DUE'] },
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+});
+
+/** Effective-subscription history on a plan: any row whose status is
+ * TRIALING/ACTIVE/PAST_DUE and not expired forces deactivation over deletion. */
+export async function planHistoryCount(tx: Pick<PlansDb, 'userSubscription'>,
+  planId: string): Promise<number> {
+  return tx.userSubscription.count({ where: { planId, ...effectiveSubscriptionWhere() } });
 }
 
 async function loadPlan(tx: PlansDb, planId: string) {
@@ -222,19 +228,24 @@ export async function reorderPlan(tx: PlansDb, actorId: string, planId: string,
   return 'moved';
 }
 
-/** Billing-option, enabled-feature, and subscription counts. The feature count
- * reads real FeaturePlanTranslation rows; subscriptions arrive in Task 5. */
+/** Billing-option, enabled-feature, and subscription counts (real queries). */
 export async function listPlans(tx: PlansDb): Promise<PlanSummary[]> {
   const rows = await tx.plan.findMany({ include: { billingOptions: true, featureTranslations: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  const effectiveSubscriptions = await tx.userSubscription.findMany({
+    where: effectiveSubscriptionWhere(), select: { planId: true } });
+  const subscriptionCounts = new Map<string, number>();
+  for (const row of effectiveSubscriptions)
+    subscriptionCounts.set(row.planId, (subscriptionCounts.get(row.planId) ?? 0) + 1);
   return rows.map(row => ({
     id: row.id, name: row.name, description: row.description,
     planType: row.planType as PlanType, maxSpiders: row.maxSpiders,
     active: row.active, public: row.public, sortOrder: row.sortOrder, updatedAt: row.updatedAt,
     billingOptionCount: row.billingOptions.length,
     enabledFeatureCount: row.featureTranslations.filter(translation => translation.enabled).length,
-    subscriptionCount: 0,
-    billingOptions: row.billingOptions.map(option => ({ interval: option.interval as BillingInterval,
+    subscriptionCount: subscriptionCounts.get(row.id) ?? 0,
+    billingOptions: row.billingOptions.map(option => ({ id: option.id,
+      interval: option.interval as BillingInterval,
       basePriceCents: option.basePriceCents, active: option.active })),
   }));
 }

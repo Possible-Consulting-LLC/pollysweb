@@ -116,6 +116,12 @@ function fixture(role: Actor['role'], setup: MatrixSetup = {}) {
         return data;
       },
     },
+    // Real planHistoryCount reads UserSubscription; the fixture stubs it via
+    // wiredPlans when subscribers > 0, otherwise this reports no subscribers.
+    userSubscription: {
+      findMany: async () => [],
+      count: async () => 0,
+    },
   };
   const registry = load('../features/registry.ts', {});
   const pricing = load('../features/pricing.ts', { './registry': registry });

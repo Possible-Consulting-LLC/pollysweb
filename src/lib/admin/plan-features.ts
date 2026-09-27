@@ -16,7 +16,7 @@ export type FeatureMatrixEntry = { key: string; enabled: boolean };
 export type AppliedMatrix = { enabledCount: number; previousEnabledCount: number; removedAccess: string[] };
 
 type PlanFeaturesDb = Pick<Prisma.TransactionClient,
-  'plan' | 'planBillingOption' | 'feature' | 'featurePlanTranslation'>;
+  'plan' | 'planBillingOption' | 'feature' | 'featurePlanTranslation' | 'userSubscription'>;
 /** appendAudit accepts the full client; this service only needs these delegates. */
 const auditTx = (tx: PlanFeaturesDb): Prisma.TransactionClient => tx as Prisma.TransactionClient;
 

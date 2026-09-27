@@ -59,6 +59,7 @@ model User {
   celebratedRewards CelebratedReward[]
   accounts  Account[]
   facebookDeletionRequests FacebookDeletionRequest[]
+  subscriptions UserSubscription[]
 
   @@index([billingNextCheckAt, id])
 }
@@ -480,6 +481,7 @@ model Plan {
 
   billingOptions PlanBillingOption[]
   featureTranslations FeaturePlanTranslation[]
+  subscriptions UserSubscription[]
 
   @@index([sortOrder, name])
 }
@@ -500,6 +502,33 @@ model PlanBillingOption {
 
   @@index([planId, interval])
   @@index([planId, active])
+  subscriptions UserSubscription[]
+}
+
+// One assigned plan subscription per row. At most one row per user is effective
+// (status TRIALING/ACTIVE/PAST_DUE and not expired); new assignments end-date
+// the prior effective row. discountId is a plain nullable scalar: the Discount
+// entities are a later phase that adds the relation and FK.
+model UserSubscription {
+  id                  String   @id @default(cuid())
+  userId              String
+  planId              String
+  planBillingOptionId String
+  discountId          String?
+  /// TRIALING | ACTIVE | PAST_DUE | CANCELED | EXPIRED (service-validated).
+  status              String
+  startedAt           DateTime
+  renewsAt            DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan              @relation(fields: [planId], references: [id], onDelete: Cascade)
+  billingOption PlanBillingOption @relation(fields: [planBillingOptionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, expiresAt])
+  @@index([planId, status, expiresAt])
 }
 
 // Per-plan feature assignment. The pair (planId, featureId) is unique and

@@ -14,6 +14,10 @@ type OptionRow = { id: string; planId: string; interval: string; basePriceCents:
   active: boolean; sortOrder: number; createdAt: Date; updatedAt: Date };
 type TranslationRow = { id: string; planId: string; featureId: string; enabled: boolean;
   createdAt: Date; updatedAt: Date };
+type SubscriptionRow = { id: string; userId: string; planId: string; planBillingOptionId: string;
+  status: string; startedAt: Date; renewsAt: Date | null; expiresAt: Date | null;
+  createdAt: Date; updatedAt: Date };
+type SubSetup = SubscriptionRow[];
 
 function load(relativePath: string, deps: Record<string, unknown>): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
@@ -37,7 +41,7 @@ const MONTHLY: OptionRow = { id: 'opt-1', planId: 'plan-1', interval: 'MONTHLY',
   active: true, sortOrder: 0, createdAt: new Date(0), updatedAt: new Date(0) };
 
 function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY],
-  translations: TranslationRow[] = []) {
+  translations: TranslationRow[] = [], subscriptions: SubSetup = []) {
   type ActorFixture = { id: string; role: 'admin' | 'super_admin'; owner: boolean; suspended: boolean;
     credentialVersion: string; reauthenticatedAt: number };
   const actor: ActorFixture = { id: 'owner-1', role, owner: role === 'super_admin', suspended: false,
@@ -46,6 +50,8 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
   const optionStore = new Map<string, OptionRow>(options.map(option => [option.id, { ...option }]));
   const translationStore = new Map<string, TranslationRow>(
     translations.map(translation => [translation.id, { ...translation }]));
+  const subscriptionStore = new Map<string, SubscriptionRow>(
+    subscriptions.map(row => [row.id, { ...row }] as const));
   const audits: Array<{ action: string; targetId: string | null; reason: string;
     changes: Record<string, unknown> }> = [];
   const revalidated: string[] = [];
@@ -59,6 +65,11 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     (where.planId === undefined || where.planId === row.planId) &&
     (where.interval === undefined || where.interval === row.interval) &&
     (where.active === undefined || where.active === row.active);
+  const effective = (row: SubscriptionRow) =>
+    ['TRIALING', 'ACTIVE', 'PAST_DUE'].includes(row.status) &&
+    (row.expiresAt === null || row.expiresAt.getTime() > Date.now());
+  const subscriptionWhere = (where: Record<string, unknown>, row: SubscriptionRow) =>
+    (where.planId === undefined || where.planId === row.planId) && effective(row);
   const tx = {
     plan: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
@@ -108,6 +119,14 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
         translationStore.set(row.id, row); return { ...row };
       },
     },
+    userSubscription: {
+      findMany: async ({ where = {}, select }: { where?: Record<string, unknown>;
+        select?: unknown } = {}) =>
+        [...subscriptionStore.values()].filter(row => subscriptionWhere(where, row))
+          .map(row => (select ? { planId: row.planId } : { ...row })),
+      count: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
+        [...subscriptionStore.values()].filter(row => subscriptionWhere(where, row)).length,
+    },
     adminAudit: {
       create: async ({ data }: { data: { action: string; targetId: string | null; reason: string;
         changes: Record<string, unknown> } }) => {
@@ -139,7 +158,7 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     '@/lib/features/registry': registry,
   }) as typeof actions;
   return { api, plans: plansModule, tx: tx as never, planStore, optionStore, translationStore,
-    audits, revalidated, mutations };
+    subscriptionStore, audits, revalidated, mutations };
 }
 
 test('validatePlanInput accepts a valid plan with null meaning unlimited spoods', () => {
@@ -235,9 +254,15 @@ test('deleteActionFor deletes with no history and only deactivates with history'
   assert.throws(() => f.plans.deleteActionFor(1.5));
 });
 
-test('planHistoryCount returns zero until subscriptions exist', async () => {
-  const f = fixture('super_admin');
-  assert.equal(await f.plans.planHistoryCount(f.tx, PLAN.id), 0);
+test('planHistoryCount counts only effective subscriptions on the plan', async () => {
+  const f = fixture('super_admin', [MONTHLY], [], [
+    { id: 'sub-1', userId: 'user-1', planId: PLAN.id, planBillingOptionId: MONTHLY.id, status: 'ACTIVE',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null, createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'sub-2', userId: 'user-2', planId: PLAN.id, planBillingOptionId: MONTHLY.id, status: 'CANCELED',
+      startedAt: new Date(0), renewsAt: null, expiresAt: new Date(0), createdAt: new Date(0), updatedAt: new Date(0) },
+  ]);
+  assert.equal(await f.plans.planHistoryCount(f.tx, PLAN.id), 1);
+  assert.equal(await f.plans.planHistoryCount(f.tx, 'plan-other'), 0);
 });
 
 test('deletePlan with history deactivates without deleting rows and audits plan.delete', async () => {
@@ -258,20 +283,27 @@ test('deletePlan with zero history deletes the plan and its options and audits p
     changes: { planName: 'Standard', result: 'deleted' } }]);
 });
 
-test('listPlans counts billing options and real enabled translations, subscriptions still zero', async () => {
+test('listPlans counts billing options, real enabled translations, and real effective subscriptions', async () => {
+  const subscriptions: SubSetup = [
+    { id: 'sub-1', userId: 'user-1', planId: PLAN.id, planBillingOptionId: MONTHLY.id, status: 'ACTIVE',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null, createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'sub-2', userId: 'user-2', planId: PLAN.id, planBillingOptionId: MONTHLY.id, status: 'EXPIRED',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null, createdAt: new Date(0), updatedAt: new Date(0) },
+  ];
   const f = fixture('super_admin', [MONTHLY], [
     { id: 'trans-1', planId: PLAN.id, featureId: 'feature-a', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
     { id: 'trans-2', planId: PLAN.id, featureId: 'feature-b', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
     { id: 'trans-3', planId: PLAN.id, featureId: 'feature-c', enabled: false, createdAt: new Date(0), updatedAt: new Date(0) },
-  ]);
+  ], subscriptions);
   const summaries = jsonOf(await f.plans.listPlans(f.tx));
   assert.equal(summaries.length, 1);
   const summary = summaries[0];
   assert.equal(summary.name, 'Standard');
   assert.equal(summary.billingOptionCount, 1);
   assert.equal(summary.enabledFeatureCount, 2);
-  assert.equal(summary.subscriptionCount, 0);
-  assert.deepEqual(summary.billingOptions, [{ interval: 'MONTHLY', basePriceCents: 900, active: true }]);
+  // Only the effective ACTIVE row counts; the EXPIRED row does not.
+  assert.equal(summary.subscriptionCount, 1);
+  assert.deepEqual(summary.billingOptions, [{ id: MONTHLY.id, interval: 'MONTHLY', basePriceCents: 900, active: true }]);
 });
 
 test('non-super-admin plan mutations are denied without writes, audits, or revalidation', async () => {
