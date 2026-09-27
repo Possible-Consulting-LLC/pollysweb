@@ -1,15 +1,17 @@
-import Link from 'next/link';
 import { requireAdminActor } from '@/lib/admin/actor';
 import { prisma } from '@/lib/db';
-import { FEATURE_REGISTRY, isRegisteredFeatureKey } from '@/lib/features/registry';
+import { isRegisteredFeatureKey } from '@/lib/features/registry';
 import { clampPage, parseListQuery } from '@/lib/admin/paginated-list';
-import { Button } from '@/components/ui/button';
-import { listHref } from '@/components/admin/list-shared';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { FeaturesAccordion } from '@/components/admin/features-accordion';
 import { syncRegistryAction } from './actions';
 export const dynamic = 'force-dynamic';
+
+/** Accessible explanation for the header sync button: every registry feature
+ * missing from the database is created inactive; existing rows keep their
+ * metadata and release state; orphaned rows are never modified. */
+const SYNC_DESCRIPTION = 'Creates rows for registry features that are missing, inactive by default. Existing rows keep their metadata and release state; orphaned rows are never modified and are reported in the result.';
 
 export default async function FeatureCatalogPage({ searchParams }:
   { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -25,14 +27,13 @@ export default async function FeatureCatalogPage({ searchParams }:
         { key: { contains: query.search, mode: 'insensitive' as const } },
       ] }
     : undefined;
-  const [rows, total, totalPlans, allTotal] = await Promise.all([
+  const [rows, total, totalPlans] = await Promise.all([
     prisma.feature.findMany({
       where, orderBy: [{ category: 'asc' }, { key: 'asc' }],
       skip: (query.page - 1) * query.pageSize, take: query.pageSize,
     }),
     prisma.feature.count({ where }),
     prisma.plan.count(),
-    prisma.feature.count(),
   ]);
   // A page beyond the (possibly filtered) total re-queries the last valid page.
   const page = clampPage(query.page, total, query.pageSize);
@@ -56,10 +57,6 @@ export default async function FeatureCatalogPage({ searchParams }:
     plansByFeature.set(translation.featureId, names);
   }
   // The registry is the code-owned source; orphans are re-derived here on every render.
-  const dbFeatures = await prisma.feature.findMany({ select: { key: true } });
-  const missing = FEATURE_REGISTRY.filter(definition =>
-    !dbFeatures.some(row => row.key === definition.key));
-  const orphanedCount = dbFeatures.filter(row => !isRegisteredFeatureKey(row.key)).length;
   const features = pageRows.map(row => ({
     id: row.id, key: row.key, name: row.name, description: row.description,
     category: row.category, active: row.active,
@@ -68,25 +65,20 @@ export default async function FeatureCatalogPage({ searchParams }:
     totalPlans,
   }));
   return <>
-    <header className="space-y-2">
-      <h2 className="text-2xl font-semibold">Feature catalog</h2>
-      <p>Every feature key comes from the code registry and starts inactive. Releasing a feature makes it available to plans; removing a key from the code leaves its database row orphaned here for review. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
-      {/* Honest stat line: during a search `total` is the filtered count, so
-          the unfiltered database count is shown next to it. */}
-      <p>{parsed.search
-        ? <>{total} matches · {allTotal} in the database · {missing.length} awaiting sync · {orphanedCount} orphaned</>
-        : <>{FEATURE_REGISTRY.length} registry features · {total} in the database · {missing.length} awaiting sync · {orphanedCount} orphaned</>}</p>
-    </header>
-    <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
-      <h3 className="font-semibold">Sync registry</h3>
-      <p>Creates rows for registry features that are missing, inactive by default. Existing rows keep their metadata and release state; orphaned rows are never modified and are reported in the result.</p>
-      <MutationForm action={syncRegistryAction} className="flex flex-wrap items-end gap-3"><MutationContextInput />
-        <Button type="submit" variant="primary" size="md">Sync registry</Button>
+    {/* Mockup .head: plain title with the primary action as a compact header
+        button; the explanation lives in the button's accessible description
+        (the app's confirm-dialog pattern carries it into the flow). */}
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-2xl font-semibold">Features</h2>
+      <span id="sync-registry-description" className="sr-only">{SYNC_DESCRIPTION}</span>
+      <MutationForm action={syncRegistryAction} aria-describedby="sync-registry-description"
+        className="flex items-center">
+        <MutationContextInput />
+        <button type="submit"
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-2xl bg-[var(--plum)] px-3 text-sm font-semibold text-[var(--on-accent)] shadow-sm transition active:scale-[0.98] hover:bg-[var(--plum-deep)] disabled:pointer-events-none disabled:opacity-50">
+          ⟳ Sync registry</button>
       </MutationForm>
-      {missing.length
-        ? <p>{missing.length} registry {missing.length === 1 ? 'feature is' : 'features are'} not in the database yet: {missing.map(definition => definition.key).join(', ')}</p>
-        : <p>Every registry feature is in the database.</p>}
-    </section>
+    </header>
     {/* Search lives in the accordion's live toolbar (mockup-exact): typing
         narrows the rendered list live, Enter is the explicit full-page
         fallback navigation. */}

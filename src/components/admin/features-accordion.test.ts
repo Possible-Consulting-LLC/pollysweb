@@ -434,18 +434,60 @@ test('badges are theme-token driven — no hardcoded palette literals', () => {
   assert.doesNotMatch(readSource(), /(?:emerald|sky|amber|teal|indigo)-\d00/);
 });
 
-test('detail cards are soft-bordered labeled kv grids at mockup density', () => {
+test('the expanded detail is a single mockup card: soft-bordered, one labeled kv grid', () => {
   const tree = render({ openKey: 'feature.key-1' });
   const cards = elements(tree).filter((item) => item.props['data-detail-card']);
-  assert.equal(cards.length, 3);
-  for (const card of cards) {
-    const cls = String(card.props.className);
-    assert.equal(cls.split(' ').includes('card'), false);
-    assert.equal(cls.includes('border-[var(--hover)]'), true);
-    assert.equal(cls.includes('bg-[var(--background)]'), true);
-  }
+  assert.equal(cards.length, 1, 'one Detail card, not three titled cards');
+  assert.equal(textOf(cards[0]).includes('Detail'), true, 'the card is titled Detail');
+  const cls = String(cards[0].props.className);
+  assert.equal(cls.split(' ').includes('card'), false);
+  assert.equal(cls.includes('border-[var(--hover)]'), true);
+  assert.equal(cls.includes('bg-[var(--background)]'), true);
   const grids = elements(tree).filter((item) => item.type === 'dl' && item.props['data-kv-grid']);
-  assert.equal(grids.length, 3);
+  assert.equal(grids.length, 1);
+  const labels = elements(grids[0]).filter((item) => item.type === 'dt').map((dt) => textOf(dt));
+  assert.deepEqual(labels, ['Key', 'Description', 'Category', 'Release state', 'Plan assignments', 'Plans'],
+    'all information rows survive the consolidation into the single card');
+  assert.equal(textOf(grids[0]).includes('Released (available to plans)'), true,
+    'the release-state row speaks the mockup wording');
+  assert.equal(textOf(tree).includes('2 of 3 plans'), true);
+  assert.equal(textOf(tree).includes('Free, Basic'), true);
+});
+
+// --- Fix round 2: F1 category badge, F2 wording + orphan key-line suffix ---
+
+test('every committed row carries the mockup category badge (tinted pill)', () => {
+  const tree = render({ features: features(3) });
+  const rows = elements(tree).filter((item) => item.props['data-row-id']);
+  assert.equal(rows.length, 3);
+  const expected = ['Care', 'Care', 'Spoods'];
+  rows.forEach((row, index) => {
+    const badge = elements(row).find((item) => item.type === 'span' &&
+      String(item.props.className).includes('bg-[var(--lavender)]'));
+    assert.ok(badge, `category badge missing on row ${row.props['data-row-id']}`);
+    assert.equal(textOf(badge), expected[index]);
+  });
+});
+
+test('unreleased rows say Coming soon; orphan rows mark the key line, not a badge', () => {
+  const tree = render({ features: [...features(2), orphanRow] });
+  const body = textOf(tree);
+  assert.equal(body.includes('Coming soon'), true, 'mockup wording for unreleased rows');
+  assert.equal(body.includes('Not released'), false);
+  const orphan = elements(tree).find((item) => item.props['data-row-id'] === 'legacy.bulk_import');
+  assert.ok(orphan, 'orphan row missing');
+  assert.equal(textOf(orphan).includes('legacy.bulk_import — orphaned'), true,
+    'the orphan marker rides the key line as a suffix (key — orphaned)');
+  assert.equal(elements(orphan).some((item) => item.type === 'span' &&
+    textOf(item) === 'Orphaned'), false, 'no separate Orphaned badge');
+});
+
+test('the committed footer carries the mockup note: Grouped by category · sorted by key', () => {
+  const tree = render({ features: features(2) });
+  const nav = elements(tree).find((item) => item.type === 'nav' &&
+    item.props['aria-label'] === 'Features pagination');
+  assert.ok(nav, 'committed pager nav missing');
+  assert.equal(textOf(nav).includes('Grouped by category · sorted by key'), true);
 });
 
 // --- Fix round 1b: the orphan lock holds in the narrowed features view ---
@@ -479,8 +521,10 @@ test('a narrowed orphan row renders greyed, inert, and marked — picking it is 
   (boxes[1].props.onChange as () => void)();
   assert.deepEqual(picked, [{ id: 'feature.key-2', title: 'Feature 2',
     subtitle: 'feature.key-2' }]);
-  assert.equal(textOf(narrowed).includes('Orphaned'), true,
-    'the orphan marker is visible on the key line');
+  assert.equal(textOf(narrowed).includes('legacy.bulk_import — orphaned'), true,
+    'the orphan marker is a key-line suffix in the narrowed view too (round 1b badge replaced)');
+  assert.equal(elements(narrowed).some((item) => item.type === 'span' &&
+    textOf(item) === 'Orphaned'), false, 'no separate Orphaned badge in the narrowed view');
 });
 
 test('an orphaned narrowed pick never appears in the bulk Release/Unrelease form inputs', () => {

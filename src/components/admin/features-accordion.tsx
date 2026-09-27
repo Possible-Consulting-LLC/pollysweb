@@ -5,8 +5,8 @@ import { useReducer, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { listHref, categoryLabel, counterChipClass, badgeOnClass,
-  badgeOffClass } from '@/components/admin/list-shared';
+import { listHref, categoryLabel, counterChipClass, badgeOnClass, badgeOffClass,
+  badgeTintClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
   type Narrowing } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
@@ -66,9 +66,9 @@ export type FeaturesAccordionViewProps = {
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
-function DetailCard({ title, rows }: { title: string; rows: Array<{ label: string; value: ReactNode }> }) {
+function DetailCard({ rows }: { rows: Array<{ label: string; value: ReactNode }> }) {
   return <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
-    <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">{title}</h3>
+    <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">Detail</h3>
     <dl data-kv-grid className="grid grid-cols-[minmax(110px,130px)_1fr] gap-x-3 gap-y-1.5 text-[13px]">
       {rows.map(row => [<dt key={`${row.label}-dt`} className="font-semibold opacity-60">{row.label}</dt>,
         <dd key={`${row.label}-dd`} className="min-w-0">{row.value}</dd>])}
@@ -76,20 +76,19 @@ function DetailCard({ title, rows }: { title: string; rows: Array<{ label: strin
   </div>;
 }
 
+/** Mockup release-state wording for the kv grid: orphans lock the controls. */
+const releaseStateText = (row: FeatureRowView) => row.orphan
+  ? 'Orphaned — controls locked until the code/config mismatch is resolved'
+  : row.active ? 'Released (available to plans)' : 'Coming soon (globally inactive)';
+
 function FeatureDetail({ row }: { row: FeatureRowView }) {
   return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
-    <DetailCard title="Identity" rows={[
+    <DetailCard rows={[
       { label: 'Key', value: <code className="text-xs">{row.key}</code> },
-      { label: 'Category', value: categoryLabel(row.category) },
       { label: 'Description', value: row.description },
-    ]} />
-    <DetailCard title="Release state" rows={[
-      { label: 'Status', value: row.active
-        ? <span className={badgeOnClass}>Released</span>
-        : <span className={badgeOffClass}>Not released</span> },
-    ]} />
-    <DetailCard title="Plan assignments" rows={[
-      { label: 'Assigned', value: `${row.assignedPlans.length} of ${row.totalPlans} plans` },
+      { label: 'Category', value: categoryLabel(row.category) },
+      { label: 'Release state', value: releaseStateText(row) },
+      { label: 'Plan assignments', value: `${row.assignedPlans.length} of ${row.totalPlans} plans` },
       { label: 'Plans', value: row.assignedPlans.length
         ? row.assignedPlans.join(', ')
         : 'No plans use this feature yet.' },
@@ -184,10 +183,11 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold">{row.title}</span>
                 {row.subtitle
-                  ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
+                  ? <span className="block truncate font-mono text-[11px] opacity-55">
+                      {row.subtitle}{orphan ? ' — orphaned' : ''}
+                    </span>
                   : null}
               </span>
-              {orphan ? <span className={cn(badgeOffClass, 'ml-auto shrink-0')}>Orphaned</span> : null}
             </div>;
           })}
       <NarrowPager page={narrowing.page} total={narrowing.total} pageSize={pageSize}
@@ -217,13 +217,15 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
                     className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold">{row.name}</span>
-                    <span className="block truncate font-mono text-[11px] opacity-55">{row.key}</span>
+                    <span className="block truncate font-mono text-[11px] opacity-55">
+                      {row.key}{row.orphan ? ' — orphaned' : ''}
+                    </span>
                   </span>
                   <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+                    <span className={badgeTintClass}>{categoryLabel(row.category)}</span>
                     {row.active
                       ? <span className={badgeOnClass}>Released</span>
-                      : <span className={badgeOffClass}>Not released</span>}
-                    {row.orphan ? <span className={badgeOffClass}>Orphaned</span> : null}
+                      : <span className={badgeOffClass}>Coming soon</span>}
                   </span>
                 </Link>
               </div>
@@ -245,6 +247,7 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
         {page >= lastPage
           ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
           : <Link href={listHrefFor(search, page + 1)} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>Next</Link>}
+        <span className="ml-auto text-xs opacity-55">Grouped by category · sorted by key</span>
       </nav>
     </>}
   </>;

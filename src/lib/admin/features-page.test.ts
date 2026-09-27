@@ -173,7 +173,7 @@ test('features page queries 20 per page with a name-or-key search and feeds the 
   // Search is owned by the accordion's live toolbar (Task 7) — no GET form here.
   assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), false);
   const syncForm = elementsOf(tree).forms.find(form => form.props.action === 'sync-registry');
-  assert.ok(syncForm, 'sync registry card missing');
+  assert.ok(syncForm, 'sync registry form missing');
 });
 
 test('the accordion (with its live toolbar) renders even when nothing matches yet', async () => {
@@ -194,14 +194,14 @@ test('a page beyond the total clamps back to the last valid page', async () => {
   assert.equal(capturedProps[0].page, 2);
 });
 
-test('the header stat line is honest during a search', async () => {
+test('the page needs no header stat paragraph — registry sync is button chrome', async () => {
   servedRows = DB_ROWS; servedTotal = 25;
   const filtered = textOf(await render({ search: 'molt' }));
-  assert.equal(filtered.includes('25 matches'), true);
-  assert.equal(filtered.includes('in the database'), true);
+  assert.equal(filtered.includes('matches'), false,
+    'the honest-count paragraph is gone from page chrome (F5)');
   const plain = textOf(await render({}));
-  assert.equal(plain.includes('matches'), false);
-  assert.equal(plain.includes('in the database'), true);
+  assert.equal(plain.includes('in the database'), false,
+    'no database-count stat line in the mockup header');
 });
 
 test('the committed pager lives in the accordion island; empty searches skip the where clause', async () => {
@@ -221,7 +221,47 @@ test('the committed pager lives in the accordion island; empty searches skip the
   assert.equal(featureQueries[0].where, undefined, 'no search → unfiltered query');
 });
 
-// --- Fix round 1b: the island is the single owner of the empty state ---
+// --- Fix round 2: F5 plain Features header; F6 sync as a header button ---
+
+test('the header matches the mockup: plain Features title, no stat paragraph', async () => {
+  servedRows = DB_ROWS; servedTotal = 25;
+  const tree = await render({});
+  const heading = elements(tree).find((item) => item.type === 'h2');
+  assert.ok(heading, 'header missing');
+  assert.equal(textOf(heading), 'Features', 'the mockup title, nothing else');
+  const body = textOf(tree);
+  assert.equal(body.includes('in the database'), false,
+    'the stat paragraph is removed from page chrome');
+  assert.equal(body.includes('awaiting sync'), false,
+    'sync counts live in the button confirm flow, not the page header');
+});
+
+test('registry sync renders as a compact header button with an accessible confirm flow', async () => {
+  servedRows = DB_ROWS; servedTotal = 25;
+  const tree = await render({});
+  const header = elements(tree).find((item) => item.type === 'header');
+  assert.ok(header, 'page header missing');
+  const button = elements(header).find((item) => (item.type === 'button' ||
+    item.type === 'form') && textOf(item).includes('Sync registry'));
+  assert.ok(button, 'Sync registry button lives in the header');
+  assert.equal(String(button.props.className ?? (button.props.children as Array<{ props: { className?: string } }> | undefined)
+    ?.find?.((child: { props?: { className?: string } }) => String(child.props?.className ?? '').includes('h-9')) ?? '').includes('h-9') ||
+    elements(button).some((item) => item.type === 'button' &&
+      String(item.props.className).includes('h-9')), true,
+    'the button is the compact sm size (mockup btn-sm)');
+  assert.equal(button.props['aria-describedby'] !== undefined, true,
+    'the explanation stays accessible as the button description');
+  assert.equal(textOf(tree).includes('Creates rows for registry features that are missing'),
+    true, 'the explanation text is kept in the DOM (accessible), not deleted');
+  const syncCard = elements(tree).find((item) => item.type === 'section' &&
+    textOf(item).includes('Sync registry'));
+  assert.equal(syncCard === undefined, true, 'no full explanatory card');
+  // The action wiring survives: the form posts to the same server action.
+  const syncForm = elementsOf(tree).forms.find(form => form.props.action === 'sync-registry');
+  assert.ok(syncForm, 'sync registry form missing');
+  assert.equal(elements(syncForm).some(item => item.type === 'button' &&
+    textOf(item).includes('Sync registry')), true, 'the visible trigger submits the form');
+});
 
 test('the server page renders no empty-state message — the island owns it in both modes', async () => {
   featureQueries = []; capturedProps = []; servedRows = []; servedTotal = 0;
