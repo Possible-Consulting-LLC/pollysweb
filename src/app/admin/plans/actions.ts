@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { Prisma } from '@prisma/client';
 import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
 import { createPlan, deletePlan, duplicatePlan, planHistoryCount, reorderPlan, saveBillingOption,
@@ -33,14 +34,11 @@ const numberOrNull = (form: FormData, key: string) => {
   return raw === '' ? null : Number(raw);
 };
 
-/** Loads the plan name (and, when needed, its billing options) inside the
- * admin transaction so the derived audit reason can describe the target. */
-async function loadPlanForReason(tx: {
-  plan: { findUnique: (args: { where: { id: string } }) => Promise<unknown> },
-}, planId: string): Promise<{ name: string; billingOptions?: Array<{ id: string; interval: string }> }> {
-  const row = await tx.plan.findUnique({ where: { id: planId } }) as
-    | { name: string; billingOptions?: Array<{ id: string; interval: string }> }
-    | null;
+/** Loads the plan inside the admin transaction so the derived audit reason can
+ * describe the target. Typed against the real Prisma client: a query that
+ * expects a relation it did not include is a compile-time error. */
+async function loadPlanForReason(tx: Prisma.TransactionClient, planId: string) {
+  const row = await tx.plan.findUnique({ where: { id: planId } });
   if (!row) throw Error('That plan no longer exists. Reload the catalog.');
   return row;
 }
@@ -154,11 +152,13 @@ export async function setBillingOptionActiveAction(form: FormData): Promise<Resu
       if (!optionId || optionId.length > 128) throw Error('A valid billing option is required.');
       if (requested !== 'true' && requested !== 'false') throw Error('Choose active or inactive.');
       await withAdminControl(async (tx, actor) => {
-        const { name, billingOptions } = await loadPlanForReason(tx, planId);
-        const option = billingOptions?.find(candidate => candidate.id === optionId);
+        const plan = await loadPlanForReason(tx, planId);
+        // Resolve the option by its own table: no relation include needed, and
+        // a foreign or missing option id fails closed here.
+        const option = await tx.planBillingOption.findFirst({ where: { id: optionId, planId } });
         if (!option) throw Error('That billing option no longer exists. Reload the editor.');
         const result = await setBillingOptionActive(tx, actor.id, planId, optionId,
-          requested === 'true', `Updated billing option ${option.interval} for plan ${name}`);
+          requested === 'true', `Updated billing option ${option.interval} for plan ${plan.name}`);
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');

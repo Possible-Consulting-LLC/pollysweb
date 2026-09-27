@@ -57,10 +57,17 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
   const revalidated: string[] = [];
   const mutations: string[] = [];
   let nextId = 100;
-  const snapshot = (row: PlanRow) => ({ ...row, billingOptions: [...optionStore.values()]
-    .filter(option => option.planId === row.id).map(option => ({ ...option })),
-    featureTranslations: [...translationStore.values()]
-      .filter(translation => translation.planId === row.id).map(translation => ({ ...translation })) });
+  /** Mirrors real Prisma: relation fields appear only when the query includes them. */
+  const billingOptionsFor = (row: PlanRow) => [...optionStore.values()]
+    .filter(option => option.planId === row.id).map(option => ({ ...option }));
+  const snapshot = (row: PlanRow, args?: { include?: { billingOptions?: unknown;
+    featureTranslations?: unknown } }) => ({
+    ...row,
+    ...(args?.include?.billingOptions ? { billingOptions: billingOptionsFor(row) } : {}),
+    ...(args?.include?.featureTranslations ? { featureTranslations:
+      [...translationStore.values()].filter(translation => translation.planId === row.id)
+        .map(translation => ({ ...translation })) } : {}),
+  });
   const matches = (where: Record<string, unknown>, row: OptionRow) =>
     (where.planId === undefined || where.planId === row.planId) &&
     (where.interval === undefined || where.interval === row.interval) &&
@@ -72,17 +79,19 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     (where.planId === undefined || where.planId === row.planId) && effective(row);
   const tx = {
     plan: {
-      findUnique: async ({ where: { id } }: { where: { id: string } }) =>
-        planStore.has(id) ? snapshot(planStore.get(id)!) : null,
-      findMany: async () => [...planStore.values()].map(snapshot),
+      findUnique: async (args: { where: { id: string }; include?: Record<string, unknown> }) =>
+        planStore.has(args.where.id) ? snapshot(planStore.get(args.where.id)!, args) : null,
+      findMany: async (args?: { include?: Record<string, unknown> }) =>
+        [...planStore.values()].map(row => snapshot(row, args)),
       create: async ({ data }: { data: Omit<PlanRow, 'id'> }) => {
         const row: PlanRow = { ...data, id: `plan-${nextId++}` };
         planStore.set(row.id, row); return snapshot(row);
       },
-      update: async ({ where: { id }, data }: { where: { id: string }; data: Partial<PlanRow> }) => {
-        const row = planStore.get(id);
+      update: async (args: { where: { id: string }; data: Partial<PlanRow>;
+        include?: Record<string, unknown> }) => {
+        const row = planStore.get(args.where.id);
         if (!row) throw new Error('Row not found.');
-        Object.assign(row, data); return snapshot(row);
+        Object.assign(row, args.data); return snapshot(row, args);
       },
       delete: async ({ where: { id } }: { where: { id: string } }) => {
         const row = planStore.get(id);
@@ -99,6 +108,10 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     planBillingOption: {
       findMany: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
         [...optionStore.values()].filter(option => matches(where, option)).map(option => ({ ...option })),
+      findFirst: async ({ where }: { where: { id: string; planId: string } }) => {
+        const row = optionStore.get(where.id);
+        return row && row.planId === where.planId ? { ...row } : null;
+      },
       create: async ({ data }: { data: Omit<OptionRow, 'id' | 'createdAt' | 'updatedAt'> }) => {
         const row: OptionRow = { ...data, id: `opt-${nextId++}`, createdAt: new Date(0), updatedAt: new Date(0) };
         optionStore.set(row.id, row); return { ...row };
@@ -369,13 +382,31 @@ test('duplicate, reorder, delete, and billing-option-toggle actions derive their
   toggleForm.set('planId', PLAN.id); toggleForm.set('optionId', 'opt-2'); toggleForm.set('active', 'true');
   assert.deepEqual(jsonOf(await f.api.setBillingOptionActiveAction(toggleForm)), { success: true });
   assert.equal(f.audits.at(-1)!.reason, 'Updated billing option ANNUAL for plan Standard');
+  const optionForm = new FormData();
+  optionForm.set('planId', PLAN.id); optionForm.set('interval', 'MONTHLY');
+  optionForm.set('basePriceCents', '1200'); optionForm.set('active', 'false');
+  assert.deepEqual(jsonOf(await f.api.saveBillingOptionAction(optionForm)), { success: true });
+  assert.equal(f.audits.at(-1)!.reason, 'Updated billing option MONTHLY for plan Standard');
   const reorderForm = new FormData();
   reorderForm.set('planId', PLAN.id); reorderForm.set('direction', 'down');
-  const reordered = jsonOf(await f.api.reorderPlanAction(reorderForm));
-  assert.ok(reordered.success || typeof reordered.error === 'string', JSON.stringify(reordered));
+  assert.deepEqual(jsonOf(await f.api.reorderPlanAction(reorderForm)), { success: true });
   assert.equal(f.audits.at(-1)!.reason, 'Reordered plan Standard');
   const deleteForm = new FormData();
   deleteForm.set('planId', PLAN.id);
   assert.deepEqual(jsonOf(await f.api.deletePlanAction(deleteForm)), { success: true });
   assert.equal(f.audits.at(-1)!.reason, 'Deleted plan Standard');
+});
+
+test('a delete with subscription history derives the Deactivated plan reason', async () => {
+  const f = fixture('super_admin', [MONTHLY], [], [
+    { id: 'sub-1', userId: 'user-1', planId: PLAN.id, planBillingOptionId: MONTHLY.id, status: 'ACTIVE',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null, createdAt: new Date(0), updatedAt: new Date(0) },
+  ]);
+  const deleteForm = new FormData();
+  deleteForm.set('planId', PLAN.id);
+  assert.deepEqual(jsonOf(await f.api.deletePlanAction(deleteForm)), { success: true });
+  assert.equal(f.audits.at(-1)!.action, 'plan.delete');
+  assert.equal(f.audits.at(-1)!.reason, 'Deactivated plan Standard');
+  assert.equal(f.planStore.get(PLAN.id)!.active, false);
+  assert.equal(f.planStore.size, 1);
 });

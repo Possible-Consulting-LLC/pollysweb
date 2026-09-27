@@ -59,6 +59,11 @@ export function SelectionList({ rows, total, page, pageSize, search, selectedCou
   groups?: string[]; emptyLabel?: string; }): JSX.Element;
 ```
 
+**Selection review (added after user feedback):** the component additionally accepts `selectedRows?: SelectionRow[]` (the FULL set of selected items — the parent maintains an id→row map as the user toggles) and renders, whenever `selectedRows` is provided and non-empty:
+- a collapsible **selected tray** listing every selected item together (title + subtitle, each with a remove × that fires `onToggle(id)`) — visible from any page and under any search, so selections made pages ago are always reviewable in one place
+- a **"Selected only"** toggle that switches the list content to the selected set (client-side, since the parent supplies it fully)
+Both are optional props — backward compatible; Tasks 3–5 pass `selectedRows` and maintain the map.
+
 - Parent owns selection state (Set/array of ids) — the component never stores it; paging/searching therefore cannot lose it.
 - Counter chip always visible (`selectedCount`), search input, prev/next (disabled at bounds), optional group headers when `groups` present.
 - All controls from `ui/button` — no bespoke styles.
