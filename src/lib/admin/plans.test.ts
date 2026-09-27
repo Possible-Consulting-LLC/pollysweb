@@ -410,6 +410,89 @@ test('duplicate still works against a filtered, paginated listPlans call', async
   assert.equal(f.planStore.get(newId as string)!.name, 'Deluxe Bundle (copy)');
 });
 
+test('setPlanFlags flips release/visibility flags and audits one update per plan', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Deluxe Bundle', active: false, public: true, sortOrder: 1 });
+  const flipped = await f.plans.setPlanFlags(f.tx, 'owner-1', 'plan-2', { active: true }, 'Activated plan Deluxe Bundle');
+  assert.equal(flipped, 'updated');
+  assert.equal(f.planStore.get('plan-2')!.active, true);
+  // Public is untouched when only active was requested.
+  assert.equal(f.planStore.get('plan-2')!.public, true);
+  assert.deepEqual(f.audits, [{ action: 'plan.update', targetId: 'plan-2', reason: 'Activated plan Deluxe Bundle',
+    changes: { planName: 'Deluxe Bundle', previousActive: false, active: true, fieldsChanged: 'active' } }]);
+});
+
+test('setPlanFlags with no state change still audits exactly one no-op update', async () => {
+  const f = fixture('super_admin');
+  const result = await f.plans.setPlanFlags(f.tx, 'owner-1', PLAN.id, { active: true }, 'Activated plan Standard');
+  assert.equal(result, 'updated');
+  assert.equal(f.planStore.get(PLAN.id)!.active, true);
+  assert.deepEqual(f.audits, [{ action: 'plan.update', targetId: PLAN.id, reason: 'Activated plan Standard',
+    changes: { planName: 'Standard', fieldsChanged: 'none' } }]);
+});
+
+test('bulkSetPlanFlagsAction updates every selected plan and audits each with derived reasons', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Deluxe Bundle', active: false, public: true, sortOrder: 1 });
+  f.planStore.set('plan-3', { ...PLAN, id: 'plan-3', name: 'Sleeper', active: false, public: false, sortOrder: 2 });
+  const form = new FormData();
+  form.set('field', 'active'); form.set('value', 'true');
+  form.append('planId', 'plan-1'); form.append('planId', 'plan-2');
+  const result = await f.api.bulkSetPlanFlagsAction(form);
+  assert.ok(!('error' in result) || !result.error);
+  assert.equal(f.planStore.get('plan-1')!.active, true);
+  assert.equal(f.planStore.get('plan-2')!.active, true);
+  // Unselected plans are untouched and unaudited.
+  assert.equal(f.planStore.get('plan-3')!.active, false);
+  assert.deepEqual(f.audits.map(audit => ({ reason: audit.reason, targetId: audit.targetId,
+    changes: audit.changes })), [
+    { reason: 'Activated plan Standard', targetId: 'plan-1',
+      changes: { planName: 'Standard', fieldsChanged: 'none' } },
+    { reason: 'Activated plan Deluxe Bundle', targetId: 'plan-2',
+      changes: { planName: 'Deluxe Bundle', previousActive: false, active: true, fieldsChanged: 'active' } },
+  ]);
+});
+
+test('bulkSetPlanFlagsAction derives deactivate/publish/unpublish reasons from context', async () => {
+  for (const [field, setting, planState, expected] of [
+    ['active', 'false', { active: true }, 'Deactivated plan Standard'],
+    ['public', 'true', { active: true, public: false }, 'Published plan Standard'],
+    ['public', 'false', { active: true, public: true }, 'Unpublished plan Standard'],
+  ] as const) {
+    const f = fixture('super_admin');
+    f.planStore.set('plan-1', { ...PLAN, ...planState });
+    const form = new FormData();
+    form.set('field', field); form.set('value', setting); form.append('planId', 'plan-1');
+    assert.ok(!('error' in (await f.api.bulkSetPlanFlagsAction(form))));
+    assert.deepEqual(f.audits.map(audit => audit.reason), [expected]);
+  }
+});
+
+test('bulkSetPlanFlagsAction fails closed on empty selection or unknown field without writes', async () => {
+  const f = fixture('super_admin');
+  const empty = new FormData();
+  empty.set('field', 'active'); empty.set('value', 'true');
+  assert.ok((await f.api.bulkSetPlanFlagsAction(empty)).error);
+  const unknown = new FormData();
+  unknown.set('field', 'visibility'); unknown.set('value', 'true'); unknown.append('planId', PLAN.id);
+  assert.ok((await f.api.bulkSetPlanFlagsAction(unknown)).error);
+  const badValue = new FormData();
+  badValue.set('field', 'active'); badValue.set('value', 'maybe'); badValue.append('planId', PLAN.id);
+  assert.ok((await f.api.bulkSetPlanFlagsAction(badValue)).error);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.planStore.get(PLAN.id)!.active, true);
+  assert.equal(f.planStore.get(PLAN.id)!.public, true);
+});
+
+test('bulkSetPlanFlagsAction is denied for non-super-admins without writes or audits', async () => {
+  const f = fixture('admin');
+  const form = new FormData();
+  form.set('field', 'active'); form.set('value', 'true'); form.append('planId', PLAN.id);
+  assert.ok((await f.api.bulkSetPlanFlagsAction(form)).error);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.mutations.includes('admin:bulksetplanflags'), true);
+});
+
 test('non-super-admin plan mutations are denied without writes, audits, or revalidation', async () => {
   const f = fixture('admin');
   const form = new FormData();

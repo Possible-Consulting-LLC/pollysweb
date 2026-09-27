@@ -5,7 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
 import { createPlan, deletePlan, duplicatePlan, planHistoryCount, reorderPlan, saveBillingOption,
-  setBillingOptionActive, updatePlan } from '@/lib/admin/plans';
+  setBillingOptionActive, setPlanFlags, updatePlan } from '@/lib/admin/plans';
 import { applyFeatureMatrix } from '@/lib/admin/plan-features';
 import { FEATURE_REGISTRY } from '@/lib/features/registry';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
@@ -185,6 +185,39 @@ export async function reorderPlanAction(form: FormData): Promise<Result> {
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
       return failure(error, 'The plan order was not changed. Reload and check your administrator access.');
+    }
+  });
+}
+
+/** One audited mutation per selected plan: release/visibility flips with the
+ * established derived-reason format. Deletion is deliberately not a bulk
+ * action — it stays per-plan behind the subscription-history guard. */
+export async function bulkSetPlanFlagsAction(form: FormData): Promise<Result> {
+  return withMutation(form, 'admin', 'bulksetplanflags', async () => {
+    try {
+      const planIds = form.getAll('planId').map(String)
+        .filter(planId => planId && planId.length <= 128);
+      if (planIds.length === 0) throw Error('Select at least one plan first.');
+      const field = value(form, 'field');
+      if (field !== 'active' && field !== 'public') throw Error('Choose active state or public visibility.');
+      const rawValue = value(form, 'value');
+      if (rawValue !== 'true' && rawValue !== 'false') throw Error('Choose a true or false state.');
+      const setting = rawValue === 'true';
+      await withAdminControl(async (tx, actor) => {
+        for (const planId of planIds) {
+          const { name } = await loadPlanForReason(tx, planId);
+          const reason = field === 'active'
+            ? `${setting ? 'Activated' : 'Deactivated'} plan ${name}`
+            : `${setting ? 'Published' : 'Unpublished'} plan ${name}`;
+          const result = await setPlanFlags(tx, actor.id, planId, { [field]: setting }, reason);
+          if (isServiceError(result)) throw result;
+        }
+      });
+      revalidatePath('/admin/plans');
+      return { success: true };
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      return failure(error, 'The bulk change was not applied. Reload and check your administrator access.');
     }
   });
 }

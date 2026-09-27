@@ -229,6 +229,30 @@ export async function reorderPlan(tx: PlansDb, actorId: string, planId: string,
   return 'moved';
 }
 
+/** Bulk support: flips release/visibility flags on one plan with a derived
+ * reason. A plan already in the requested state is still audited (one entry
+ * per plan per bulk action) with fieldsChanged 'none'. Audits plan.update. */
+export async function setPlanFlags(tx: PlansDb, actorId: string, planId: string,
+  flags: { active?: boolean; public?: boolean }, reason: string): Promise<'updated' | Error> {
+  const row = await loadPlan(tx, planId);
+  const data: { active?: boolean; public?: boolean } = {};
+  const changes: Record<string, string | number | boolean | null> = {};
+  const changed: string[] = [];
+  if (flags.active !== undefined && flags.active !== row.active) {
+    data.active = flags.active; changed.push('active');
+    changes.previousActive = row.active; changes.active = flags.active;
+  }
+  if (flags.public !== undefined && flags.public !== row.public) {
+    data.public = flags.public; changed.push('public');
+    changes.previousPublic = row.public; changes.public = flags.public;
+  }
+  if (Object.keys(data).length > 0) await tx.plan.update({ where: { id: planId }, data });
+  changes.planName = row.name;
+  changes.fieldsChanged = changed.length > 0 ? changed.join(',') : 'none';
+  await appendAudit(auditTx(tx), { actorId, targetId: planId, action: 'plan.update', reason, changes });
+  return 'updated';
+}
+
 /** Billing-option, enabled-feature, and subscription counts (real queries),
  * filtered server-side by a case-insensitive name search and paged by offset. */
 export type ListPlansQuery = { search?: string; page: number; pageSize: number };
