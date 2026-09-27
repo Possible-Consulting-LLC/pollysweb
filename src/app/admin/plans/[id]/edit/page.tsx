@@ -39,7 +39,6 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
       <label className="grid gap-1">Maximum spoods (empty = unlimited)<input name="maxSpiders" type="number" min={1} step={1} defaultValue={plan.maxSpiders ?? ''} className="rounded-xl border p-2" /></label>
       <label className="flex items-center gap-2"><input type="checkbox" name="active" defaultChecked={plan.active} /> Active</label>
       <label className="flex items-center gap-2"><input type="checkbox" name="public" defaultChecked={plan.public} /> Public (shown on pricing)</label>
-      <label className="grid gap-1">Reason (no personal information)<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
       <button className="rounded-xl bg-[var(--plum)] px-4 py-2 text-[var(--on-accent)]">Save plan</button>
     </MutationForm>
     <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
@@ -64,7 +63,6 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
             <option value="false">Inactive</option>
           </select>
         </label>
-        <label className="grid gap-1">Reason (no personal information)<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
         <button className="rounded-xl bg-[var(--plum)] px-4 py-2 text-[var(--on-accent)] sm:col-span-2">Save billing option</button>
       </MutationForm>
     </section>

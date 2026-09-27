@@ -95,11 +95,11 @@ function fixture(role: Actor['role']) {
 test('non-super-admin calls are denied for every catalog mutation without touching rows or audit', async () => {
   const f = fixture('admin');
   const release = new FormData();
-  release.set('key', REGISTERED.key); release.set('active', 'true'); release.set('reason', 'Plan creator rollout');
+  release.set('key', REGISTERED.key); release.set('active', 'true');
   assert.ok((await f.api.setFeatureReleaseAction(release)).error);
   const metadata = new FormData();
   metadata.set('key', REGISTERED.key); metadata.set('name', 'Renamed'); metadata.set('category', 'spoods');
-  metadata.set('description', 'New description'); metadata.set('reason', 'Catalog tidy-up');
+  metadata.set('description', 'New description');
   assert.ok((await f.api.saveFeatureMetadataAction(metadata)).error);
   assert.ok((await f.api.syncRegistryAction(new FormData())).error);
   assert.deepEqual(f.mutations.sort(), ['admin:savefeaturemetadata', 'admin:setfeaturerelease', 'admin:syncregistry']);
@@ -111,10 +111,11 @@ test('non-super-admin calls are denied for every catalog mutation without touchi
 test('release toggle runs in the admin boundary and audits feature.release with previousActive and active', async () => {
   const f = fixture('super_admin');
   const form = new FormData();
-  form.set('key', REGISTERED.key); form.set('active', 'true'); form.set('reason', 'Plan creator rollout');
+  form.set('key', REGISTERED.key); form.set('active', 'true');
   assert.deepEqual(jsonOf(await f.api.setFeatureReleaseAction(form)), { success: true });
   assert.deepEqual(f.updates, [{ where: { key: REGISTERED.key }, data: { active: true } }]);
-  assert.deepEqual(f.audits, [{ action: 'feature.release', targetId: REGISTERED.id, reason: 'Plan creator rollout',
+  assert.deepEqual(f.audits, [{ action: 'feature.release', targetId: REGISTERED.id,
+    reason: `Toggled feature ${REGISTERED.key} release`,
     changes: { featureKey: REGISTERED.key, previousActive: false, active: true } }]);
   assert.deepEqual(f.revalidated, ['/admin/features']);
 });
@@ -123,11 +124,12 @@ test('metadata save audits feature.metadata with featureKey and changed fields, 
   const f = fixture('super_admin');
   const form = new FormData();
   form.set('key', REGISTERED.key); form.set('name', 'Add a spood!'); form.set('category', 'spoods');
-  form.set('description', 'Rewritten description text'); form.set('reason', 'Catalog tidy-up');
+  form.set('description', 'Rewritten description text');
   assert.deepEqual(jsonOf(await f.api.saveFeatureMetadataAction(form)), { success: true });
   assert.deepEqual(f.updates, [{ where: { key: REGISTERED.key },
     data: { name: 'Add a spood!', description: 'Rewritten description text', category: 'spoods' } }]);
-  assert.deepEqual(f.audits, [{ action: 'feature.metadata', targetId: REGISTERED.id, reason: 'Catalog tidy-up',
+  assert.deepEqual(f.audits, [{ action: 'feature.metadata', targetId: REGISTERED.id,
+    reason: `Updated feature metadata for ${REGISTERED.key}`,
     changes: { featureKey: REGISTERED.key, fieldsChanged: 'name,description', name: 'Add a spood!' } }]);
   assert.ok(!JSON.stringify(f.audits).includes('Rewritten description text'));
 });
@@ -136,7 +138,7 @@ test('no-change metadata save is rejected without a write or an audit event', as
   const f = fixture('super_admin');
   const form = new FormData();
   form.set('key', REGISTERED.key); form.set('name', REGISTERED.name); form.set('category', REGISTERED.category);
-  form.set('description', REGISTERED.description); form.set('reason', 'Typo review found nothing to change');
+  form.set('description', REGISTERED.description);
   assert.ok((await f.api.saveFeatureMetadataAction(form)).error);
   assert.equal(f.updates.length, 0); assert.equal(f.audits.length, 0);
 });
@@ -145,11 +147,11 @@ test('orphaned and unknown keys fail closed for release and metadata edits', asy
   const f = fixture('super_admin');
   for (const key of [ORPHANED.key, 'ghost.key']) {
     const release = new FormData();
-    release.set('key', key); release.set('active', 'true'); release.set('reason', 'Attempt');
+    release.set('key', key); release.set('active', 'true');
     assert.ok((await f.api.setFeatureReleaseAction(release)).error, key);
     const metadata = new FormData();
     metadata.set('key', key); metadata.set('name', 'Renamed'); metadata.set('category', 'legacy');
-    metadata.set('description', 'New description'); metadata.set('reason', 'Attempt');
+    metadata.set('description', 'New description');
     assert.ok((await f.api.saveFeatureMetadataAction(metadata)).error, key);
   }
   assert.equal(f.updates.length, 0); assert.equal(f.audits.length, 0); assert.equal(f.revalidated.length, 0);

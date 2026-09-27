@@ -36,12 +36,11 @@ export async function saveFeatureMetadataAction(form: FormData): Promise<Result>
       const name = value(form, 'name');
       const category = value(form, 'category');
       const description = value(form, 'description');
-      const reason = value(form, 'reason');
       if (!key || key.length > 128) throw Error('A feature key is required.');
       if (!name || name.length > 120 || metadataUnsafe.test(name)) throw Error('Enter a name of 1–120 characters without @ or control characters.');
       if (!category || category.length > 40 || metadataUnsafe.test(category)) throw Error('Enter a category of 1–40 characters without @ or control characters.');
       if (!description || description.length > 500 || metadataUnsafe.test(description)) throw Error('Enter a description of 1–500 characters without @ or control characters.');
-      if (!reason || reason.length > 500) throw Error('Enter a short reason without personal information.');
+      const reason = `Updated feature metadata for ${key}`;
       await withAdminControl(async (tx, actor) => {
         const row = await tx.feature.findUnique({ where: { key } });
         if (!row) throw Error('That feature is not in the catalog. Sync the registry first.');
@@ -70,10 +69,9 @@ export async function setFeatureReleaseAction(form: FormData): Promise<Result> {
     try {
       const key = value(form, 'key');
       const requested = String(form.get('active') ?? '');
-      const reason = value(form, 'reason');
       if (!key || key.length > 128) throw Error('A feature key is required.');
       if (requested !== 'true' && requested !== 'false') throw Error('Choose release or retire.');
-      if (!reason || reason.length > 500) throw Error('Enter a short reason without personal information.');
+      const reason = `Toggled feature ${key} release`;
       const active = requested === 'true';
       await withAdminControl(async (tx, actor) => {
         const row = await tx.feature.findUnique({ where: { key } });

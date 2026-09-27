@@ -28,8 +28,6 @@ export async function assignSubscriptionAction(form: FormData): Promise<Result> 
       if (!planId || planId.length > 128) throw Error('A valid plan is required.');
       const planBillingOptionId = value(form, 'planBillingOptionId');
       if (!planBillingOptionId || planBillingOptionId.length > 128) throw Error('A billing option is required.');
-      const reason = value(form, 'reason');
-      if (!reason || reason.length > 500) throw Error('Enter a short reason without personal information.');
       const rawEffectiveAt = value(form, 'effectiveAt');
       const effectiveAt = rawEffectiveAt ? new Date(rawEffectiveAt) : new Date();
       if (Number.isNaN(effectiveAt.getTime())) throw Error('Enter a valid effective date.');
@@ -37,6 +35,10 @@ export async function assignSubscriptionAction(form: FormData): Promise<Result> 
         const target = await tx.user.findFirst({
           where: { OR: [{ email: userQuery }, { id: userQuery }] }, select: { id: true } });
         if (!target) throw Error('No user matches that email or id.');
+        const plan = await tx.plan.findUnique({ where: { id: planId }, select: { name: true } });
+        if (!plan) throw Error('That plan no longer exists. Reload the page.');
+        const reason =
+          `Assigned plan ${plan.name} to user ${target.id} effective ${effectiveAt.toISOString()}`;
         const result = await assignPlanSubscription(tx, actor.id,
           { targetUserId: target.id, planId, planBillingOptionId, effectiveAt, reason });
         if (isServiceError(result)) throw result;

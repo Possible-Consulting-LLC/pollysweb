@@ -311,7 +311,6 @@ test('non-super-admin plan mutations are denied without writes, audits, or reval
   const form = new FormData();
   form.set('name', 'Sneaky'); form.set('description', 'Nope'); form.set('planType', 'STANDARD');
   form.set('maxSpiders', ''); form.set('active', 'true'); form.set('public', 'true');
-  form.set('reason', 'Attempted creation');
   assert.ok((await f.api.createPlanAction(form)).error);
   assert.deepEqual(f.mutations.sort(), ['admin:createplan']);
   assert.equal(f.audits.length, 0);
@@ -324,12 +323,12 @@ test('a super administrator creates a plan through the mutation boundary and aud
   const form = new FormData();
   form.set('name', 'Deluxe'); form.set('description', 'More spoods'); form.set('planType', 'CUSTOM');
   form.set('maxSpiders', '10'); form.set('active', 'true'); form.set('public', 'true');
-  form.set('reason', 'Launch the deluxe tier');
   assert.deepEqual(jsonOf(await f.api.createPlanAction(form)), { success: true });
   assert.deepEqual(f.mutations, ['admin:createplan']);
   assert.deepEqual(f.revalidated, ['/admin/plans']);
   assert.equal(f.audits.length, 1);
   assert.equal(f.audits[0].action, 'plan.create');
+  assert.equal(f.audits[0].reason, 'Created plan Deluxe (CUSTOM, public)');
   assert.equal(f.audits[0].changes.planName, 'Deluxe');
   assert.equal([...f.planStore.values()].filter(row => row.name === 'Deluxe').length, 1);
 });
@@ -339,10 +338,11 @@ test('a public-visibility change audits public and previousPublic without leakin
   const form = new FormData();
   form.set('planId', PLAN.id); form.set('name', PLAN.name); form.set('description', PLAN.description);
   form.set('planType', 'STANDARD'); form.set('maxSpiders', '3'); form.set('active', 'true');
-  form.set('public', 'false'); form.set('reason', 'Hide the plan from pricing');
+  form.set('public', 'false');
   assert.deepEqual(jsonOf(await f.api.updatePlanAction(form)), { success: true });
   assert.equal(f.audits.length, 1);
   assert.equal(f.audits[0].action, 'plan.update');
+  assert.equal(f.audits[0].reason, 'Updated plan Standard');
   assert.equal(f.audits[0].changes.public, false);
   assert.equal(f.audits[0].changes.previousPublic, true);
   assert.ok(!JSON.stringify(f.audits).includes('Baseline spood plan'));
@@ -352,8 +352,30 @@ test('a second active billing option for an existing interval fails closed throu
   const f = fixture('super_admin');
   const form = new FormData();
   form.set('planId', PLAN.id); form.set('interval', 'MONTHLY'); form.set('basePriceCents', '1200');
-  form.set('active', 'true'); form.set('reason', 'Second monthly price');
+  form.set('active', 'true');
   assert.ok((await f.api.saveBillingOptionAction(form)).error);
   assert.equal(f.audits.length, 0);
   assert.equal([...f.optionStore.values()].filter(option => option.planId === PLAN.id && option.interval === 'MONTHLY').length, 1);
+});
+
+test('duplicate, reorder, delete, and billing-option-toggle actions derive their audit reasons', async () => {
+  const f = fixture('super_admin', [MONTHLY, { ...MONTHLY, id: 'opt-2', interval: 'ANNUAL', active: false }]);
+  const duplicateForm = new FormData();
+  duplicateForm.set('planId', PLAN.id);
+  const duplicateId = jsonOf(await f.api.duplicatePlanAction(duplicateForm));
+  assert.ok(duplicateId.success, JSON.stringify(duplicateId));
+  assert.equal(f.audits.at(-1)!.reason, 'Duplicated plan Standard');
+  const toggleForm = new FormData();
+  toggleForm.set('planId', PLAN.id); toggleForm.set('optionId', 'opt-2'); toggleForm.set('active', 'true');
+  assert.deepEqual(jsonOf(await f.api.setBillingOptionActiveAction(toggleForm)), { success: true });
+  assert.equal(f.audits.at(-1)!.reason, 'Updated billing option ANNUAL for plan Standard');
+  const reorderForm = new FormData();
+  reorderForm.set('planId', PLAN.id); reorderForm.set('direction', 'down');
+  const reordered = jsonOf(await f.api.reorderPlanAction(reorderForm));
+  assert.ok(reordered.success || typeof reordered.error === 'string', JSON.stringify(reordered));
+  assert.equal(f.audits.at(-1)!.reason, 'Reordered plan Standard');
+  const deleteForm = new FormData();
+  deleteForm.set('planId', PLAN.id);
+  assert.deepEqual(jsonOf(await f.api.deletePlanAction(deleteForm)), { success: true });
+  assert.equal(f.audits.at(-1)!.reason, 'Deleted plan Standard');
 });

@@ -25,7 +25,6 @@ export default async function NewPlanPage() {
       <label className="grid gap-1">Maximum spoods (empty = unlimited)<input name="maxSpiders" type="number" min={1} step={1} className="rounded-xl border p-2" /></label>
       <label className="flex items-center gap-2"><input type="checkbox" name="active" /> Active</label>
       <label className="flex items-center gap-2"><input type="checkbox" name="public" /> Public (shown on pricing)</label>
-      <label className="grid gap-1">Reason (no personal information)<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
       <button className="rounded-xl bg-[var(--plum)] px-4 py-2 text-[var(--on-accent)]">Create plan</button>
     </MutationForm>
     <p><Link href="/admin/plans" className="underline">Back to plans</Link></p>

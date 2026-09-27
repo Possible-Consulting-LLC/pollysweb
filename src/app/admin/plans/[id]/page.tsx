@@ -34,7 +34,6 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           <input type="hidden" name="planId" value={plan.id} />
           <input type="hidden" name="optionId" value={option.id} />
           <input type="hidden" name="active" value={option.active ? 'false' : 'true'} />
-          <label className="grid gap-1 text-sm">Reason<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
           <button className="rounded-xl bg-[var(--lavender)] px-3 py-2 text-sm font-semibold">{option.active ? 'Deactivate' : 'Activate'}</button>
         </MutationForm>
       </div>)}

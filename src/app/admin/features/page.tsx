@@ -48,7 +48,6 @@ export default async function FeatureCatalogPage() {
           <MutationForm action={setFeatureReleaseAction} className="flex flex-wrap items-end gap-3"><MutationContextInput />
             <input type="hidden" name="key" value={row.key} />
             <input type="hidden" name="active" value={row.active ? 'false' : 'true'} />
-            <label className="grid gap-1">Reason (no personal information)<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
             <button className="rounded-xl bg-[var(--plum)] px-4 py-2 text-[var(--on-accent)]">{row.active ? 'Retire release' : 'Release feature'}</button>
           </MutationForm>
           <MutationForm action={saveFeatureMetadataAction} className="grid gap-3 border-t border-[var(--plum)]/15 pt-3 sm:grid-cols-2"><MutationContextInput />
@@ -56,7 +55,6 @@ export default async function FeatureCatalogPage() {
             <label className="grid gap-1">Name<input name="name" defaultValue={row.name} required maxLength={120} className="rounded-xl border p-2" /></label>
             <label className="grid gap-1">Category<input name="category" defaultValue={row.category} required maxLength={40} className="rounded-xl border p-2" /></label>
             <label className="grid gap-1 sm:col-span-2">Description<textarea name="description" defaultValue={row.description} required maxLength={500} rows={2} className="rounded-xl border p-2" /></label>
-            <label className="grid gap-1 sm:col-span-2">Reason (no personal information)<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
             <button className="rounded-xl bg-[var(--lavender)] p-3 sm:col-span-2">Save metadata</button>
           </MutationForm>
         </fieldset>

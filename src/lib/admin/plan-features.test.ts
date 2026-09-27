@@ -288,7 +288,7 @@ test('summarizePlanForPricing is pure: active option prices and registry-resolve
 test('non-super-admin matrix saves are denied without writes, audits, or revalidation', async () => {
   const f = fixture('admin');
   const form = new FormData();
-  form.set('planId', PLAN.id); form.set('feature', 'spood.create'); form.set('reason', 'Attempted save');
+  form.set('planId', PLAN.id); form.set('feature', 'spood.create');
   assert.ok((await f.api.saveFeatureMatrixAction(form)).error);
   assert.deepEqual(f.mutations, ['admin:savefeaturematrix']);
   assert.equal(f.audits.length, 0);
@@ -299,13 +299,15 @@ test('non-super-admin matrix saves are denied without writes, audits, or revalid
 test('a super administrator saves the matrix through the mutation boundary and audits plan.features', async () => {
   const f = fixture('super_admin');
   const form = new FormData();
-  form.set('planId', PLAN.id); form.set('reason', 'Enable the gallery');
+  form.set('planId', PLAN.id);
   form.append('feature', 'spood.create'); form.append('feature', 'photo.upload');
   assert.deepEqual(jsonOf(await f.api.saveFeatureMatrixAction(form)), { success: true });
   assert.deepEqual(f.mutations, ['admin:savefeaturematrix']);
   assert.deepEqual(f.revalidated, ['/admin/plans']);
   assert.equal(f.audits.length, 1);
   assert.equal(f.audits[0].action, 'plan.features');
+  assert.equal(f.audits[0].reason,
+    `Saved feature matrix for plan Standard (2 of ${FEATURE_REGISTRY.length} enabled)`);
   assert.equal(f.audits[0].changes.enabledCount, 2);
   assert.equal(f.audits[0].changes.previousEnabledCount, 0);
   assert.equal(f.translationStore.get('spood.create')!.enabled, true);
@@ -316,7 +318,7 @@ test('a super administrator saves the matrix through the mutation boundary and a
 test('a matrix save that removes access from subscribers succeeds with a warning and keeps rows', async () => {
   const f = fixture('super_admin', { subscribers: 2, translations: [{ key: 'spood.create', enabled: true }] });
   const form = new FormData();
-  form.set('planId', PLAN.id); form.set('reason', 'Tighten the standard plan');
+  form.set('planId', PLAN.id);
   const result = jsonOf(await f.api.saveFeatureMatrixAction(form)) as { success?: boolean; warning?: string };
   assert.equal(result.success, true);
   assert.match(result.warning ?? '', /spood\.create/);

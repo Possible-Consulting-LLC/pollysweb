@@ -49,8 +49,6 @@ export default async function SubscriptionsPage() {
           </select></label>
         <label className="grid gap-1 text-sm">Effective date (defaults to now)
           <input name="effectiveAt" type="datetime-local" className="rounded-xl border p-2" /></label>
-        <label className="grid gap-1 text-sm">Reason
-          <input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
         <button className="w-fit rounded-xl bg-[var(--plum)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)]">Assign subscription</button>
       </MutationForm>
     </Card>

@@ -47,18 +47,15 @@ export default async function PlansPage() {
         <Link href={`/admin/plans/${plan.id}/edit`} className="rounded-xl bg-[var(--lavender)] px-3 py-2 text-sm font-semibold">Edit</Link>
         <MutationForm action={duplicatePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
           <input type="hidden" name="planId" value={plan.id} />
-          <label className="grid gap-1 text-sm">Reason<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
           <button className="rounded-xl bg-[var(--lavender)] px-3 py-2 text-sm font-semibold">Duplicate</button>
         </MutationForm>
         <MutationForm action={deletePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
           <input type="hidden" name="planId" value={plan.id} />
-          <label className="grid gap-1 text-sm">Reason<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
           <button className="rounded-xl bg-[var(--plum)] px-3 py-2 text-sm font-semibold text-[var(--on-accent)]">Delete or deactivate</button>
         </MutationForm>
         <MutationForm action={reorderPlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
           <input type="hidden" name="planId" value={plan.id} />
           <input type="hidden" name="direction" value={index === 0 ? 'down' : 'up'} />
-          <label className="grid gap-1 text-sm">Reason<input name="reason" required maxLength={500} className="rounded-xl border p-2" /></label>
           <button className="rounded-xl bg-[var(--lavender)] px-3 py-2 text-sm font-semibold">Move {index === 0 ? 'down' : 'up'}</button>
         </MutationForm>
       </div>

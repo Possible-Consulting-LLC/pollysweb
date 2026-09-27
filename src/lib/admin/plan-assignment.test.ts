@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import type * as assignment from './plan-assignment';
 import type * as plans from './plans';
+import * as maintenancePolicy from './maintenance-policy';
 
 type UserRow = { id: string; email: string; role: string; deletingAt: Date | null };
 type PlanRow = { id: string; name: string; active: boolean; public: boolean; planType: string };
@@ -26,6 +27,8 @@ function load(relativePath: string, deps: Record<string, unknown>): Record<strin
 
 /** Error instances from the vm sandbox live in another realm; tag check works cross-realm. */
 const isFailure = (value: unknown) => Object.prototype.toString.call(value) === '[object Error]';
+/** Results returned from the sandbox live in another realm; JSON copies keep strict comparisons local. */
+const jsonOf = (value: unknown) => JSON.parse(JSON.stringify(value));
 
 const ACTOR: UserRow = { id: 'owner-1', email: 'owner@example.com', role: 'super_admin', deletingAt: null };
 const TARGET: UserRow = { id: 'user-1', email: 'user@example.com', role: 'user', deletingAt: null };
@@ -76,6 +79,14 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
     user: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         userStore.has(id) ? { ...userStore.get(id)! } : null,
+      findFirst: async ({ where }: { where: { OR: Array<{ email?: string; id?: string }> } }) => {
+        const email = where.OR.find(clause => clause.email)?.email;
+        const id = where.OR.find(clause => clause.id)?.id;
+        const row = email
+          ? [...userStore.values()].find(candidate => candidate.email === email)
+          : userStore.get(id ?? '');
+        return row ? { id: row.id } : null;
+      },
     },
     plan: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
@@ -243,6 +254,28 @@ test('the assignment acquires the target user row lock inside the transaction', 
   // The lock targets the assigned user: statement text plus bound id value.
   assert.ok(locks[0].strings.join('').includes('FOR UPDATE'));
   assert.ok(locks[0].values.includes('user-1'));
+});
+
+test('assignSubscriptionAction derives the audit reason from context without a form reason', async () => {
+  const f = fixture();
+  const api = load('../../app/admin/subscriptions/actions.ts', {
+    'next/cache': { revalidatePath: () => {} },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, kind: unknown, action: string,
+      work: () => Promise<unknown>) => work() },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
+      work(f.tx, { id: 'owner-1' }) },
+    '@/lib/admin/plan-assignment': f.assignment,
+  }) as { assignSubscriptionAction: (form: FormData) => Promise<unknown> };
+  const form = new FormData();
+  form.set('userQuery', 'user@example.com');
+  form.set('planId', 'plan-1');
+  form.set('planBillingOptionId', 'opt-1');
+  form.set('effectiveAt', '2026-09-26T12:00:00.000Z');
+  assert.deepEqual(jsonOf(await api.assignSubscriptionAction(form)), { success: true });
+  assert.deepEqual(f.audits, [{ action: 'plan.assign', targetId: 'user-1',
+    reason: 'Assigned plan Standard to user user-1 effective 2026-09-26T12:00:00.000Z',
+    changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-26T12:00:00.000Z' } }]);
 });
 
 test('listEffectiveSubscriptions returns only currently effective rows', async () => {
