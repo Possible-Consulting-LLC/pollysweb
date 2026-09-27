@@ -64,6 +64,7 @@ let capturedSubQueries: Array<{ search: string; page: number; pageSize: number }
 let capturedUserQueries: Array<{ search: string; page: number; pageSize: number }> = [];
 let capturedPlanQueries: Array<{ search: string; page: number; pageSize: number }> = [];
 let capturedWizardProps: Array<Record<string, unknown>> = [];
+let capturedListProps: Array<Record<string, unknown>> = [];
 let servedRows: Row[] = [];
 let servedSubTotal = 0;
 let servedUsers: Array<{ id: string; name: string; email: string }> = [];
@@ -109,6 +110,12 @@ const deps: Record<string, unknown> = {
     return jsx.jsx('div', { 'data-wizard': true, 'data-step': props.step,
       'data-user': (props.selectedUser as { id?: string } | null)?.id ?? '' });
   } },
+  // The list section is a client island (headless narrowing owns the search);
+  // the page pins the server-owned props, the component test pins the rows.
+  '@/components/admin/subscriptions-list': { SubscriptionsList: (props: Record<string, unknown>) => {
+    capturedListProps.push({ ...props });
+    return jsx.jsx('div', { 'data-subscriptions-list': true });
+  } },
   '@/components/ui/button': {
     Button: ({ variant, size, ...props }: Record<string, unknown>) =>
       jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', ...props }),
@@ -148,8 +155,8 @@ function elementsOf(tree: unknown) {
   };
 }
 
-test('renders the current subscriptions list with keeper, plan, badge, and dates', async () => {
-  capturedSubQueries = []; capturedWizardProps = [];
+test('renders the current subscriptions section with the keeper rows fed to the client island', async () => {
+  capturedSubQueries = []; capturedWizardProps = []; capturedListProps = [];
   servedRows = [
     row(),
     row({ id: 'sub-2', userId: 'u-2', status: 'PAST_DUE', startedAt: new Date('2026-07-30T00:00:00Z'),
@@ -158,19 +165,23 @@ test('renders the current subscriptions list with keeper, plan, badge, and dates
   ];
   servedSubTotal = 2;
   const tree = await render();
-  const rendered = textOf(tree);
-  assert.match(rendered, /Marta Keeper/);
-  assert.match(rendered, /marta@example\.com/);
-  assert.match(rendered, /Pro · Monthly — \$4\.99/);
-  assert.match(rendered, /Basic · Annual — \$19\.99/);
-  assert.match(rendered, /Active/);
-  assert.match(rendered, /Past due/);
-  assert.match(rendered, /since 2026-08-01 · renews 2026-09-01/);
-  assert.match(rendered, /since 2026-07-30 · ends 2026-09-28/);
-  assert.match(rendered, /2 effective subscriptions/);
-  // List-first: the search form and rows are the primary content.
-  assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), true);
-  assert.equal(elementsOf(tree).links.some(link => textOf(link) === 'Next'), false);
+  assert.match(textOf(tree), /2 effective subscriptions/);
+  // The client island receives the serializable row data for the committed view.
+  const list = jsonOf(capturedListProps)[0] as Record<string, unknown>;
+  assert.deepEqual(list.rows, [
+    { id: 'sub-1', userId: 'u-1', planId: 'p-1', planBillingOptionId: 'o-1', status: 'ACTIVE',
+      startedAt: '2026-08-01T00:00:00.000Z', renewsAt: '2026-09-01T00:00:00.000Z', expiresAt: null,
+      userName: 'Marta Keeper', userEmail: 'marta@example.com', planName: 'Pro',
+      optionInterval: 'MONTHLY', optionPriceCents: 499 },
+    { id: 'sub-2', userId: 'u-2', planId: 'p-1', planBillingOptionId: 'o-1', status: 'PAST_DUE',
+      startedAt: '2026-07-30T00:00:00.000Z', renewsAt: null, expiresAt: '2026-09-28T00:00:00.000Z',
+      userName: 'Dan O.', userEmail: 'dan@example.com', planName: 'Basic',
+      optionInterval: 'ANNUAL', optionPriceCents: 1999 },
+  ]);
+  assert.equal(list.total, 2);
+  assert.equal(list.page, 1);
+  assert.equal(list.lastPage, 1);
+  assert.equal(list.search, '');
   // The wizard is closed without the URL flag.
   assert.equal(elements(tree).some(item => item.props['data-wizard'] === true), false);
   // The add button targets a fresh wizard.
@@ -179,22 +190,18 @@ test('renders the current subscriptions list with keeper, plan, badge, and dates
   assert.deepEqual(capturedSubQueries, [{ search: '', page: 1, pageSize: 20 }]);
 });
 
-test('the list is searchable and paginated at 20 with URL-driven pages', async () => {
-  capturedSubQueries = [];
+test('the list is paginated at 20 with URL-driven pages and honest page counts', async () => {
+  capturedSubQueries = []; capturedListProps = [];
   servedRows = Array.from({ length: 25 }, (_, index) =>
     row({ id: `sub-${index + 1}`, userId: `u-${index + 1}`, userName: `Keeper ${index + 1}` }));
   servedSubTotal = 25;
   const page1 = await render({ search: 'keeper' });
   assert.deepEqual(capturedSubQueries, [{ search: 'keeper', page: 1, pageSize: 20 }]);
-  assert.equal(elements(page1).filter(item => item.props['data-subscription-row']).length, 20);
-  assert.match(textOf(page1), /Page 1 of 2/);
-  const next = elementsOf(page1).links.find(link => textOf(link) === 'Next');
-  assert.equal(next?.props.href, '/admin/subscriptions?search=keeper&page=2');
+  elementsOf(page1);
+  assert.equal(jsonOf(capturedListProps)[0].lastPage, 2, 'the pager denominators stay server-clamped');
   const page2 = await render({ page: '2' });
-  const prev = elementsOf(page2).links.find(link => textOf(link) === 'Previous');
-  // Default params are dropped from URLs.
-  assert.equal(prev?.props.href, '/admin/subscriptions');
-  assert.match(textOf(page2), /Page 2 of 2/);
+  elementsOf(page2);
+  assert.equal(jsonOf(capturedListProps.at(-1)).page, 2);
   // An out-of-range page re-queries the last valid page.
   capturedSubQueries = [];
   await render({ page: '99' });
@@ -202,24 +209,13 @@ test('the list is searchable and paginated at 20 with URL-driven pages', async (
     [{ search: '', page: 99, pageSize: 20 }, { search: '', page: 2, pageSize: 20 }]);
 });
 
-test('rows are freestanding hover-tinted elements and badges are theme-token driven', async () => {
-  servedRows = [
-    row(),
-    row({ id: 'sub-2', userId: 'u-2', status: 'PAST_DUE', userName: 'Dan O.',
-      userEmail: 'dan@example.com' }),
-  ];
-  servedSubTotal = 2;
-  const tree = await render();
-  const rows = elements(tree).filter((item) => item.props['data-subscription-row']);
-  assert.equal(rows.length, 2);
-  for (const rowEl of rows) {
-    const cls = String(rowEl.props.className);
-    assert.equal(cls.split(' ').includes('card'), false, 'rows are freestanding, not card-enclosed');
-    assert.equal(cls.includes('hover:bg-[var(--hover)]'), true, 'mockup hover tint');
-  }
-  const source = readFileSync(new URL('../../app/admin/subscriptions/page.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /(?:emerald|sky|amber|teal|indigo)-\d00/,
-    'status badges must come from theme tokens');
+test('wizard params ride along on list navigation so an assignment survives', async () => {
+  capturedListProps = [];
+  servedRows = [row()]; servedSubTotal = 1;
+  dbUsers['u-1'] = { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' };
+  await render({ wizard: 'open', step: '2', user: 'u-1', search: 'keeper' }).then(elementsOf);
+  const list = jsonOf(capturedListProps)[0] as Record<string, unknown>;
+  assert.deepEqual(jsonOf(list.wizardParams), { wizard: 'open', step: '2', user: 'u-1' });
 });
 
 test('＋ Add subscription unfolds the wizard above the list with the user step', async () => {
@@ -228,11 +224,8 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
   servedUsers = [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }];
   servedUserTotal = 1;
   const tree = await render({ wizard: 'open' });
+  // Resolving the tree invokes the stubs (wizard + list captures).
   const flat = elements(tree);
-  const wizardIndex = flat.findIndex(item => item.props['data-wizard'] === true);
-  const rowIndex = flat.findIndex(item => item.props['data-subscription-row']);
-  assert.ok(wizardIndex >= 0, 'wizard not rendered');
-  assert.ok(rowIndex > wizardIndex, 'wizard must sit above the list');
   assert.deepEqual(jsonOf(capturedWizardProps), [{
     step: 1, listSearch: '', listPage: 1, selectedUser: null, selectedPlan: null,
     selectedOptionId: '',
@@ -242,6 +235,10 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);
   assert.deepEqual(capturedUserQueries, [{ search: '', page: 1, pageSize: 20 }]);
+  // List-first: the wizard sits above the always-rendered list section.
+  const wizardIndex = flat.findIndex(item => item.props['data-wizard'] === true);
+  const listIndex = flat.findIndex(item => item.props['data-subscriptions-list'] === true);
+  assert.ok(listIndex > wizardIndex, 'wizard above the list island');
 });
 
 test('Reassign opens the wizard at step 2 with that keeper preselected', async () => {
@@ -259,10 +256,7 @@ test('Reassign opens the wizard at step 2 with that keeper preselected', async (
     userPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);
-  // A row's Reassign link targets the same wizard state (page 2's first row).
-  const reassign = elementsOf(tree).links.find(link => textOf(link) === 'Reassign');
-  assert.equal(reassign?.props.href,
-    '/admin/subscriptions?search=keeper&page=2&wizard=open&step=2&user=u-21');
+  // Row actions (Reassign/End) live in the client island and are pinned there.
 });
 
 test('step 3 receives the chosen plan with its billing options', async () => {
@@ -296,20 +290,6 @@ test('wizard steps clamp to what the URL state supports', async () => {
   assert.equal(capturedWizardProps[1]?.step, 2, 'no plan yet → step 2');
   elementsOf(await render({ wizard: 'open', step: '3', plan: 'p-1' }));
   assert.equal(capturedWizardProps[2]?.step, 1, 'no keeper yet → step 1');
-});
-
-test('each row offers Reassign and an End mutation for that subscription', async () => {
-  servedRows = [row()]; servedSubTotal = 1;
-  const tree = await render();
-  const reassign = elementsOf(tree).links.find(link => textOf(link) === 'Reassign');
-  assert.equal(reassign?.props.href, '/admin/subscriptions?wizard=open&step=2&user=u-1');
-  const endForm = elementsOf(tree).forms.find(form => form.props['data-action'] === 'end-action');
-  assert.ok(endForm, 'end mutation form missing');
-  const hidden = elements(endForm).find(item => item.type === 'input' &&
-    item.props.name === 'subscriptionId');
-  assert.equal(hidden?.props.value, 'sub-1');
-  const endButton = elements(endForm).find(item => item.type === 'button' && textOf(item) === 'End');
-  assert.ok(endButton, 'end button missing');
 });
 
 test('the plan step is served active plans with search and pagination', async () => {

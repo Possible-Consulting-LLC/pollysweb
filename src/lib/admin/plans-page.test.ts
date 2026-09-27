@@ -97,7 +97,8 @@ test('plans page feeds the accordion the server page and the URL open plan', asy
   const tree = await render({ open: 'plan-2', search: '', page: '1' });
   // Resolving the tree invokes the stubbed client component.
   elementsOf(tree);
-  assert.deepEqual(capturedProps, [{ plans: servedPlans, total: 2, search: '', page: 1, openId: 'plan-2' }]);
+  assert.deepEqual(capturedProps, [{ plans: servedPlans, total: 2, search: '', page: 1,
+    pageSize: 20, openId: 'plan-2' }]);
   // Search is owned by the accordion's live toolbar (Task 7) — no GET form here.
   assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), false);
   assert.ok(elements(tree).some(item => item.type === 'a' && item.props.href === '/admin/plans/new'),
@@ -114,30 +115,23 @@ function elementsOf(tree: unknown) {
   };
 }
 
-test('plans page paginates at 20 with disabled bounds and working pager links', async () => {
+test('plans page paginates at 20 and the island owns the committed pager', async () => {
   capturedQueries = []; capturedProps = [];
   servedPlans = Array.from({ length: 25 }, (_, index) => ({ id: `plan-${index + 1}`, name: `Plan ${index + 1}` }));
   servedTotal = 25;
   const page1 = await render();
   elementsOf(page1);
   assert.equal(capturedProps[0] !== undefined ? (capturedProps[0] as { plans: unknown[] }).plans.length : undefined, 20);
-  assert.equal(textOf(page1).includes('Page 1 of 2'), true);
-  const prev1 = elementsOf(page1).buttons.find(button => text(button) === 'Previous');
-  const next1 = elementsOf(page1).links.find(link => text(link) === 'Next');
-  assert.equal(prev1?.props.disabled, true);
-  assert.equal(next1?.props.href, '/admin/plans?page=2');
   const page2 = await render({ page: '2' });
   capturedProps = [];
   elementsOf(page2);
   assert.equal(capturedProps[0] !== undefined ? (capturedProps[0] as { plans: unknown[] }).plans.length : undefined, 5);
-  assert.equal(textOf(page2).includes('Page 2 of 2'), true);
-  assert.equal(elementsOf(page2).links.find(link => text(link) === 'Previous')?.props.href, '/admin/plans?page=1');
-  assert.equal(elementsOf(page2).buttons.find(button => text(button) === 'Next')?.props.disabled, true);
+  // The server page renders no pager nav — the island derives "Page N of M"
+  // from total + page size and renders both pagers (committed + narrowing).
+  assert.equal(elementsOf(page2).links.some(link => String(link.props.href).includes('page=')),
+    false, 'no server-rendered pager links');
   assert.deepEqual(capturedQueries,
     [{ search: '', page: 1, pageSize: 20 }, { search: '', page: 2, pageSize: 20 }]);
-  // Mockup footer: the pager sits on a hover-toned rule.
-  const nav = elements(page2).find((item: { type: string }) => item.type === 'nav');
-  assert.equal(String(nav!.props.className).includes('border-[var(--hover)]'), true);
 });
 
 test('plans page passes the search to the service and clamps out-of-range pages', async () => {

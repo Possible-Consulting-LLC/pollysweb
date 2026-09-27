@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { SelectionList } from '@/components/admin/selection-list';
 import { counterChipClass } from '@/components/admin/list-shared';
-import { LiveSearch, suggestViaEndpoint } from '@/components/admin/live-search';
+import { LiveSearchInput, useNarrowing, narrowViaEndpoint, type Narrowing } from '@/components/admin/live-search';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
@@ -88,6 +88,12 @@ export type AssignPlanWizardViewProps = {
    * selected (the focused view renders instead of the list). */
   userPicker: PickerData;
   planPicker: PickerData;
+  /** Headless narrowing searches for the two pickers (no dropdown anywhere):
+   * while narrowed matches for the typed text are in, they REPLACE the
+   * committed picker page and the counter shows the truthful live match
+   * count. */
+  userNarrowing: Narrowing;
+  planNarrowing: Narrowing;
   effectiveAt: string;
   onEffectiveAtChange(value: string): void;
   navigate(href: string): void;
@@ -108,13 +114,16 @@ function Avatar({ label }: { label: string }) {
 /** Presentational body of the assignment wizard (hook-free; the default export
  * below owns the action state, router, and search debounce). */
 export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
-  selectedPlan, selectedOptionId, userPicker, planPicker, effectiveAt, onEffectiveAtChange,
-  navigate, navigateSearch, assignDispatch, assignResult, assignPending = false }:
-  AssignPlanWizardViewProps) {
+  selectedPlan, selectedOptionId, userPicker, planPicker, userNarrowing, planNarrowing,
+  effectiveAt, onEffectiveAtChange, navigate, navigateSearch, assignDispatch,
+  assignResult, assignPending = false }: AssignPlanWizardViewProps) {
   // A successful assign folds the wizard immediately; the client wrapper then
   // clears the wizard URL state so the refreshed list takes over.
   if (assignResult?.success) return null;
   const list = { search: listSearch, page: listPage };
+  // Narrowed matches for the typed text replace the committed picker page.
+  const userLive = userNarrowing.narrowed;
+  const planLive = planNarrowing.narrowed;
   const userId = selectedUser?.id ?? '';
   const planId = selectedPlan?.id ?? '';
   const optionRows = (selectedPlan?.billingOptions ?? []).filter(option => option.active)
@@ -162,30 +171,36 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               subtitle: selectedUser.email, selected: true }]}
             onChange={() => navigate(wizardHref(list, { step: 1,
               usearch: userPicker.search, upage: userPicker.page }))} />
-        : <LiveSearch mode="headless" id="wizard-user-search"
-            label="Search keepers by name or email"
-            placeholder="Search keepers by name or email…" value={userPicker.search}
-            source={suggestViaEndpoint('users')}
-            toolbarEnd={<span className={counterChipClass} data-testid="picker-count">
-              {`${userPicker.total} keeper${userPicker.total === 1 ? '' : 's'}`}
-            </span>}
-            renderSuggestions={(suggestions, query, loading) => {
-              // A query equal to the committed URL search is the base list's
-              // own filter — only a genuinely typed query renders live matches.
-              const live = !loading && query.trim() !== '' && query !== userPicker.search;
-              return <SelectionList selectionMode="single" toolbar={false}
-                rows={live ? suggestions : userPicker.rows}
-                total={live ? suggestions.length : userPicker.total}
-                page={live ? 1 : userPicker.page} pageSize={userPicker.pageSize}
-                search="" selectedCount={0} {...inertListCallbacks}
-                emptyLabel="No keepers match this search."
-                onRowSelect={id => navigate(wizardHref(list, { step: 1, user: id,
-                  usearch: userPicker.search, upage: userPicker.page }))}
-                onPageChange={page => navigate(wizardHref(list, { step: 1,
-                  usearch: userPicker.search, upage: page }))} />;
-            }}
-            onFallbackSubmit={text => navigateSearch(wizardHref(list, { step: 1,
-              usearch: text, upage: 1 }))} />}
+        : <section className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <LiveSearchInput id="wizard-user-search"
+                label="Search keepers by name or email"
+                placeholder="Search keepers by name or email…" value={userNarrowing.text}
+                onType={userNarrowing.onType} onEscape={userNarrowing.onEscape}
+                onEnter={text => navigateSearch(wizardHref(list, { step: 1, usearch: text,
+                  upage: 1 }))}
+                className="min-w-0 flex-1" />
+              <span className={counterChipClass} data-testid="picker-count">
+                {`${userLive ? userNarrowing.total : userPicker.total} keeper${
+                  (userLive ? userNarrowing.total : userPicker.total) === 1 ? '' : 's'}`}
+              </span>
+            </div>
+            <SelectionList selectionMode="single" toolbar={false}
+              rows={userLive ? userNarrowing.rows : userPicker.rows}
+              total={userLive ? userNarrowing.total : userPicker.total}
+              page={userLive ? userNarrowing.page : userPicker.page}
+              pageSize={userPicker.pageSize}
+              search="" selectedCount={0} {...inertListCallbacks}
+              emptyLabel={userLive
+                ? `Nothing matches “${userNarrowing.query}”.`
+                : 'No keepers match this search.'}
+              onRowSelect={id => navigate(wizardHref(list, { step: 1, user: id,
+                usearch: userPicker.search, upage: userPicker.page }))}
+              onPageChange={page => userLive
+                ? userNarrowing.onPageChange(page)
+                : navigate(wizardHref(list, { step: 1,
+                    usearch: userPicker.search, upage: page }))} />
+          </section>}
       <div className="flex items-center justify-end gap-2">
         {selectedUser
           ? <Link href={wizardHref(list, { step: 2, user: selectedUser.id })}
@@ -203,28 +218,35 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               selected: true }]}
             onChange={() => navigate(wizardHref(list, { step: 2, user: userId,
               psearch: planPicker.search, ppage: planPicker.page }))} />
-        : <LiveSearch mode="headless" id="wizard-plan-search"
-            label="Search plans by name"
-            placeholder="Search plans by name…" value={planPicker.search}
-            source={suggestViaEndpoint('assignable-plans')}
-            toolbarEnd={<span className={counterChipClass} data-testid="picker-count">
-              {`${planPicker.total} plan${planPicker.total === 1 ? '' : 's'}`}
-            </span>}
-            renderSuggestions={(suggestions, query, loading) => {
-              const live = !loading && query.trim() !== '' && query !== planPicker.search;
-              return <SelectionList selectionMode="single" toolbar={false}
-                rows={live ? suggestions : planPicker.rows}
-                total={live ? suggestions.length : planPicker.total}
-                page={live ? 1 : planPicker.page} pageSize={planPicker.pageSize}
-                search="" selectedCount={0} {...inertListCallbacks}
-                emptyLabel="No active plans match this search."
-                onRowSelect={id => navigate(wizardHref(list, { step: 2, user: userId, plan: id,
-                  psearch: planPicker.search, ppage: planPicker.page }))}
-                onPageChange={page => navigate(wizardHref(list, { step: 2, user: userId,
-                  psearch: planPicker.search, ppage: page }))} />;
-            }}
-            onFallbackSubmit={text => navigateSearch(wizardHref(list, { step: 2, user: userId,
-              psearch: text, ppage: 1 }))} />}
+        : <section className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <LiveSearchInput id="wizard-plan-search" label="Search plans by name"
+                placeholder="Search plans by name…" value={planNarrowing.text}
+                onType={planNarrowing.onType} onEscape={planNarrowing.onEscape}
+                onEnter={text => navigateSearch(wizardHref(list, { step: 2, user: userId,
+                  psearch: text, ppage: 1 }))}
+                className="min-w-0 flex-1" />
+              <span className={counterChipClass} data-testid="picker-count">
+                {`${planLive ? planNarrowing.total : planPicker.total} plan${
+                  (planLive ? planNarrowing.total : planPicker.total) === 1 ? '' : 's'}`}
+              </span>
+            </div>
+            <SelectionList selectionMode="single" toolbar={false}
+              rows={planLive ? planNarrowing.rows : planPicker.rows}
+              total={planLive ? planNarrowing.total : planPicker.total}
+              page={planLive ? planNarrowing.page : planPicker.page}
+              pageSize={planPicker.pageSize}
+              search="" selectedCount={0} {...inertListCallbacks}
+              emptyLabel={planLive
+                ? `Nothing matches “${planNarrowing.query}”.`
+                : 'No active plans match this search.'}
+              onRowSelect={id => navigate(wizardHref(list, { step: 2, user: userId, plan: id,
+                psearch: planPicker.search, ppage: planPicker.page }))}
+              onPageChange={page => planLive
+                ? planNarrowing.onPageChange(page)
+                : navigate(wizardHref(list, { step: 2, user: userId,
+                    psearch: planPicker.search, ppage: page }))} />
+          </section>}
       <div className="flex items-center justify-between gap-2">
         <Link href={wizardHref(list, { step: 1, user: userId })}
           className={buttonVariants({ variant: 'soft', size: 'md' })}>Back to user</Link>
@@ -278,10 +300,16 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
  * the effective-date field. Selections and steps stay URL-owned; search
  * navigation is debounced so typing never fires a round trip per keystroke. */
 export function AssignPlanWizard(props: Omit<AssignPlanWizardViewProps, 'navigate' |
-  'navigateSearch' | 'effectiveAt' | 'onEffectiveAtChange' | 'assignDispatch' |
-  'assignResult' | 'assignPending'>) {
+  'navigateSearch' | 'userNarrowing' | 'planNarrowing' | 'effectiveAt' |
+  'onEffectiveAtChange' | 'assignDispatch' | 'assignResult' | 'assignPending'>) {
   const router = useRouter();
   const [effectiveAt, setEffectiveAt] = useState('');
+  // One narrowing search per picker; only the mounted step's input ever types,
+  // so at most one fetch pipeline is ever in flight.
+  const userNarrowing = useNarrowing({ value: props.userPicker.search,
+    source: narrowViaEndpoint('users', props.userPicker.pageSize) });
+  const planNarrowing = useNarrowing({ value: props.planPicker.search,
+    source: narrowViaEndpoint('assignable-plans', props.planPicker.pageSize) });
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [assignResult, assignDispatch, assignPending] = useActionState(
     async (_previous: AssignResult | undefined, form: FormData): Promise<AssignResult> =>
@@ -310,6 +338,7 @@ export function AssignPlanWizard(props: Omit<AssignPlanWizardViewProps, 'navigat
       router.push(subscriptionsHref({ search: props.listSearch, page: props.listPage }));
   }, [assignResult, router, props.listSearch, props.listPage]);
   return <AssignPlanWizardView {...props} effectiveAt={effectiveAt}
+    userNarrowing={userNarrowing} planNarrowing={planNarrowing}
     onEffectiveAtChange={setEffectiveAt} navigate={navigate} navigateSearch={navigateSearch}
     assignDispatch={assignDispatch} assignResult={assignResult} assignPending={assignPending} />;
 }

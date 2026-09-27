@@ -65,19 +65,37 @@ type AccordionAction =
 
 let pushed: string[] = [];
 let lastLiveSearch: Record<string, unknown> | null = null;
+let lastNarrowSource: unknown = null;
+
+/** The canned narrowing state the view receives; tests flip `narrowed` and
+ * swap `rows`/`total` to exercise the live replacement paths. */
+const narrowingState: Record<string, unknown> = {
+  text: '', query: '', active: false, narrowed: false, rows: [], total: 0,
+  page: 1, loading: false,
+  onType: (_text: string) => {}, onPageChange: (_page: number) => {}, onEscape: () => {},
+};
 
 const deps: Record<string, unknown> = {
   react: {
     useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
     useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
   },
   'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
   '@/components/admin/live-search': {
-    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
-    LiveSearch: (props: Record<string, unknown>) => {
-      lastLiveSearch = props;
-      return jsx.jsx('div', { 'data-live-search': String(props.source) });
+    narrowViaEndpoint: (entity: string, pageSize: number) => {
+      lastLiveSearch = null;
+      lastNarrowSource = `endpoint:${entity}:${pageSize}`;
+      return lastNarrowSource;
     },
+    useNarrowing: () => narrowingState,
+    LiveSearchInput: (props: Record<string, unknown>) => {
+      lastLiveSearch = props;
+      return jsx.jsx('input', { 'data-live-search-input': props.id, value: props.value });
+    },
+    NarrowPager: (props: Record<string, unknown>) => jsx.jsx('nav',
+      { 'data-narrow-pager': true, 'data-page': props.page, 'data-total': props.total }),
   },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
@@ -129,10 +147,14 @@ const orphanRow: FeatureRowView = { id: 'feature-9', key: 'legacy.bulk_import', 
   description: 'Legacy description', category: 'legacy', active: true, orphan: true,
   assignedPlans: [], totalPlans: 3 };
 
-const base = { features: features(3), total: 34, search: '', page: 1, openKey: '',
+const base = { features: features(3), total: 34, search: '', page: 1, pageSize: 20,
+  openKey: '',
   selectedItems: [] as Array<{ id: string; title: string; subtitle?: string }>,
-  onToggleSelected: (_key: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {},
-  onSearchSubmit: (_search: string) => {} };
+  onToggleSelected: (_key: string) => {},
+  onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
+  trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSearchSubmit: (_search: string) => {},
+  narrowing: narrowingState as Record<string, unknown> };
 
 const render = (overrides: Partial<typeof base> = {}) => {
   lastLiveSearch = null;
@@ -140,6 +162,10 @@ const render = (overrides: Partial<typeof base> = {}) => {
   elements(tree); // resolve the live-search stub for prop assertions
   return tree;
 };
+
+/** A live narrowing state for the view: matches for the typed text are in. */
+const liveNarrowing = (over: Record<string, unknown> = {}): Record<string, unknown> =>
+  ({ ...narrowingState, narrowed: true, active: true, query: 'feed', ...over });
 
 function elementsOf(tree: unknown) {
   const all = elements(tree);
@@ -163,17 +189,25 @@ test('checkboxes toggle selection and orphaned rows render an inert checkbox', (
   assert.deepEqual(toggled, ['feature.key-2']);
 });
 
-test('the counter is always visible and off-page selections persist in the tray', () => {
+test('the counter is always visible, always in the mockup format, and truthful during narrowing', () => {
   const none = textOf(render());
-  assert.equal(none.includes('34 features'), true);
+  assert.equal(none.includes('0 of 34 selected'), true);
   const some = render({ selectedItems: [
     { id: 'feature.key-1', title: 'Feature 1', subtitle: 'feature.key-1' },
     { id: 'feature.key-9', title: 'Old import', subtitle: 'legacy.bulk_import' }] });
   const body = textOf(some);
   assert.equal(body.includes('2 of 34 selected'), true);
+  assert.equal(body.includes('matching the search'), false,
+    'the counter never morphs into a match-count text');
   assert.equal(body.includes('× Old import'), true);
   // Chips carry the key so identically named rows stay distinguishable.
   assert.equal(elements(some).some(item => item.props['data-remove'] === 'feature.key-9'), true);
+  // While narrowed matches are in, the denominator is the live match total.
+  const live = textOf(render({ selectedItems: [
+    { id: 'feature.key-1', title: 'Feature 1', subtitle: 'feature.key-1' }],
+    narrowing: liveNarrowing({ total: 7 }) }));
+  assert.equal(live.includes('1 of 7 selected'), true,
+    'the counter reflects the narrowed set while typing');
 });
 
 test('rows group by category in sorted order with group headers', () => {
@@ -293,36 +327,79 @@ test('state owner: the tray collapse flag flips via its own action', () => {
   assert.equal(state.trayCollapsed, false);
 });
 
-// --- Task 7: live search toolbar + mockup visual parity ---
+// --- Task 8 fix round 1: headless narrowing (no dropdown anywhere) ---
 
 function readSource(): string {
   return readFileSync(new URL('./features-accordion.tsx', import.meta.url), 'utf8');
 }
 
-test('the toolbar hosts the live search combobox wired to the features endpoint', () => {
+test('the toolbar hosts the mockup search input wired to the features narrowing endpoint', () => {
   render({ selectedItems: [
     { id: 'feature.key-1', title: 'Feature 1', subtitle: 'feature.key-1' }] });
-  assert.ok(lastLiveSearch, 'live search missing from the toolbar');
-  assert.equal(lastLiveSearch!.source, 'endpoint:features');
-  assert.equal(lastLiveSearch!.mode, 'popup');
-  assert.equal(lastLiveSearch!.value, '');
-  assert.deepEqual([...(lastLiveSearch!.selectedIds as Set<string>)], ['feature.key-1']);
-  assert.equal(lastLiveSearch!.onFallbackSubmit !== undefined, true);
+  assert.ok(lastLiveSearch, 'search input missing from the toolbar');
+  assert.equal(lastLiveSearch!.id, 'features-search');
+  assert.equal(lastLiveSearch!.value, '', 'the input shows the live narrowing text');
+  assert.equal(lastLiveSearch!.onEnter !== undefined, true,
+    'Enter is the explicit full-page fallback');
+  assert.equal(lastLiveSearch!.placeholder, 'Search features…');
+  // The shell wires the narrowing source (pinned in the shell test below).
+  // No suggestion dropdown machinery exists by construction.
+  assert.doesNotMatch(readSource(), /mode="popup"|role="combobox"|renderSuggestions/);
 });
 
-test('picking a suggestion toggles the parent-owned selection by key', () => {
-  const toggled: string[] = [];
-  render({ onToggleSelected: (key: string) => { toggled.push(key); } });
-  (lastLiveSearch!.onPick as (suggestion: { id: string; title?: string }) => void)({ id: 'feature.key-2', title: 'Feature 2' });
-  assert.deepEqual(toggled, ['feature.key-2']);
+test('the shell wires the narrowing search to the features endpoint at the page size', () => {
+  lastNarrowSource = null;
+  const tree = FeaturesAccordion({ features: features(2), total: 34, search: '', page: 1,
+    pageSize: 20, openKey: '' });
+  elements(tree);
+  assert.equal(lastNarrowSource, 'endpoint:features:20');
+});
+
+test('typing narrows the rendered list in place: matches replace the committed page with a pager', () => {
+  const tree = render({ narrowing: liveNarrowing({
+    rows: [{ id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' },
+      { id: 'feature.key-3', title: 'Feature 3', subtitle: 'feature.key-3' }],
+    total: 41, page: 2 }) });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-features');
+  assert.ok(narrowed, 'narrowed list missing');
+  const rows = elements(narrowed).filter(item => item.props['data-row-id']);
+  assert.deepEqual(rows.map(row => row.props['data-row-id']), ['feature.key-2', 'feature.key-3'],
+    'matched rows (all rows, not the committed page) render in place');
+  assert.equal(elements(tree).filter(item => item.props['data-group-header']).length, 0,
+    'the committed grouped view is replaced');
+  const pager = elements(tree).find(item => item.props['data-narrow-pager']);
+  assert.ok(pager, 'matches are paged');
+  assert.equal(pager.props['data-total'], 41);
+});
+
+test('a narrowed pick forwards the full suggestion {id, title, subtitle} — never a bare key', () => {
+  const picked: Array<Record<string, unknown>> = [];
+  const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
+    narrowing: liveNarrowing({
+      rows: [{ id: 'legacy.bulk_import', title: 'Old import', subtitle: 'legacy.bulk_import' }],
+      total: 1, page: 1 }) });
+  const box = elements(tree).find(item => item.type === 'input' &&
+    item.props['aria-label'] === 'Select Old import');
+  assert.ok(box, 'narrowed row checkbox missing');
+  (box.props.onChange as () => void)();
+  assert.deepEqual(picked, [{ id: 'legacy.bulk_import', title: 'Old import',
+    subtitle: 'legacy.bulk_import' }]);
+});
+
+test('an empty narrowed set echoes the query; clearing restores the committed view', () => {
+  const empty = textOf(render({ narrowing: liveNarrowing({ rows: [], total: 0 }) }));
+  assert.match(empty, /Nothing matches “\s*feed\s*”\./);
+  const committed = textOf(render());
+  assert.match(committed, /Feature 1/, 'the committed page returns');
 });
 
 test('the fallback submit navigates the full-page URL search', () => {
   pushed = [];
-  const tree = FeaturesAccordion({ features: features(2), total: 34, search: '', page: 1, openKey: '' });
+  const tree = FeaturesAccordion({ features: features(2), total: 34, search: '', page: 1,
+    pageSize: 20, openKey: '' });
   elements(tree);
   assert.ok(lastLiveSearch, 'view not resolved through the shell');
-  (lastLiveSearch!.onFallbackSubmit as (text: string) => void)('feed');
+  (lastLiveSearch!.onEnter as (text: string) => void)('feed');
   assert.deepEqual(pushed, ['/admin/features?search=feed&page=1']);
 });
 
@@ -331,7 +408,7 @@ test('the counter chip is gold and always in the toolbar (unified selected-count
   const chip = elements(none).find((item) => item.props['data-testid'] === 'selected-count');
   assert.ok(chip, 'counter chip missing');
   assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
-  assert.equal(textOf(chip).includes('34 features'), true);
+  assert.equal(textOf(chip).includes('0 of 34 selected'), true);
 });
 
 test('feature rows are freestanding hover rows with the mono key subtitle — no card enclosure', () => {

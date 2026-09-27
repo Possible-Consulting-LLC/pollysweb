@@ -5,9 +5,10 @@ import { useReducer, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { listHref, categoryLabel, counterChipClass, badgeTintClass, badgeOnClass,
+import { listHref, categoryLabel, counterChipClass, badgeOnClass,
   badgeOffClass } from '@/components/admin/list-shared';
-import { LiveSearch, suggestViaEndpoint } from '@/components/admin/live-search';
+import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
+  type Narrowing } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
@@ -38,21 +39,29 @@ const listHrefFor = (search: string, page: number, open?: string) =>
 
 export type FeaturesAccordionViewProps = {
   features: FeatureRowView[];
-  /** Database feature count for the current query; the counter denominator. */
+  /** Database feature count for the committed query; the idle counter denominator. */
   total: number;
   search: string;
   page: number;
+  pageSize: number;
   /** URL-owned single-open state, keyed by feature key. */
   openKey: string;
   /** The FULL selection as key→title pairs — includes features on other pages
    * or hidden by the current search. Never derived from the rendered rows. */
   selectedItems: SelectionTrayItem[];
+  /** Checkbox path: toggling a committed row resolves its title via lookup. */
   onToggleSelected(key: string): void;
+  /** Narrowed pick path: the full suggestion {id, title, subtitle} is
+   * forwarded so tray chips always carry display data (never a raw key). */
+  onPick(item: { id: string; title: string; subtitle?: string }): void;
   trayCollapsed: boolean;
   onToggleTrayCollapsed(): void;
   /** The explicit full-page fallback: submits the URL-param search (resets
    * page and open feature). Plain typing in the live search NEVER navigates. */
   onSearchSubmit(search: string): void;
+  /** Headless narrowing state (no dropdown anywhere): while matches for the
+   * typed text are in, they REPLACE the committed page. */
+  narrowing: Narrowing;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -115,25 +124,28 @@ function FeatureDetail({ row }: { row: FeatureRowView }) {
   </div>;
 }
 
-/** Presentational body of the features accordion (hook-free; the default export
- * below owns the selection/collapse state). Grouping is derived from the rows
- * themselves — orphaned categories slot in alphabetically like registry ones. */
-export function FeaturesAccordionView({ features, total, search, page, openKey, selectedItems,
-  onToggleSelected, trayCollapsed, onToggleTrayCollapsed, onSearchSubmit }:
-  FeaturesAccordionViewProps) {
+/** Presentational body of the features accordion. Typing narrows the RENDERED
+ * LIST in real time (headless narrowing — matches span all rows, server-fed):
+ * while narrowed matches are in, they replace the committed page as simple
+ * selectable rows with their own pager; clearing the query restores the
+ * committed view. The counter stays in the mockup's "N of M selected" format,
+ * truthful during narrowing. */
+export function FeaturesAccordionView({ features, total, search, page, pageSize, openKey,
+  selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
+  onSearchSubmit, narrowing }: FeaturesAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
+  const narrowed = narrowing.narrowed;
+  const counterTotal = narrowed ? narrowing.total : total;
+  const lastPage = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
   const categories = [...new Set(features.map(feature => feature.category))].sort();
   return <>
     <div data-testid="features-toolbar" className="flex flex-wrap items-center gap-2">
-      <LiveSearch id="features-search" mode="popup" label="Search features by name or key"
-        placeholder="Search features…" value={search}
-        source={suggestViaEndpoint('features')} selectedIds={selected}
-        onPick={suggestion => onToggleSelected(suggestion.id)}
-        onFallbackSubmit={onSearchSubmit} />
+      <LiveSearchInput id="features-search" label="Search features by name or key"
+        placeholder="Search features…" value={narrowing.text}
+        onType={narrowing.onType} onEscape={narrowing.onEscape}
+        onEnter={onSearchSubmit} className="min-w-0 flex-1" />
       <span className={counterChipClass} data-testid="selected-count">
-        {selectedItems.length > 0
-          ? `${selectedItems.length} of ${total} selected`
-          : `${total} feature${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}
+        {`${selectedItems.length} of ${counterTotal} selected`}
       </span>
     </div>
     <SelectionTray items={selectedItems} onDeselect={onToggleSelected}
@@ -150,44 +162,82 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
           </Button>
         </MutationForm>)}
     </SelectionTray>
-    {categories.map(category =>
-      <section key={category} className="space-y-0">
-        <h3 className="mb-1 mt-3.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--plum)]"
-          data-group-header={category}>{categoryLabel(category)}</h3>
-        {features.filter(feature => feature.category === category).map(row => {
-          const isOpen = row.key === openKey;
-          return <div key={row.id} data-row-id={row.key}
-            className={cn('rounded-2xl border', row.orphan && 'opacity-70', isOpen
-              ? 'border-[var(--plum)]/20 bg-[var(--card)]'
-              : 'border-transparent')}>
-            <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
-              !isOpen && 'hover:bg-[var(--hover)]')}>
-              {/* Orphaned features are excluded from bulk selection. */}
-              <input type="checkbox" checked={selected.has(row.key)} disabled={row.orphan}
-                onChange={() => onToggleSelected(row.key)}
-                aria-label={`Select ${row.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
-              {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
-                  single-open state lives in the URL so back/forward and deep links work. */}
-              <Link href={isOpen ? listHrefFor(search, page) : listHrefFor(search, page, row.key)}
-                className="flex flex-1 flex-wrap items-center gap-3" aria-expanded={isOpen}>
-                <ChevronDown aria-hidden="true"
-                  className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold">{row.name}</span>
-                  <span className="block truncate font-mono text-[11px] opacity-55">{row.key}</span>
-                </span>
-                <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
-                  {row.active
-                    ? <span className={badgeOnClass}>Released</span>
-                    : <span className={badgeOffClass}>Not released</span>}
-                  {row.orphan ? <span className={badgeOffClass}>Orphaned</span> : null}
-                </span>
-              </Link>
-            </div>
-            {isOpen ? <FeatureDetail row={row} /> : null}
-          </div>;
-        })}
-      </section>)}
+    {narrowed ? <div data-testid="narrowed-features" className="space-y-1">
+      {narrowing.rows.length === 0
+        ? <p className="py-3 text-sm text-[var(--midnight)]/70">
+            {narrowing.loading ? 'Searching…' : <>Nothing matches “{narrowing.query}”.</>}
+          </p>
+        : narrowing.rows.map(row =>
+          <div key={row.id} data-row-id={row.id}
+            className="flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors hover:bg-[var(--hover)]">
+            <input type="checkbox" checked={selected.has(row.id)}
+              onChange={() => onPick(row)}
+              aria-label={`Select ${row.title}`}
+              className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{row.title}</span>
+              {row.subtitle
+                ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
+                : null}
+            </span>
+          </div>)}
+      <NarrowPager page={narrowing.page} total={narrowing.total} pageSize={pageSize}
+        onPageChange={narrowing.onPageChange} label="narrowed features" />
+    </div> : <>
+      {categories.map(category =>
+        <section key={category} className="space-y-0">
+          <h3 className="mb-1 mt-3.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--plum)]"
+            data-group-header={category}>{categoryLabel(category)}</h3>
+          {features.filter(feature => feature.category === category).map(row => {
+            const isOpen = row.key === openKey;
+            return <div key={row.id} data-row-id={row.key}
+              className={cn('rounded-2xl border', row.orphan && 'opacity-70', isOpen
+                ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+                : 'border-transparent')}>
+              <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
+                !isOpen && 'hover:bg-[var(--hover)]')}>
+                {/* Orphaned features are excluded from bulk selection. */}
+                <input type="checkbox" checked={selected.has(row.key)} disabled={row.orphan}
+                  onChange={() => onToggleSelected(row.key)}
+                  aria-label={`Select ${row.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
+                {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
+                    single-open state lives in the URL so back/forward and deep links work. */}
+                <Link href={isOpen ? listHrefFor(search, page) : listHrefFor(search, page, row.key)}
+                  className="flex flex-1 flex-wrap items-center gap-3" aria-expanded={isOpen}>
+                  <ChevronDown aria-hidden="true"
+                    className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">{row.name}</span>
+                    <span className="block truncate font-mono text-[11px] opacity-55">{row.key}</span>
+                  </span>
+                  <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+                    {row.active
+                      ? <span className={badgeOnClass}>Released</span>
+                      : <span className={badgeOffClass}>Not released</span>}
+                    {row.orphan ? <span className={badgeOffClass}>Orphaned</span> : null}
+                  </span>
+                </Link>
+              </div>
+              {isOpen ? <FeatureDetail row={row} /> : null}
+            </div>;
+          })}
+        </section>)}
+      {features.length === 0
+        ? <p className="text-sm text-[var(--midnight)]/70">
+            {search ? <>Nothing matches “{search}”.</> : 'No features in the database yet.'}
+          </p>
+        : null}
+      <nav className="mt-4 flex items-center gap-3 border-t border-[var(--hover)] pt-3.5"
+        aria-label="Features pagination">
+        {page <= 1
+          ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
+          : <Link href={listHrefFor(search, page - 1)} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>Previous</Link>}
+        <span>Page {page} of {lastPage}</span>
+        {page >= lastPage
+          ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
+          : <Link href={listHrefFor(search, page + 1)} className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>Next</Link>}
+      </nav>
+    </>}
   </>;
 }
 
@@ -220,20 +270,27 @@ export function accordionReducer(state: AccordionState, action: AccordionAction)
   }
 }
 
-/** Thin client shell around accordionReducer. */
+/** Thin client shell around accordionReducer; owns the headless narrowing
+ * search. Narrowed feature rows carry the feature KEY as their id (the
+ * surface's selection identity), so a narrowed pick lands in the same
+ * selection map with full display data. */
 export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
-  'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed' |
-  'onSearchSubmit'>) {
+  'selectedItems' | 'onToggleSelected' | 'onPick' | 'trayCollapsed' |
+  'onToggleTrayCollapsed' | 'onSearchSubmit' | 'narrowing'>) {
   const router = useRouter();
   const [state, dispatch] = useReducer(accordionReducer,
     { selection: new Map<string, { title: string; subtitle: string }>(), trayCollapsed: false });
-  return <FeaturesAccordionView {...props}
+  const narrowing = useNarrowing({ value: props.search,
+    source: narrowViaEndpoint('features', props.pageSize) });
+  return <FeaturesAccordionView {...props} narrowing={narrowing}
     selectedItems={[...state.selection].map(([key, item]) =>
       ({ id: key, title: item.title, subtitle: item.subtitle }))}
     onToggleSelected={key => {
       const row = props.features.find(feature => feature.key === key);
       dispatch({ type: 'toggle', key, title: row?.name ?? key, subtitle: key });
     }}
+    onPick={item => dispatch({ type: 'toggle', key: item.id, title: item.title,
+      subtitle: item.subtitle ?? item.id })}
     trayCollapsed={state.trayCollapsed}
     onToggleTrayCollapsed={() => dispatch({ type: 'toggleTrayCollapsed' })}
     onSearchSubmit={search => router.push(listHrefFor(search, 1))} />;

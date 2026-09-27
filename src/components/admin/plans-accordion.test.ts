@@ -65,6 +65,15 @@ function loadAccordionView() {
 
 let pushed: string[] = [];
 let lastLiveSearch: Record<string, unknown> | null = null;
+let lastNarrowSource: unknown = null;
+
+/** The canned narrowing state the view receives; tests flip `narrowed` and
+ * swap `rows`/`total` to exercise the live replacement paths. */
+const narrowingState: Record<string, unknown> = {
+  text: '', query: '', active: false, narrowed: false, rows: [], total: 0,
+  page: 1, loading: false,
+  onType: (_text: string) => {}, onPageChange: (_page: number) => {}, onEscape: () => {},
+};
 
 const listSharedExports = (() => {
   const exports: Record<string, unknown> = {};
@@ -81,14 +90,23 @@ const deps: Record<string, unknown> = {
   react: {
     useState: (initial: unknown) =>
       [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
+    useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
   },
   'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
   '@/components/admin/live-search': {
-    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
-    LiveSearch: (props: Record<string, unknown>) => {
-      lastLiveSearch = props;
-      return jsx.jsx('div', { 'data-live-search': String(props.source) });
+    narrowViaEndpoint: (entity: string, pageSize: number) => {
+      lastNarrowSource = `endpoint:${entity}:${pageSize}`;
+      return lastNarrowSource;
     },
+    useNarrowing: () => narrowingState,
+    LiveSearchInput: (props: Record<string, unknown>) => {
+      lastLiveSearch = props;
+      return jsx.jsx('input', { 'data-live-search-input': props.id, value: props.value });
+    },
+    NarrowPager: (props: Record<string, unknown>) => jsx.jsx('nav',
+      { 'data-narrow-pager': true, 'data-page': props.page, 'data-total': props.total }),
   },
   '@/components/admin/list-shared': listSharedExports,
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
@@ -138,10 +156,13 @@ function plans(count: number): PlanLike[] {
   }));
 }
 
-const base = { plans: plans(3), total: 3, search: '', page: 1, openId: '',
+const base = { plans: plans(3), total: 3, search: '', page: 1, pageSize: 20, openId: '',
   selectedItems: [] as Array<{ id: string; title: string }>,
-  onToggleSelected: (_id: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {},
-  onSearchSubmit: (_search: string) => {} };
+  onToggleSelected: (_id: string) => {},
+  onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
+  trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSearchSubmit: (_search: string) => {},
+  narrowing: narrowingState as Record<string, unknown> };
 
 const render = (overrides: Partial<typeof base> = {}) => {
   lastLiveSearch = null;
@@ -149,6 +170,10 @@ const render = (overrides: Partial<typeof base> = {}) => {
   elements(tree); // resolve the live-search stub for prop assertions
   return tree;
 };
+
+/** A live narrowing state for the view: matches for the typed text are in. */
+const liveNarrowing = (over: Record<string, unknown> = {}): Record<string, unknown> =>
+  ({ ...narrowingState, narrowed: true, active: true, query: 'term', ...over });
 
 function elementsOf(tree: unknown) {
   const all = elements(tree);
@@ -183,14 +208,20 @@ test('checked state comes from the selection set, so off-page selections persist
   assert.equal(textOf(tree).includes('× Plan 9 (page 5)'), true);
 });
 
-test('the counter shows selected-of-total when anything is selected, else the total', () => {
+test('the counter stays in the mockup format and is truthful during narrowing', () => {
   const none = textOf(render());
-  assert.equal(none.includes('3 plans'), true);
-  assert.equal(none.includes('of 3 selected'), false);
+  assert.equal(none.includes('0 of 3 selected'), true);
+  assert.equal(none.includes('matching the search'), false,
+    'the counter never morphs into a match-count text');
   const some = textOf(render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] }));
   assert.equal(some.includes('1 of 3 selected'), true);
   const all = textOf(render({ selectedItems: plans(3).map(plan => ({ id: plan.id, title: plan.name })) }));
   assert.equal(all.includes('3 of 3 selected'), true);
+  // While narrowed matches are in, the denominator is the live match total.
+  const live = textOf(render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }],
+    narrowing: liveNarrowing({ total: 9 }) }));
+  assert.equal(live.includes('1 of 9 selected'), true,
+    'the counter reflects the narrowed set while typing');
 });
 
 test('the tray carries the four bulk actions scoped to the full selection, no bulk delete', () => {
@@ -252,32 +283,53 @@ function readSource(): string {
   return readFileSync(new URL('./plans-accordion.tsx', import.meta.url), 'utf8');
 }
 
-test('the toolbar hosts the live search combobox wired to the plans endpoint', () => {
+test('the toolbar hosts the mockup search input wired to the plans narrowing endpoint', () => {
   render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
-  assert.ok(lastLiveSearch, 'live search missing from the toolbar');
-  assert.equal(lastLiveSearch!.source, 'endpoint:plans');
-  assert.equal(lastLiveSearch!.mode, 'popup');
-  assert.equal(lastLiveSearch!.value, '');
+  assert.ok(lastLiveSearch, 'search input missing from the toolbar');
+  assert.equal(lastLiveSearch!.id, 'plans-search');
+  assert.equal(lastLiveSearch!.value, '', 'the input shows the live narrowing text');
   assert.equal(lastLiveSearch!.placeholder, 'Search plans by name…');
-  assert.deepEqual([...(lastLiveSearch!.selectedIds as Set<string>)], ['plan-1'],
-    'already-picked plans are passed as selected markers');
+  assert.equal(lastLiveSearch!.onEnter !== undefined, true,
+    'Enter is the explicit full-page fallback');
+  // No suggestion dropdown machinery exists by construction.
+  assert.doesNotMatch(readSource(), /mode="popup"|role="combobox"|renderSuggestions/);
 });
 
-test('picking a suggestion toggles the parent-owned selection directly', () => {
-  const toggled: string[] = [];
-  render({ onToggleSelected: (id: string) => { toggled.push(id); } });
-  (lastLiveSearch!.onPick as (suggestion: { id: string; title?: string }) => void)({ id: 'plan-2', title: 'Plan 2' });
-  assert.deepEqual(toggled, ['plan-2']);
-  assert.equal(lastLiveSearch!.onFallbackSubmit !== undefined, true,
-    'the explicit full-page fallback is wired separately');
+test('typing narrows the rendered list in place; a narrowed pick forwards full display data', () => {
+  const picked: Array<Record<string, unknown>> = [];
+  const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
+    narrowing: liveNarrowing({ rows: [{ id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD' }],
+      total: 12, page: 1 }) });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-plans');
+  assert.ok(narrowed, 'narrowed list missing');
+  const rows = elements(narrowed).filter(item => item.props['data-row-id']);
+  assert.deepEqual(rows.map(row => row.props['data-row-id']), ['plan-9'],
+    'matched rows span all rows, not the committed page');
+  assert.ok(elements(tree).find(item => item.props['data-narrow-pager']), 'matches are paged');
+  const box = elements(narrowed).find(item => item.type === 'input' &&
+    item.props['aria-label'] === 'Select Plan 9');
+  assert.ok(box, 'narrowed row checkbox missing');
+  (box.props.onChange as () => void)();
+  assert.deepEqual(picked, [{ id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD' }],
+    'the full suggestion is forwarded — tray chips never fall back to a raw id');
 });
 
-test('the fallback submit navigates the full-page URL search; the pick path never routes', () => {
+test('an empty narrowed set echoes the query; clearing restores the committed view', () => {
+  const empty = textOf(render({ narrowing: liveNarrowing({ rows: [], total: 0 }) }));
+  assert.match(empty, /Nothing matches “\s*term\s*”\./);
+  const committed = textOf(render());
+  assert.match(committed, /Plan 1/, 'the committed page returns');
+});
+
+test('the shell wires the narrowing endpoint; the fallback submit navigates the URL search', () => {
   pushed = [];
-  const tree = PlansAccordion({ plans: plans(2), total: 2, search: '', page: 1, openId: '' });
+  lastNarrowSource = null;
+  const tree = PlansAccordion({ plans: plans(2), total: 2, search: '', page: 1,
+    pageSize: 20, openId: '' });
   elements(tree);
+  assert.equal(lastNarrowSource, 'endpoint:plans:20');
   assert.ok(lastLiveSearch, 'view not resolved through the shell');
-  (lastLiveSearch!.onFallbackSubmit as (text: string) => void)('term');
+  (lastLiveSearch!.onEnter as (text: string) => void)('term');
   assert.deepEqual(pushed, ['/admin/plans?search=term&page=1'],
     'fallback resets page and open plan exactly like the old GET form');
 });
@@ -287,7 +339,7 @@ test('the counter chip is gold, lives in the toolbar, and counts selected of tot
   const chip = elements(none).find((item) => item.props['data-testid'] === 'selected-count');
   assert.ok(chip, 'counter chip missing');
   assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
-  assert.equal(textOf(chip).includes('3 plans'), true);
+  assert.equal(textOf(chip).includes('0 of 3 selected'), true);
   const some = render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
   const someChip = elements(some).find((item) => item.props['data-testid'] === 'selected-count');
   assert.equal(textOf(someChip!).includes('1 of 3 selected'), true);

@@ -3,16 +3,13 @@ import { requireAdminActor } from '@/lib/admin/actor';
 import { prisma } from '@/lib/db';
 import { FEATURE_REGISTRY, isRegisteredFeatureKey } from '@/lib/features/registry';
 import { clampPage, parseListQuery } from '@/lib/admin/paginated-list';
-import { buttonVariants, Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { listHref } from '@/components/admin/list-shared';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { FeaturesAccordion } from '@/components/admin/features-accordion';
 import { syncRegistryAction } from './actions';
 export const dynamic = 'force-dynamic';
-
-/** Row toggles preserve search/page; pager links drop `open` (paging folds the accordion). */
-const listHrefFor = (search: string, page: number) => listHref('/admin/features', search, page);
 
 export default async function FeatureCatalogPage({ searchParams }:
   { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -70,7 +67,6 @@ export default async function FeatureCatalogPage({ searchParams }:
     assignedPlans: (plansByFeature.get(row.id) ?? []).sort((a, b) => a.localeCompare(b)),
     totalPlans,
   }));
-  const lastPage = Math.max(1, Math.ceil(total / query.pageSize));
   return <>
     <header className="space-y-2">
       <h2 className="text-2xl font-semibold">Feature catalog</h2>
@@ -97,15 +93,9 @@ export default async function FeatureCatalogPage({ searchParams }:
       ? <p>{parsed.search ? 'No features match this search.' : 'No features in the database yet. Run Sync registry to create all ' + FEATURE_REGISTRY.length + ' registry features as inactive.'}</p>
       : null}
     {/* Selection state lives in the client wrapper; rows, tray, and counter render there. */}
-    <FeaturesAccordion features={features} total={total} search={parsed.search} page={page} openKey={openKey} />
-    <nav className="mt-4 flex items-center gap-3 border-t border-[var(--hover)] pt-3.5" aria-label="Features pagination">
-      {page <= 1
-        ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
-        : <Link href={listHrefFor(parsed.search, page - 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}
-      <span>Page {page} of {lastPage}</span>
-      {page >= lastPage
-        ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
-        : <Link href={listHrefFor(parsed.search, page + 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Next</Link>}
-    </nav>
+    <FeaturesAccordion features={features} total={total} search={parsed.search} page={page}
+      pageSize={parsed.pageSize} openKey={openKey} />
+    {/* The committed pager lives inside the accordion's client island so the
+        live-narrowing pager can replace it while matches are in. */}
   </>;
 }

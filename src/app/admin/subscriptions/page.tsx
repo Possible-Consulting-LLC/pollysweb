@@ -4,24 +4,13 @@ import { prisma } from '@/lib/db';
 import { listEffectiveSubscriptions, listAssignablePlans, searchUsers,
   type AssignablePlanRow, type UserSummary } from '@/lib/admin/plan-assignment';
 import { clampPage, parseListQuery } from '@/lib/admin/paginated-list';
-import { buttonVariants, Button } from '@/components/ui/button';
-import { badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
-import { MutationForm } from '@/components/mutation-form';
-import { MutationContextInput } from '@/components/mutation-context';
+import { buttonVariants } from '@/components/ui/button';
 import { AssignPlanWizard } from '@/components/admin/assign-plan-wizard';
-import { endSubscriptionAction } from './actions';
+import { SubscriptionsList } from '@/components/admin/subscriptions-list';
 export const dynamic = 'force-dynamic';
 
-const intervalLabel: Record<string, string> = { MONTHLY: 'Monthly', ANNUAL: 'Annual' };
 const typeLabel: Record<string, string> = { STANDARD: 'Standard', CUSTOM: 'Custom',
   INTERNAL: 'Internal' };
-const statusBadge: Record<string, { label: string; on: boolean }> = {
-  ACTIVE: { label: 'Active', on: true },
-  TRIALING: { label: 'Trialing', on: true },
-  PAST_DUE: { label: 'Past due', on: false },
-};
-const price = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-const day = (date: Date) => date.toISOString().slice(0, 10);
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean)
   .map(word => word.charAt(0)).join('').slice(0, 2).toUpperCase();
 
@@ -150,71 +139,20 @@ export default async function SubscriptionsPage({ searchParams }:
       <p>{`${subs.total} effective subscription${subs.total === 1 ? '' : 's'} — effective only; canceled and expired rows are hidden.`}</p>
     </header>
     {wizardProps ? <AssignPlanWizard {...wizardProps} /> : null}
-    <section className="space-y-3" aria-label="Current subscriptions">
-      <h3 className="font-semibold">Current subscriptions</h3>
-      <form method="get" className="flex flex-wrap items-end gap-3">
-        {wizardOpen ? Object.entries(wizardParams).map(([key, value]) =>
-          <input key={key} type="hidden" name={key} value={value} />) : null}
-        <label className="grid gap-1 text-sm">Search by keeper, plan, or status
-          <input name="search" defaultValue={parsed.search} maxLength={80}
-            className="h-11 rounded-2xl border border-[var(--lavender-deep)] bg-[var(--input)] px-3.5 text-sm" />
-        </label>
-        <Button type="submit" variant="secondary" size="sm">Search</Button>
-        {parsed.search
-          ? <Link href={subscriptionsHref('', 1, wizardParams)}
-              className={buttonVariants({ variant: 'ghost', size: 'sm' })}>Clear</Link> : null}
-      </form>
-      {subs.rows.length === 0
-        ? <p>{subs.total === 0 && parsed.search
-            ? 'No subscriptions match this search.'
-            : 'No effective subscriptions yet. Use ＋ Add subscription above.'}</p>
-        : subs.rows.map(row => {
-          const badge = statusBadge[row.status];
-          const keeper = row.userName || row.userEmail || row.userId;
-          return <div key={row.id} data-subscription-row={row.id}
-            className="flex flex-wrap items-center gap-3 rounded-2xl border border-transparent px-3.5 py-3 transition-colors hover:bg-[var(--hover)]">
-            <span aria-hidden="true"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-sm font-bold text-[var(--midnight)]">
-              {initialsOf(keeper)}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate font-semibold">{keeper}</span>
-              {row.userEmail ? <span className="block truncate text-sm opacity-70">{row.userEmail}</span> : null}
-            </span>
-            <span className="text-sm">
-              {row.planName ?? row.planId} · {row.optionInterval
-                ? (intervalLabel[row.optionInterval] ?? row.optionInterval) : '—'}
-              {row.optionPriceCents === null ? '' : ` — ${price(row.optionPriceCents)}`}
-            </span>
-            {badge
-              ? <span className={badge.on ? badgeOnClass : badgeOffClass}>{badge.label}</span>
-              : <span className={badgeOffClass}>{row.status}</span>}
-            <span className="text-sm opacity-70">
-              since {day(row.startedAt)} · {row.renewsAt ? `renews ${day(row.renewsAt)}`
-                : row.expiresAt ? `ends ${day(row.expiresAt)}` : 'no renewal'}
-            </span>
-            <span className="ml-auto flex shrink-0 items-center gap-2">
-              <Link href={subscriptionsHref(parsed.search, listPage,
-                  { wizard: 'open', step: '2', user: row.userId })}
-                className={buttonVariants({ variant: 'ghost', size: 'sm' })}>Reassign</Link>
-              <MutationForm action={endSubscriptionAction} className="contents"><MutationContextInput />
-                <input type="hidden" name="subscriptionId" value={row.id} />
-                <Button type="submit" variant="ghost" size="sm">End</Button>
-              </MutationForm>
-            </span>
-          </div>;
-        })}
-      <nav className="flex items-center gap-3" aria-label="Subscriptions pagination">
-        {listPage <= 1
-          ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
-          : <Link href={subscriptionsHref(parsed.search, listPage - 1, wizardParams)}
-              className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}
-        <span>Page {listPage} of {lastPage}</span>
-        {listPage >= lastPage
-          ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
-          : <Link href={subscriptionsHref(parsed.search, listPage + 1, wizardParams)}
-              className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Next</Link>}
-      </nav>
-    </section>
+    {/* The list search narrows the rendered list live (ruling 1); the URL-param
+        search remains the explicit Enter fallback. Row rendering lives in the
+        client island so narrowing can replace the committed rows in place. */}
+    <SubscriptionsList
+      rows={subs.rows.map(row => ({
+        id: row.id, userId: row.userId, planId: row.planId,
+        planBillingOptionId: row.planBillingOptionId, status: row.status,
+        startedAt: row.startedAt.toISOString(),
+        renewsAt: row.renewsAt ? row.renewsAt.toISOString() : null,
+        expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+        userName: row.userName, userEmail: row.userEmail, planName: row.planName,
+        optionInterval: row.optionInterval, optionPriceCents: row.optionPriceCents,
+      }))}
+      total={subs.total} search={parsed.search} page={listPage}
+      pageSize={parsed.pageSize} lastPage={lastPage} wizardParams={wizardParams} />
   </>;
 }

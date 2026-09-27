@@ -168,7 +168,7 @@ test('features page queries 20 per page with a name-or-key search and feeds the 
   assert.deepEqual(props, {
     features: servedRows.slice(20, 40).map(row => ({ ...row, orphan: false,
       assignedPlans: row.id === DB_ROWS[20].id ? ['Basic'] : [], totalPlans: 3 })),
-    total: 25, search: 'spood', page: 2, openKey: DB_ROWS[1].key,
+    total: 25, search: 'spood', page: 2, pageSize: 20, openKey: DB_ROWS[1].key,
   });
   // Search is owned by the accordion's live toolbar (Task 7) — no GET form here.
   assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), false);
@@ -204,14 +204,16 @@ test('the header stat line is honest during a search', async () => {
   assert.equal(plain.includes('in the database'), true);
 });
 
-test('the pager preserves search and drops open, and empty searches skip the where clause', async () => {
+test('the committed pager lives in the accordion island; empty searches skip the where clause', async () => {
   featureQueries = []; capturedProps = [];
   servedRows = DB_ROWS; servedTotal = 25;
   const tree = await render({ search: 'molt', page: '1', open: 'spood.create-1' });
-  const next = elementsOf(tree).links.find(link => String(link.props.href).includes('page=2'));
-  assert.ok(next, 'next link missing');
-  assert.equal(String(next.props.href).includes('search=molt'), true);
-  assert.equal(String(next.props.href).includes('open='), false, 'paging folds the accordion');
+  elementsOf(tree);
+  // The server page renders no pagination nav — the island owns both pagers
+  // (committed + live narrowing) and derives the last page from page size.
+  assert.equal(capturedProps[0].pageSize, 20);
+  assert.equal(elementsOf(tree).links.some(link => String(link.props.href).includes('page=2')),
+    false, 'no server-rendered pager');
   const searchQuery = featureQueries[0].where as { OR: unknown[] };
   assert.ok(searchQuery.OR, 'search must filter');
   featureQueries = [];

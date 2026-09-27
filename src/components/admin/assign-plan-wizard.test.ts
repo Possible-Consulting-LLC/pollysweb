@@ -85,18 +85,17 @@ const deps: Record<string, unknown> = {
   },
   'react/jsx-runtime': jsx,
   'next/navigation': { useRouter: () => ({ push: () => {} }) },
-  // Live-search stub: records props and renders the result area through the
-  // view's own renderSuggestions callback (empty query = the base list).
+  // Live-search stub: records the picker input props; the narrowing states are
+  // plain props the tests drive directly.
   '@/components/admin/live-search': {
-    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
-    LiveSearch: (props: Record<string, unknown>) => {
+    narrowViaEndpoint: (entity: string, pageSize: number) => `endpoint:${entity}:${pageSize}`,
+    useNarrowing: () => narrowingStub,
+    LiveSearchInput: (props: Record<string, unknown>) => {
       lastLiveSearch.push(props);
-      const renderSuggestions = props.renderSuggestions as
-        | ((suggestions: unknown[], query: string, loading: boolean) => unknown)
-        | undefined;
-      const resultArea = renderSuggestions?.([], String(props.value ?? ''), false) ?? null;
-      return jsx.jsx('div', { 'data-live-search': String(props.source), children: resultArea });
+      return jsx.jsx('input', { 'data-live-search-input': props.id, value: props.value });
     },
+    NarrowPager: (props: Record<string, unknown>) => jsx.jsx('nav',
+      { 'data-narrow-pager': true, 'data-page': props.page, 'data-total': props.total }),
   },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
@@ -124,6 +123,17 @@ const list = { search: '', page: 1 };
 
 /** Live-search stub captures (one per render); reset per test. */
 let lastLiveSearch: Array<Record<string, unknown>> = [];
+
+const narrowingStub = {
+  text: '', query: '', active: false, narrowed: false, rows: [] as unknown[],
+  total: 0, page: 1, loading: false,
+  onType: (_text: string) => {}, onPageChange: (_page: number) => {}, onEscape: () => {},
+};
+
+const userNarrowingState = (over: Record<string, unknown> = {}): AssignPlanWizardViewProps['userNarrowing'] =>
+  ({ ...narrowingStub, ...over }) as unknown as AssignPlanWizardViewProps['userNarrowing'];
+const planNarrowingState = (over: Record<string, unknown> = {}): AssignPlanWizardViewProps['planNarrowing'] =>
+  ({ ...narrowingStub, ...over }) as unknown as AssignPlanWizardViewProps['planNarrowing'];
 
 const baseUserPicker = {
   rows: [
@@ -153,6 +163,8 @@ const base: Partial<AssignPlanWizardViewProps> = {
   step: 1, listSearch: '', listPage: 1,
   selectedUser: null, selectedPlan: null, selectedOptionId: '',
   userPicker: baseUserPicker, planPicker: basePlanPicker,
+  userNarrowing: userNarrowingState() as unknown as AssignPlanWizardViewProps['userNarrowing'],
+  planNarrowing: planNarrowingState() as unknown as AssignPlanWizardViewProps['planNarrowing'],
   effectiveAt: '', onEffectiveAtChange: () => {},
   navigate: () => {}, navigateSearch: () => {},
   assignDispatch: () => {}, assignResult: undefined,
@@ -216,14 +228,15 @@ test('clicking a keeper navigates with the selection and keeps the picker view',
 
 test('keeper search resets to page 1 and pagination preserves the search', () => {
   const { navSearch, nav, tree } = render();
-  // The picker's search input is the live search; its explicit fallback (Enter
-  // with no suggestion highlighted) is the URL-param search — typed text and
-  // a reset to page 1.
+  // The picker's search input is the narrowing input; its explicit fallback
+  // (Enter) is the URL-param search — typed text and a reset to page 1.
   assert.ok(live(), 'keeper search missing');
-  (live()!.onFallbackSubmit as (text: string) => void)('ma');
+  (live()!.onEnter as (text: string) => void)('ma');
   // Dropping upage returns the picker to page 1.
   assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=ma']);
-  const pager = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  const pager = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2,
+    total: 45, rows: Array.from({ length: 20 }, (_, index) =>
+      ({ id: `u-${index + 1}`, title: `Keeper ${index + 1}` })) } });
   (pager.byLabel('Next page')!.props.onClick as () => void)();
   assert.deepEqual(pager.nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=3']);
   void nav;
@@ -278,7 +291,7 @@ test('picking a plan clears a stale option and resets the plan search to page 1'
   assert.equal(href.includes('option='), false, 'stale option must be cleared');
   const { navSearch } = render({ step: 2, selectedUser });
   assert.ok(live(), 'plan search missing');
-  (live()!.onFallbackSubmit as (text: string) => void)('pro');
+  (live()!.onEnter as (text: string) => void)('pro');
   assert.deepEqual(navSearch,
     ['/admin/subscriptions?wizard=open&step=2&user=u-1&psearch=pro']);
 });
@@ -405,68 +418,78 @@ test('the step chips mark the current step', () => {
   assert.match(textOf(tree), /2 · Plan/);
 });
 
-// --- Task 7: live search in the pickers ---
+// --- Task 8 fix round 1: headless narrowing in the pickers ---
 
-type LiveProps = Record<string, unknown> & {
-  mode?: string; source?: string; value?: string; toolbarEnd?: unknown;
-  onFallbackSubmit?: (text: string) => void;
-  renderSuggestions?: (suggestions: unknown[], query: string, loading: boolean) => unknown;
+type InputProps = Record<string, unknown> & {
+  id?: string; value?: string; placeholder?: string;
+  onEnter?: (text: string) => void;
 };
 
-const live = (): LiveProps => lastLiveSearch.at(-1) as LiveProps;
+const live = (): InputProps => lastLiveSearch.at(-1) as InputProps;
 
-test('step 1 search is a headless live search wired to the users endpoint', () => {
+test('step 1 search is a plain narrowing input wired to the users endpoint', () => {
   render(base);
   const props = live();
   assert.ok(props, 'live search missing');
-  assert.equal(props.mode, 'headless');
-  assert.equal(props.source, 'endpoint:users');
+  assert.equal(props.id, 'wizard-user-search');
   assert.equal(props.value, '');
-  assert.equal(props.onFallbackSubmit !== undefined, true);
+  assert.equal(props.onEnter !== undefined, true,
+    'Enter is the explicit full-page fallback');
 });
 
-test('typing live-renders matched keepers in place; picking is the click-based selection', () => {
-  const { nav, navSearch } = render(base);
-  const props = live();
-  // While loading, the base list stays put — no flash of "no matches".
-  const loadingArea = props.renderSuggestions!([], 'nova', true) as unknown;
-  assert.equal(elements(loadingArea).some((item) =>
-    item.props['aria-label'] === 'Select Nova Keeper'), false);
-  // Results land: matched keepers render as clickable rows in place.
-  const area = props.renderSuggestions!(
-    [{ id: 'u-9', title: 'Nova Keeper', subtitle: 'nova@example.com' }], 'nova', false) as unknown;
-  const rows = elements(area).filter((item) => item.props['aria-label'] === 'Select Nova Keeper');
-  assert.equal(rows.length, 1);
+test('typing live-renders matched keepers in place with a truthful live count', () => {
+  const { nav, navSearch, tree } = render(base);
+  // Idle: the committed picker page renders with the committed total.
+  assert.match(textOf(tree), /2 keepers/);
+  assert.match(textOf(tree), /Marta Keeper/);
+  // Narrowed matches land: they replace the committed page in place.
+  const live = render({ ...base, userNarrowing: userNarrowingState({
+    narrowed: true, active: true, query: 'nova',
+    rows: [{ id: 'u-9', title: 'Nova Keeper', subtitle: 'nova@example.com' }],
+    total: 1, page: 1, loading: false }) });
+  const rows = elements(live.tree).filter((item) =>
+    item.props['aria-label'] === 'Select Nova Keeper');
+  assert.equal(rows.length, 1, 'matched keepers render as clickable rows in place');
   assert.equal(String(rows[0].props.className).includes('hover:bg-[var(--hover)]'), true);
+  const chip = elements(live.tree).find((item) => item.props['data-testid'] === 'picker-count');
+  assert.equal(textOf(chip!), '1 keeper', 'the counter reflects the live match count');
+  assert.match(textOf(live.tree), /Nova Keeper/, 'matches render in place');
   (rows[0].props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&user=u-9'],
+  assert.deepEqual(live.nav, ['/admin/subscriptions?wizard=open&step=1&user=u-9'],
     'picking selects the keeper (click-based), nothing else navigates');
   assert.deepEqual(navSearch, [], 'browsing never navigates');
+  void nav;
 });
 
-test('Enter with no highlighted suggestion falls back to the URL-param search (debounced)', () => {
+test('a narrowed set with no matches echoes the query', () => {
+  const { tree } = render({ ...base, userNarrowing: userNarrowingState({
+    narrowed: true, active: true, query: 'zzz', rows: [], total: 0 }) });
+  assert.match(textOf(tree), /Nothing matches “\s*zzz\s*”\./);
+});
+
+test('Enter falls back to the URL-param search (debounced); plain typing never navigates', () => {
   const { navSearch, nav } = render(base);
   const props = live();
-  (props.onFallbackSubmit as (text: string) => void)('nova');
+  (props.onEnter as (text: string) => void)('nova');
   assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=nova']);
   assert.deepEqual(nav, [], 'fallback only, never a pick');
 });
 
 test('the picker toolbar carries the gold count chip beside the search input', () => {
   render(base);
-  const chip = live().toolbarEnd as Element | undefined;
+  const chip = elements(render().tree).find((item) => item.props['data-testid'] === 'picker-count');
   assert.ok(chip, 'toolbar counter chip missing');
   assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
-  assert.equal(textOf(chip), '2 keepers', 'the chip shows the matched-set total');
+  assert.equal(textOf(chip), '2 keepers', 'the chip shows the committed total when idle');
 });
 
-test('step 2 plan search uses the assignable-plans endpoint and picking selects the plan', () => {
-  const { nav } = render({ ...base, step: 2 });
-  const props = live();
-  assert.equal(props.source, 'endpoint:assignable-plans');
-  const area = props.renderSuggestions!([{ id: 'p-9', title: 'Pro', subtitle: 'STANDARD' }],
-    'pro', false) as unknown;
-  const row = elements(area).find((item) => item.props['aria-label'] === 'Select Pro');
+test('step 2 plan search narrows in place and picking selects the plan', () => {
+  const { nav, tree } = render({ ...base, step: 2, planNarrowing: planNarrowingState({
+    narrowed: true, active: true, query: 'pro',
+    rows: [{ id: 'p-9', title: 'Pro', subtitle: 'STANDARD' }], total: 3, page: 1 }) });
+  const chip = elements(tree).find((item) => item.props['data-testid'] === 'picker-count');
+  assert.equal(textOf(chip!), '3 plans', 'the plan counter is truthful during narrowing');
+  const row = elements(tree).find((item) => item.props['aria-label'] === 'Select Pro');
   assert.ok(row, 'matched plan row missing');
   (row.props.onClick as () => void)();
   assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&plan=p-9']);
