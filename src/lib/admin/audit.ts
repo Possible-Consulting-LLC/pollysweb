@@ -8,7 +8,8 @@ const safeFields = new Set(['role', 'previousRole', 'suspended', 'isDemo', 'demo
   'fieldsChanged', 'status', 'previousStatus', 'provider', 'operationId', 'deletedCount', 'cutoff',
   'spiderCount', 'photoCount', 'eventCount', 'subscriptionPresent', 'announcementEnabled',
   'maintenanceDeadline', 'version', 'result', 'method', 'phase', 'testSessionId',
-  'featureKey', 'name', 'category', 'active', 'previousActive']);
+  'featureKey', 'name', 'category', 'active', 'previousActive',
+  'planName', 'planType', 'public', 'previousPublic', 'maxSpiders', 'basePriceCents', 'billingInterval', 'subscriptionCount']);
 function safeText(value: string, max: number) {
   return value.length <= max && !/[\u0000-\u001f\u007f@]/.test(value) &&
     !/(?:bearer\s|password\s*[:=]|secret\s*[:=]|token\s*[:=]|\$2[aby]\$|eyJ[A-Za-z0-9_-]+\.)/i.test(value);

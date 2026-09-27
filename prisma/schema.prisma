@@ -457,3 +457,44 @@ model Feature {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// Super-admin plan catalog. Identity is the id: names are display labels and
+// may repeat across custom or internal plans. Billing options are edited per
+// plan; one ACTIVE option per (planId, interval) is enforced at the service
+// layer (src/lib/admin/plans.ts), not by a partial unique index.
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  /// STANDARD | CUSTOM | INTERNAL (validated at the service layer).
+  planType    String
+  /// Maximum spoods allowed on the plan; null means unlimited.
+  maxSpiders  Int?
+  active      Boolean  @default(false)
+  public      Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  billingOptions PlanBillingOption[]
+
+  @@index([sortOrder, name])
+}
+
+// One row per plan and billing interval; at most one active row per interval.
+model PlanBillingOption {
+  id             String  @id @default(cuid())
+  planId         String
+  /// MONTHLY | ANNUAL (validated at the service layer).
+  interval       String
+  basePriceCents Int
+  active         Boolean @default(true)
+  sortOrder      Int     @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, interval])
+  @@index([planId, active])
+}

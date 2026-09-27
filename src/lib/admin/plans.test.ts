@@ -1,0 +1,282 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
+import * as maintenancePolicy from './maintenance-policy';
+import type * as actions from '../../app/admin/plans/actions';
+import type * as plans from './plans';
+
+type PlanRow = { id: string; name: string; description: string; planType: string;
+  maxSpiders: number | null; active: boolean; public: boolean; sortOrder: number;
+  createdAt: Date; updatedAt: Date };
+type OptionRow = { id: string; planId: string; interval: string; basePriceCents: number;
+  active: boolean; sortOrder: number; createdAt: Date; updatedAt: Date };
+
+function load(relativePath: string, deps: Record<string, unknown>): Record<string, unknown> {
+  const exports: Record<string, unknown> = {};
+  const code = ts.transpileModule(readFileSync(new URL(relativePath, import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  runInNewContext(code, { exports, require: (name: string) => {
+    assert.ok(name in deps, name); return deps[name];
+  } });
+  return exports;
+}
+
+/** Results returned from the sandbox live in another realm; JSON copies keep strict comparisons local. */
+const jsonOf = (value: unknown) => JSON.parse(JSON.stringify(value));
+/** Error instances from the vm sandbox live in another realm; tag check works cross-realm. */
+const isFailure = (value: unknown) => Object.prototype.toString.call(value) === '[object Error]';
+
+const PLAN: PlanRow = { id: 'plan-1', name: 'Standard', description: 'Baseline spood plan',
+  planType: 'STANDARD', maxSpiders: 3, active: true, public: true, sortOrder: 0,
+  createdAt: new Date(0), updatedAt: new Date(0) };
+const MONTHLY: OptionRow = { id: 'opt-1', planId: 'plan-1', interval: 'MONTHLY', basePriceCents: 900,
+  active: true, sortOrder: 0, createdAt: new Date(0), updatedAt: new Date(0) };
+
+function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]) {
+  type ActorFixture = { id: string; role: 'admin' | 'super_admin'; owner: boolean; suspended: boolean;
+    credentialVersion: string; reauthenticatedAt: number };
+  const actor: ActorFixture = { id: 'owner-1', role, owner: role === 'super_admin', suspended: false,
+    credentialVersion: 'credential', reauthenticatedAt: Date.now() } as ActorFixture;
+  const planStore = new Map<string, PlanRow>([[PLAN.id, { ...PLAN }]]);
+  const optionStore = new Map<string, OptionRow>(options.map(option => [option.id, { ...option }]));
+  const audits: Array<{ action: string; targetId: string | null; reason: string;
+    changes: Record<string, unknown> }> = [];
+  const revalidated: string[] = [];
+  const mutations: string[] = [];
+  let nextId = 100;
+  const snapshot = (row: PlanRow) => ({ ...row, billingOptions: [...optionStore.values()]
+    .filter(option => option.planId === row.id).map(option => ({ ...option })) });
+  const matches = (where: Record<string, unknown>, row: OptionRow) =>
+    (where.planId === undefined || where.planId === row.planId) &&
+    (where.interval === undefined || where.interval === row.interval) &&
+    (where.active === undefined || where.active === row.active);
+  const tx = {
+    plan: {
+      findUnique: async ({ where: { id } }: { where: { id: string } }) =>
+        planStore.has(id) ? snapshot(planStore.get(id)!) : null,
+      findMany: async () => [...planStore.values()].map(snapshot),
+      create: async ({ data }: { data: Omit<PlanRow, 'id'> }) => {
+        const row: PlanRow = { ...data, id: `plan-${nextId++}` };
+        planStore.set(row.id, row); return snapshot(row);
+      },
+      update: async ({ where: { id }, data }: { where: { id: string }; data: Partial<PlanRow> }) => {
+        const row = planStore.get(id);
+        if (!row) throw new Error('Row not found.');
+        Object.assign(row, data); return snapshot(row);
+      },
+      delete: async ({ where: { id } }: { where: { id: string } }) => {
+        const row = planStore.get(id);
+        if (!row) throw new Error('Row not found.');
+        planStore.delete(id);
+        for (const [key, option] of [...optionStore.entries()]) if (option.planId === id) optionStore.delete(key);
+        return snapshot(row);
+      },
+      aggregate: async () => ({ _max: { sortOrder: Math.max(-1,
+        ...[...planStore.values()].map(row => row.sortOrder)) } }),
+    },
+    planBillingOption: {
+      findMany: async ({ where = {} }: { where?: Record<string, unknown> } = {}) =>
+        [...optionStore.values()].filter(option => matches(where, option)).map(option => ({ ...option })),
+      create: async ({ data }: { data: Omit<OptionRow, 'id' | 'createdAt' | 'updatedAt'> }) => {
+        const row: OptionRow = { ...data, id: `opt-${nextId++}`, createdAt: new Date(0), updatedAt: new Date(0) };
+        optionStore.set(row.id, row); return { ...row };
+      },
+      update: async ({ where: { id }, data }: { where: { id: string }; data: Partial<OptionRow> }) => {
+        const row = optionStore.get(id);
+        if (!row) throw new Error('Row not found.');
+        Object.assign(row, data); return { ...row };
+      },
+    },
+    adminAudit: {
+      create: async ({ data }: { data: { action: string; targetId: string | null; reason: string;
+        changes: Record<string, unknown> } }) => {
+        audits.push({ action: data.action, targetId: data.targetId, reason: data.reason,
+          changes: JSON.parse(JSON.stringify(data.changes)) });
+        return data;
+      },
+    },
+  };
+  const audit = load('./audit.ts', { 'server-only': {} });
+  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
+  const api = load('../../app/admin/plans/actions.ts', {
+    'next/cache': { revalidatePath: (path: string) => revalidated.push(path) },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, kind: unknown, action: string, work: () => Promise<unknown>) => {
+      mutations.push(`${String(kind)}:${action}`); return work();
+    } },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: ActorFixture) => Promise<unknown>) => {
+      if (role !== 'super_admin') throw new Error('Administrator access denied.');
+      return work(tx, actor);
+    } },
+    '@/lib/admin/audit': audit,
+    '@/lib/admin/plans': plansModule,
+  }) as typeof actions;
+  return { api, plans: plansModule, tx: tx as never, planStore, optionStore, audits, revalidated, mutations };
+}
+
+test('validatePlanInput accepts a valid plan with null meaning unlimited spoods', () => {
+  const f = fixture('super_admin');
+  const accepted = f.plans.validatePlanInput({ name: 'Standard', description: 'Baseline spood plan',
+    planType: 'STANDARD', maxSpiders: null, active: true, public: true });
+  assert.ok(!isFailure(accepted));
+  const limited = f.plans.validatePlanInput({ name: 'Standard', description: 'Baseline spood plan',
+    planType: 'CUSTOM', maxSpiders: 12, active: false, public: false });
+  assert.ok(!isFailure(limited));
+});
+
+test('validatePlanInput rejects empty or oversized names, bad plan types, and invalid maxSpiders', () => {
+  const f = fixture('super_admin');
+  const base = { description: 'Baseline spood plan', planType: 'STANDARD', maxSpiders: null,
+    active: true, public: true };
+  for (const name of ['', ' '.repeat(4), 'x'.repeat(81), 'Contact @support']) {
+    const result = f.plans.validatePlanInput({ ...base, name });
+    assert.ok(isFailure(result), JSON.stringify(name));
+  }
+  for (const planType of ['premium', '', 'STANDARD ']) {
+    const result = f.plans.validatePlanInput({ ...base, name: 'Standard', planType });
+    assert.ok(isFailure(result), planType);
+  }
+  for (const maxSpiders of [0, -1, 1.5, Number.NaN]) {
+    const result = f.plans.validatePlanInput({ ...base, name: 'Standard', maxSpiders });
+    assert.ok(isFailure(result), String(maxSpiders));
+  }
+});
+
+test('validateBillingOptionInput rejects negative or fractional cents and unknown intervals', () => {
+  const f = fixture('super_admin');
+  assert.ok(!isFailure(f.plans.validateBillingOptionInput({ interval: 'MONTHLY', basePriceCents: 900, active: true })));
+  for (const input of [{ interval: 'WEEKLY', basePriceCents: 900, active: true },
+    { interval: 'MONTHLY', basePriceCents: -1, active: true },
+    { interval: 'MONTHLY', basePriceCents: 10.5, active: true },
+    { interval: 'MONTHLY', basePriceCents: 900, active: 'yes' }]) {
+    assert.ok(isFailure(f.plans.validateBillingOptionInput(input as never)), JSON.stringify(input));
+  }
+});
+
+test('a second active option of an existing interval is rejected; deactivating first is allowed', () => {
+  const f = fixture('super_admin');
+  const blocked = f.plans.validateBillingOptionInput({ interval: 'MONTHLY', basePriceCents: 1200, active: true },
+    { activeIntervals: ['MONTHLY'] });
+  assert.ok(isFailure(blocked));
+  const reactivated = f.plans.validateBillingOptionInput({ interval: 'MONTHLY', basePriceCents: 1200, active: true },
+    { activeIntervals: ['ANNUAL'] });
+  assert.ok(!isFailure(reactivated));
+  const inactive = f.plans.validateBillingOptionInput({ interval: 'MONTHLY', basePriceCents: 1200, active: false },
+    { activeIntervals: ['MONTHLY'] });
+  assert.ok(!isFailure(inactive));
+});
+
+test('duplicatePlan copies identity and billing options as an inactive private copy and audits', async () => {
+  const f = fixture('super_admin');
+  const newId = await f.plans.duplicatePlan(f.tx, 'owner-1', PLAN.id, 'Create a variant plan');
+  assert.equal(typeof newId, 'string');
+  const copy = f.planStore.get(newId as string)!;
+  assert.equal(copy.name, 'Standard (copy)');
+  assert.equal(copy.active, false);
+  assert.equal(copy.public, false);
+  assert.equal(copy.planType, 'STANDARD');
+  const copiedOptions = [...f.optionStore.values()].filter(option => option.planId === newId);
+  assert.equal(copiedOptions.length, 1);
+  assert.equal(copiedOptions[0].interval, 'MONTHLY');
+  assert.equal(copiedOptions[0].basePriceCents, 900);
+  assert.deepEqual(f.audits, [{ action: 'plan.duplicate', targetId: newId, reason: 'Create a variant plan',
+    changes: { planName: 'Standard (copy)' } }]);
+});
+
+test('deleteActionFor deletes with no history and only deactivates with history', () => {
+  const f = fixture('super_admin');
+  assert.equal(f.plans.deleteActionFor(0), 'deleted');
+  assert.equal(f.plans.deleteActionFor(1), 'deactivated');
+  assert.equal(f.plans.deleteActionFor(42), 'deactivated');
+  assert.throws(() => f.plans.deleteActionFor(-1));
+  assert.throws(() => f.plans.deleteActionFor(1.5));
+});
+
+test('planHistoryCount returns zero until subscriptions exist', async () => {
+  const f = fixture('super_admin');
+  assert.equal(await f.plans.planHistoryCount(f.tx, PLAN.id), 0);
+});
+
+test('deletePlan with history deactivates without deleting rows and audits plan.delete', async () => {
+  const f = fixture('super_admin');
+  const result = await f.plans.deletePlanWithHistory(f.tx, 'owner-1', PLAN.id, 'Retire the plan', 4);
+  assert.equal(result, 'deactivated');
+  assert.equal(f.planStore.get(PLAN.id)!.active, false);
+  assert.deepEqual(f.audits, [{ action: 'plan.delete', targetId: PLAN.id, reason: 'Retire the plan',
+    changes: { planName: 'Standard', result: 'deactivated' } }]);
+});
+
+test('deletePlan with zero history deletes the plan and its options and audits plan.delete', async () => {
+  const f = fixture('super_admin', []);
+  const result = await f.plans.deletePlan(f.tx, 'owner-1', PLAN.id, 'Remove the draft plan');
+  assert.equal(result, 'deleted');
+  assert.equal(f.planStore.size, 0);
+  assert.deepEqual(f.audits, [{ action: 'plan.delete', targetId: PLAN.id, reason: 'Remove the draft plan',
+    changes: { planName: 'Standard', result: 'deleted' } }]);
+});
+
+test('listPlans includes billing option counts and zeroed feature and subscription counts', async () => {
+  const f = fixture('super_admin');
+  const summaries = jsonOf(await f.plans.listPlans(f.tx));
+  assert.equal(summaries.length, 1);
+  const summary = summaries[0];
+  assert.equal(summary.name, 'Standard');
+  assert.equal(summary.billingOptionCount, 1);
+  assert.equal(summary.enabledFeatureCount, 0);
+  assert.equal(summary.subscriptionCount, 0);
+  assert.deepEqual(summary.billingOptions, [{ interval: 'MONTHLY', basePriceCents: 900, active: true }]);
+});
+
+test('non-super-admin plan mutations are denied without writes, audits, or revalidation', async () => {
+  const f = fixture('admin');
+  const form = new FormData();
+  form.set('name', 'Sneaky'); form.set('description', 'Nope'); form.set('planType', 'STANDARD');
+  form.set('maxSpiders', ''); form.set('active', 'true'); form.set('public', 'true');
+  form.set('reason', 'Attempted creation');
+  assert.ok((await f.api.createPlanAction(form)).error);
+  assert.deepEqual(f.mutations.sort(), ['admin:createplan']);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.revalidated.length, 0);
+  assert.equal(f.planStore.size, 1);
+});
+
+test('a super administrator creates a plan through the mutation boundary and audits plan.create', async () => {
+  const f = fixture('super_admin');
+  const form = new FormData();
+  form.set('name', 'Deluxe'); form.set('description', 'More spoods'); form.set('planType', 'CUSTOM');
+  form.set('maxSpiders', '10'); form.set('active', 'true'); form.set('public', 'true');
+  form.set('reason', 'Launch the deluxe tier');
+  assert.deepEqual(jsonOf(await f.api.createPlanAction(form)), { success: true });
+  assert.deepEqual(f.mutations, ['admin:createplan']);
+  assert.deepEqual(f.revalidated, ['/admin/plans']);
+  assert.equal(f.audits.length, 1);
+  assert.equal(f.audits[0].action, 'plan.create');
+  assert.equal(f.audits[0].changes.planName, 'Deluxe');
+  assert.equal([...f.planStore.values()].filter(row => row.name === 'Deluxe').length, 1);
+});
+
+test('a public-visibility change audits public and previousPublic without leaking description text', async () => {
+  const f = fixture('super_admin');
+  const form = new FormData();
+  form.set('planId', PLAN.id); form.set('name', PLAN.name); form.set('description', PLAN.description);
+  form.set('planType', 'STANDARD'); form.set('maxSpiders', '3'); form.set('active', 'true');
+  form.set('public', 'false'); form.set('reason', 'Hide the plan from pricing');
+  assert.deepEqual(jsonOf(await f.api.updatePlanAction(form)), { success: true });
+  assert.equal(f.audits.length, 1);
+  assert.equal(f.audits[0].action, 'plan.update');
+  assert.equal(f.audits[0].changes.public, false);
+  assert.equal(f.audits[0].changes.previousPublic, true);
+  assert.ok(!JSON.stringify(f.audits).includes('Baseline spood plan'));
+});
+
+test('a second active billing option for an existing interval fails closed through the action', async () => {
+  const f = fixture('super_admin');
+  const form = new FormData();
+  form.set('planId', PLAN.id); form.set('interval', 'MONTHLY'); form.set('basePriceCents', '1200');
+  form.set('active', 'true'); form.set('reason', 'Second monthly price');
+  assert.ok((await f.api.saveBillingOptionAction(form)).error);
+  assert.equal(f.audits.length, 0);
+  assert.equal([...f.optionStore.values()].filter(option => option.planId === PLAN.id && option.interval === 'MONTHLY').length, 1);
+});
