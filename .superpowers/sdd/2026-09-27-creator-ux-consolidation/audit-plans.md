@@ -1,0 +1,41 @@
+# Audit — Plans page vs mockup
+
+Surface: `src/app/admin/plans/page.tsx` + `src/components/admin/plans-accordion.tsx`
+Mockup: `.superpowers/sdd/2026-09-26-plan-creator/plans-page-mockup.html`
+Shared components consulted: `src/components/admin/live-search.tsx`, `src/components/admin/selection-tray.tsx`, `src/components/admin/list-shared.ts`.
+
+| Verdict | Interaction / visual | Mockup evidence | Shipped evidence | Note |
+|---|---|---|---|---|
+| DIVERGES | Typing in search must narrow the RENDERED LIST in real time | HTML:142-146,255 — `input` event filters `PLANS` and re-renders the list immediately; hint line 117 "Search filters by name and resets to page 1" | plans-accordion.tsx:103-107 — `LiveSearch mode="popup"`; typing only opens a suggestion popup (live-search.tsx:57,173-211), the rendered rows do not react; rendered list only changes on Enter fallback → plans-accordion.tsx:197 (`router.push`), page.tsx:21-25 | RULING VIOLATED: no real-time narrowing of the rendered list; server query spans all rows (page.tsx:21-22) but is only reachable via Enter |
+| DIVERGES | No suggestion dropdown anywhere | Absent from mockup — search input (HTML:93) has no popup; typing filters rows directly | live-search.tsx:173-211 — absolute-positioned `ul[role=listbox]` dropdown rendered under the input while typing; wired via plans-accordion.tsx:103 `mode="popup"` | RULING VIOLATED: a suggestion dropdown/popup exists |
+| MIRROR | Gold counter chip in toolbar, right of search | HTML:30,94 — gold pill, `flex-shrink:0`, beside `.search` | plans-accordion.tsx:108-112 + list-shared.ts:16-17 (`counterChipClass`: gold bg, panel text, rounded-full) | Same anatomy/token colors |
+| MIRROR | Counter parity: "N of M selected" / "N plans (match)" | HTML:234-236 — selected count over filtered total; "match" suffix when searching | plans-accordion.tsx:109-111 — same two states, "matching the search" wording | Wording variant, semantics identical |
+| MIRROR | Tray hidden entirely when nothing selected | HTML:237 — `tray.hidden = selected.size === 0` | selection-tray.tsx:26 — `return null` when empty | |
+| RATIFIED | Tray collapse toggle, plum ▾/▸ "Selected (N)" | HTML:59,98,242 — plum text toggle, count in label | selection-tray.tsx:30-33 — plum bold button, same label shape | Ratified: plum collapse toggle |
+| RATIFIED | Tray chips gold-highlighted | Mockup chips are plum-tinted (HTML:61); gold highlight ratified for shipped | selection-tray.tsx:43 — gold border chip; :49 gold × | Ratified: gold-highlighted chips |
+| MIRROR | Tray chips show item display title, never a raw id | HTML:243-249 — chips render `pl.name`, the display title | selection-tray.tsx:42-45 renders `item.title`; plans-accordion.tsx:185,192 stores `plan.name` as the title (id only in `data-tray-chip`/hidden inputs) | Ruling satisfied |
+| MIRROR | Chip × deselects that item | HTML:256-261 — click `[data-x]` removes from selection | selection-tray.tsx:47-49 — × button calls `onDeselect(item.id)` → plans-accordion.tsx:189-194 | |
+| MIRROR | Tray hosts bulk actions Activate / Publish / Deactivate / Unpublish | HTML:100-103 — four soft btn-sm actions in tray head | plans-accordion.tsx:114-130 — same four labels via `bulkSetPlanFlagsAction` (active/public × true/false), `variant="soft" size="sm"` | Order differs (Activate, Deactivate, Publish, Unpublish vs mockup Activate, Publish, Deactivate, Unpublish) — cosmetic |
+| MIRROR | Tray sits between toolbar and list | HTML:96-107 | plans-accordion.tsx:114 (after toolbar, before row map) | |
+| MIRROR | Row anatomy: checkbox + chevron + name/description + right-aligned badges + meta | HTML:199-214 | plans-accordion.tsx:140-167 — checkbox, ChevronDown, name+desc, badge column, meta span | |
+| DIVERGES | Row meta includes prices | HTML:212 — meta line 1 is `spoods · ${p.prices}` (e.g. "$1.99/mo · $19.99/yr") | plans-accordion.tsx:163-167 — meta shows spoods · features · subscribers · updated; prices appear only inside the open detail card | Prices data visible in mockup row meta is missing from shipped row meta |
+| MIRROR | Badges: type tint pill + Active/Inactive + Public/Private on/off pills | HTML:38-40,207-209 — lavender type pill, plum-tinted on pill, dashed off pill | plans-accordion.tsx:153-160 + list-shared.ts:19-25 — identical token anatomy | Shipped puts Active/Public inline in one row under the type badge; mockup stacks all three (HTML:36) — cosmetic |
+| MIRROR | Accordion: one open at a time, click row toggles, chevron flips | HTML:221 (`state.open = isOpen ? null : p.name`), :187 (open reset when filtered away), :201 chevron ▾/▸ | plans-accordion.tsx:133 (`isOpen = plan.id === openId`), :144-147 (Link toggles `open` param, ChevronDown rotate-180); single `openId` at page.tsx:19 | URL-state implementation of the same single-open rule |
+| MIRROR | Checkbox click does not toggle the accordion row | HTML:216-219 — checkbox branch returns before open toggle | plans-accordion.tsx:140-141 — checkbox `onChange` outside the row Link | |
+| MIRROR | Detail cards: Identity / Billing options / Usage, kv grid, plum card headings | HTML:148-181, 70-74 — three `.dcard` blocks, kv grid, plum `h3` | plans-accordion.tsx:43-90 — three `DetailCard`s with plum headings and `grid-cols-[minmax(110px,130px)_1fr]` kv (HTML:72 is 150px fixed) | Identity rows match 1:1 incl. "appears on public pricing (future phase)" copy; Billing card renders one row per interval (plans-accordion.tsx:64-67) vs mockup's "Prices" summary + "Options" string (HTML:164-165) — same data, different shape |
+| MIRROR | Detail actions: Duplicate (soft) + Edit plan (primary) | HTML:177-178 | plans-accordion.tsx:74-78 — primary "Edit plan" Link, secondary "Duplicate" MutationForm | |
+| DIVERGES | Extra detail actions beyond mockup: "Delete or deactivate" (danger) + "Move up/down" (ghost) | Absent from mockup (HTML:176-179 has only Duplicate + Edit) | plans-accordion.tsx:79-87 — `deletePlanAction`, `reorderPlanAction` buttons in the detail row | Additions, not conflicts — but mockup is source of truth for visuals; unratified additions |
+| DIVERGES | "＋ New plan" primary button in the head row, right of the "Plans" title | HTML:88-91 — `#newBtn` primary btn-sm inside `.head` next to `<h2>Plans</h2>` | page.tsx:32 — full-size primary "Create a plan" link below the header paragraph | Label, size, and placement all differ |
+| MIRROR | Pagination: ‹ Prev / Next › soft buttons, disabled at bounds, "1 / 2" info | HTML:110-114,250-252 | page.tsx:40-48 — Previous/Next links with disabled Buttons at bounds, "Page {page} of {lastPage}" | Wording variant ("Page 1 of 2" vs "1 / 2"); mockup pager sits in a bordered footer, shipped uses `border-t` nav (page.tsx:40) |
+| DIVERGES | "Sorted by display order" footer note | HTML:115 — right side of footer | Absent from page.tsx:40-48 and plans-accordion.tsx | |
+| MIRROR | Search resets to page 1 | HTML:255 — `state.page = 1` on input | plans-accordion.tsx:197 — `router.push(listHref(search, 1))` | Fires on the Enter fallback (the only navigation path) |
+| MIRROR | Selections persist across pages and searches, never pruned | HTML:188 — "selections persist across pages/search — never pruned" | plans-accordion.tsx:31-33,100,185-194 — `selectedItems` is the full id→title map; selection Map only mutated by toggles | |
+| MIRROR | Empty state when search matches nothing | HTML:192 — "No plans match “{search}”." | page.tsx:37-39 — "No plans match this search." plus a no-plans-yet variant | Wording variant; shipped adds the zero-catalog case |
+| DIVERGES | Last-updated format is human-relative in rows and details | HTML:124-136,173,213 — "2h ago", "Sep 12" | plans-accordion.tsx:71,166 — `updatedAt.toISOString().slice(0, 10)` → "2026-09-27" | ISO date vs relative/short date |
+| MIRROR | Theme-token colors throughout (cream/plum/lavender/gold/hover/card) | HTML:8-11 tokens; rows/badges/tray/cards all token-driven | plans-accordion.tsx:44-46,135-141,146-166; selection-tray.tsx:28-49; list-shared.ts:16-25 — all `var(--…)` tokens | --rose danger usage (delete button, plans-accordion.tsx:81) is RATIFIED |
+
+## Counts
+
+- **MIRROR: 16**
+- **DIVERGES: 7**
+- **RATIFIED: 2** (plum tray toggle; gold-highlighted tray chips)
