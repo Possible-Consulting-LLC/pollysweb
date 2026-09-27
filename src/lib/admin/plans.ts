@@ -27,9 +27,10 @@ export function validatePlanInput(input: { name: string; description: string; pl
   const name = input.name.trim();
   if (!name || name.length > 80 || unsafeText.test(name))
     return new Error('Enter a plan name of 1–80 characters without @ or control characters.');
+  // Descriptions are optional: blank input is stored as an empty string.
   const description = input.description.trim();
-  if (!description || description.length > 500 || unsafeText.test(description))
-    return new Error('Enter a description of 1–500 characters without @ or control characters.');
+  if (description.length > 500 || unsafeText.test(description))
+    return new Error('Enter a description of at most 500 characters without @ or control characters.');
   if (!PLAN_TYPES.includes(input.planType as PlanType))
     return new Error('Choose a plan type: standard, custom, or internal.');
   // Only null (unlimited) or a positive integer spood allowance is accepted.
@@ -228,16 +229,28 @@ export async function reorderPlan(tx: PlansDb, actorId: string, planId: string,
   return 'moved';
 }
 
-/** Billing-option, enabled-feature, and subscription counts (real queries). */
-export async function listPlans(tx: PlansDb): Promise<PlanSummary[]> {
-  const rows = await tx.plan.findMany({ include: { billingOptions: true, featureTranslations: true },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+/** Billing-option, enabled-feature, and subscription counts (real queries),
+ * filtered server-side by a case-insensitive name search and paged by offset. */
+export type ListPlansQuery = { search?: string; page: number; pageSize: number };
+export async function listPlans(tx: PlansDb, query: ListPlansQuery):
+  Promise<{ plans: PlanSummary[]; total: number }> {
+  const page = Math.max(1, Math.trunc(query.page) || 1);
+  const pageSize = Math.max(1, Math.trunc(query.pageSize) || 1);
+  const search = (query.search ?? '').trim();
+  const where: Prisma.PlanWhereInput = search
+    ? { name: { contains: search, mode: 'insensitive' } } : {};
+  const [rows, total] = await Promise.all([
+    tx.plan.findMany({ where, include: { billingOptions: true, featureTranslations: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      skip: (page - 1) * pageSize, take: pageSize }),
+    tx.plan.count({ where }),
+  ]);
   const effectiveSubscriptions = await tx.userSubscription.findMany({
     where: effectiveSubscriptionWhere(), select: { planId: true } });
   const subscriptionCounts = new Map<string, number>();
   for (const row of effectiveSubscriptions)
     subscriptionCounts.set(row.planId, (subscriptionCounts.get(row.planId) ?? 0) + 1);
-  return rows.map(row => ({
+  return { total, plans: rows.map(row => ({
     id: row.id, name: row.name, description: row.description,
     planType: row.planType as PlanType, maxSpiders: row.maxSpiders,
     active: row.active, public: row.public, sortOrder: row.sortOrder, updatedAt: row.updatedAt,
@@ -247,5 +260,5 @@ export async function listPlans(tx: PlansDb): Promise<PlanSummary[]> {
     billingOptions: row.billingOptions.map(option => ({ id: option.id,
       interval: option.interval as BillingInterval,
       basePriceCents: option.basePriceCents, active: option.active })),
-  }));
+  })) };
 }

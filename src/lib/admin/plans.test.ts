@@ -77,12 +77,34 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     (row.expiresAt === null || row.expiresAt.getTime() > Date.now());
   const subscriptionWhere = (where: Record<string, unknown>, row: SubscriptionRow) =>
     (where.planId === undefined || where.planId === row.planId) && effective(row);
+  const planQueries: Array<Record<string, unknown>> = [];
   const tx = {
     plan: {
       findUnique: async (args: { where: { id: string }; include?: Record<string, unknown> }) =>
         planStore.has(args.where.id) ? snapshot(planStore.get(args.where.id)!, args) : null,
-      findMany: async (args?: { include?: Record<string, unknown> }) =>
-        [...planStore.values()].map(row => snapshot(row, args)),
+      // Mirrors listPlans usage: name contains (case-insensitive), sort, offset paging.
+      findMany: async (args?: { where?: { name?: { contains?: string; mode?: string } };
+        include?: Record<string, unknown>; skip?: number; take?: number }) => {
+        planQueries.push(args as Record<string, unknown>);
+        let rows = [...planStore.values()];
+        const contains = args?.where?.name?.contains;
+        if (contains) {
+          const needle = contains.toLowerCase();
+          rows = rows.filter(row => (args?.where?.name?.mode === 'insensitive'
+            ? row.name.toLowerCase().includes(needle)
+            : row.name.includes(contains)));
+        }
+        rows.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+        const start = args?.skip ?? 0;
+        return rows.slice(start, args?.take === undefined ? undefined : start + args.take)
+          .map(row => snapshot(row, args));
+      },
+      count: async (args?: { where?: { name?: { contains?: string } } }) => {
+        const contains = args?.where?.name?.contains;
+        if (!contains) return planStore.size;
+        const needle = contains.toLowerCase();
+        return [...planStore.values()].filter(row => row.name.toLowerCase().includes(needle)).length;
+      },
       create: async ({ data }: { data: Omit<PlanRow, 'id'> }) => {
         const row: PlanRow = { ...data, id: `plan-${nextId++}` };
         planStore.set(row.id, row); return snapshot(row);
@@ -171,7 +193,7 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     '@/lib/features/registry': registry,
   }) as typeof actions;
   return { api, plans: plansModule, tx: tx as never, planStore, optionStore, translationStore,
-    subscriptionStore, audits, revalidated, mutations };
+    subscriptionStore, audits, revalidated, mutations, planQueries };
 }
 
 test('validatePlanInput accepts a valid plan with null meaning unlimited spoods', () => {
@@ -308,7 +330,9 @@ test('listPlans counts billing options, real enabled translations, and real effe
     { id: 'trans-2', planId: PLAN.id, featureId: 'feature-b', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
     { id: 'trans-3', planId: PLAN.id, featureId: 'feature-c', enabled: false, createdAt: new Date(0), updatedAt: new Date(0) },
   ], subscriptions);
-  const summaries = jsonOf(await f.plans.listPlans(f.tx));
+  const { plans: summaries, total } = jsonOf(
+    await f.plans.listPlans(f.tx, { page: 1, pageSize: 20 }));
+  assert.equal(total, 1);
   assert.equal(summaries.length, 1);
   const summary = summaries[0];
   assert.equal(summary.name, 'Standard');
@@ -317,6 +341,73 @@ test('listPlans counts billing options, real enabled translations, and real effe
   // Only the effective ACTIVE row counts; the EXPIRED row does not.
   assert.equal(summary.subscriptionCount, 1);
   assert.deepEqual(summary.billingOptions, [{ id: MONTHLY.id, interval: 'MONTHLY', basePriceCents: 900, active: true }]);
+});
+
+test('validatePlanInput accepts an empty description and stores it as empty', () => {
+  const f = fixture('super_admin');
+  const base = { name: 'Draft plan', planType: 'STANDARD', maxSpiders: null, active: false, public: false };
+  for (const description of ['', '   ']) {
+    const accepted = f.plans.validatePlanInput({ ...base, description });
+    assert.ok(!isFailure(accepted), JSON.stringify(description));
+    assert.equal((accepted as { description: string }).description, '');
+  }
+  // Other description rules are unchanged: length cap and the audit text rules.
+  for (const description of ['x'.repeat(501), 'Reach me @home']) {
+    assert.ok(isFailure(f.plans.validatePlanInput({ ...base, description })), JSON.stringify(description));
+  }
+});
+
+test('listPlans filters by name contains case-insensitively and totals the filtered set', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Deluxe Bundle', sortOrder: 1 });
+  f.planStore.set('plan-3', { ...PLAN, id: 'plan-3', name: 'internal audit', planType: 'INTERNAL', sortOrder: 2 });
+  const result = jsonOf(await f.plans.listPlans(f.tx, { search: 'DELUX', page: 1, pageSize: 20 }));
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.plans.map((plan: { name: string }) => plan.name), ['Deluxe Bundle']);
+  // The insensitive flag must reach Prisma so database collation matches the test.
+  const where = f.planQueries[0].where as { name: { mode?: string } };
+  assert.equal(where.name.mode, 'insensitive');
+  const empty = jsonOf(await f.plans.listPlans(f.tx, { search: 'no such plan', page: 1, pageSize: 20 }));
+  assert.equal(empty.total, 0);
+  assert.deepEqual(empty.plans, []);
+});
+
+test('listPlans with an empty search returns every plan', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Deluxe Bundle', sortOrder: 1 });
+  const forUndefined = jsonOf(await f.plans.listPlans(f.tx, { page: 1, pageSize: 20 } as never));
+  const forEmpty = jsonOf(await f.plans.listPlans(f.tx, { search: '  ', page: 1, pageSize: 20 }));
+  assert.equal(forUndefined.total, 2);
+  assert.equal(forEmpty.total, 2);
+  assert.deepEqual(forUndefined.plans.map((plan: { id: string }) => plan.id), ['plan-1', 'plan-2']);
+  // No name filter reaches Prisma when the search is blank.
+  assert.equal((f.planQueries[0].where as Record<string, unknown> | undefined)?.name, undefined);
+});
+
+test('listPlans paginates by page and pageSize with offset math', async () => {
+  const f = fixture('super_admin');
+  for (let index = 2; index <= 25; index++)
+    f.planStore.set(`plan-${index}`, { ...PLAN, id: `plan-${index}`, name: `Plan ${index}`, sortOrder: index - 1 });
+  const page1 = jsonOf(await f.plans.listPlans(f.tx, { page: 1, pageSize: 20 }));
+  assert.equal(page1.total, 25);
+  assert.deepEqual(page1.plans.map((plan: { id: string }) => plan.id),
+    Array.from({ length: 20 }, (_, index) => `plan-${index + 1}`));
+  const page2 = jsonOf(await f.plans.listPlans(f.tx, { page: 2, pageSize: 20 }));
+  assert.deepEqual(page2.plans.map((plan: { id: string }) => plan.id),
+    ['plan-21', 'plan-22', 'plan-23', 'plan-24', 'plan-25']);
+  const beyond = jsonOf(await f.plans.listPlans(f.tx, { page: 9, pageSize: 20 }));
+  assert.equal(beyond.total, 25);
+  assert.deepEqual(beyond.plans, []);
+});
+
+test('duplicate still works against a filtered, paginated listPlans call', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Deluxe Bundle', sortOrder: 1 });
+  const filtered = jsonOf(await f.plans.listPlans(f.tx, { search: 'delux', page: 1, pageSize: 20 }));
+  assert.deepEqual(filtered.plans.map((plan: { id: string }) => plan.id), ['plan-2']);
+  const newId = await f.plans.duplicatePlan(f.tx, 'owner-1', 'plan-2', 'Duplicate from the filtered list');
+  assert.equal(typeof newId, 'string');
+  assert.equal(f.planStore.get(newId as string)!.name, 'Deluxe Bundle (copy)');
 });
 
 test('non-super-admin plan mutations are denied without writes, audits, or revalidation', async () => {

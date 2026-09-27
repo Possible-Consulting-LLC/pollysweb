@@ -92,6 +92,7 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         planStore.has(id) ? snapshotPlan(planStore.get(id)!) : null,
       findMany: async () => [...planStore.values()].map(snapshotPlan),
+      count: async () => planStore.size,
     },
     planBillingOption: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
@@ -311,7 +312,8 @@ test('planHistoryCount and listPlans subscriptionCount read real effective subsc
   ] });
   f.planStore.set('plan-2', { ...PLAN, id: 'plan-2', name: 'Annual', planType: 'STANDARD' });
   assert.equal(await f.plans.planHistoryCount(f.tx, 'plan-1'), 1);
-  const summaries = JSON.parse(JSON.stringify(await f.plans.listPlans(f.tx)));
+  const { plans: summaries } = JSON.parse(JSON.stringify(
+    await f.plans.listPlans(f.tx, { page: 1, pageSize: 20 })));
   assert.deepEqual(summaries.map((row: { id: string; subscriptionCount: number }) =>
     ({ id: row.id, subscriptionCount: row.subscriptionCount })),
     [{ id: 'plan-1', subscriptionCount: 1 }, { id: 'plan-2', subscriptionCount: 1 }]);

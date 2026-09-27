@@ -15,8 +15,8 @@ const statusLabel: Record<string, string> = { TRIALING: 'Trialing', ACTIVE: 'Act
 
 export default async function SubscriptionsPage() {
   await requireAdminActor('super_admin');
-  const [plans, subscriptions] = await Promise.all([
-    listPlans(prisma), listEffectiveSubscriptions(prisma)]);
+  const [{ plans }, subscriptions] = await Promise.all([
+    listPlans(prisma, { page: 1, pageSize: 1000 }), listEffectiveSubscriptions(prisma)]);
   const activePlans = plans.filter(plan => plan.active);
   const planById = new Map(plans.map(plan => [plan.id, plan]));
   const userIds = [...new Set(subscriptions.map(row => row.userId))];
