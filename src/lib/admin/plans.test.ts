@@ -98,6 +98,16 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
         Object.assign(row, data); return { ...row };
       },
     },
+    featurePlanTranslation: {
+      findMany: async ({ where = {} }: { where?: { planId?: string } } = {}) =>
+        [...translationStore.values()]
+          .filter(translation => where.planId === undefined || translation.planId === where.planId)
+          .map(translation => ({ ...translation })),
+      create: async ({ data }: { data: Omit<TranslationRow, 'id' | 'createdAt' | 'updatedAt'> }) => {
+        const row: TranslationRow = { ...data, id: `trans-${nextId++}`, createdAt: new Date(0), updatedAt: new Date(0) };
+        translationStore.set(row.id, row); return { ...row };
+      },
+    },
     adminAudit: {
       create: async ({ data }: { data: { action: string; targetId: string | null; reason: string;
         changes: Record<string, unknown> } }) => {
@@ -128,7 +138,8 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     '@/lib/admin/plan-features': planFeatures,
     '@/lib/features/registry': registry,
   }) as typeof actions;
-  return { api, plans: plansModule, tx: tx as never, planStore, optionStore, audits, revalidated, mutations };
+  return { api, plans: plansModule, tx: tx as never, planStore, optionStore, translationStore,
+    audits, revalidated, mutations };
 }
 
 test('validatePlanInput accepts a valid plan with null meaning unlimited spoods', () => {
@@ -183,8 +194,12 @@ test('a second active option of an existing interval is rejected; deactivating f
   assert.ok(!isFailure(inactive));
 });
 
-test('duplicatePlan copies identity and billing options as an inactive private copy and audits', async () => {
-  const f = fixture('super_admin');
+test('duplicatePlan copies identity, billing options, and feature translations and audits', async () => {
+  const translations = [
+    { id: 'trans-1', planId: PLAN.id, featureId: 'feature-a', enabled: true, createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'trans-2', planId: PLAN.id, featureId: 'feature-b', enabled: false, createdAt: new Date(0), updatedAt: new Date(0) },
+  ];
+  const f = fixture('super_admin', [MONTHLY], translations);
   const newId = await f.plans.duplicatePlan(f.tx, 'owner-1', PLAN.id, 'Create a variant plan');
   assert.equal(typeof newId, 'string');
   const copy = f.planStore.get(newId as string)!;
@@ -196,6 +211,17 @@ test('duplicatePlan copies identity and billing options as an inactive private c
   assert.equal(copiedOptions.length, 1);
   assert.equal(copiedOptions[0].interval, 'MONTHLY');
   assert.equal(copiedOptions[0].basePriceCents, 900);
+  // The duplicate is a starting point: identical featureId + enabled values.
+  const copiedTranslations = [...f.translationStore.values()]
+    .filter(translation => translation.planId === newId)
+    .map(({ featureId, enabled }) => ({ featureId, enabled }))
+    .sort((a, b) => a.featureId.localeCompare(b.featureId));
+  assert.deepEqual(copiedTranslations, [
+    { featureId: 'feature-a', enabled: true },
+    { featureId: 'feature-b', enabled: false },
+  ]);
+  // The source plan's translation rows are untouched.
+  assert.equal([...f.translationStore.values()].filter(t => t.planId === PLAN.id).length, 2);
   assert.deepEqual(f.audits, [{ action: 'plan.duplicate', targetId: newId, reason: 'Create a variant plan',
     changes: { planName: 'Standard (copy)' } }]);
 });

@@ -13,7 +13,7 @@ export type PlanSummary = {
   billingOptionCount: number; enabledFeatureCount: number; subscriptionCount: number;
   billingOptions: Array<{ interval: BillingInterval; basePriceCents: number; active: boolean }>;
 };
-type PlansDb = Pick<Prisma.TransactionClient, 'plan' | 'planBillingOption'>;
+type PlansDb = Pick<Prisma.TransactionClient, 'plan' | 'planBillingOption' | 'featurePlanTranslation'>;
 /** appendAudit accepts the full client; plan services only need these delegates. */
 const auditTx = (tx: PlansDb): Prisma.TransactionClient => tx as Prisma.TransactionClient;
 
@@ -112,12 +112,13 @@ export async function updatePlan(tx: PlansDb, actorId: string, planId: string,
   return 'updated';
 }
 
-/** Copies identity (suffixed " (copy)", inactive, not public) and billing options.
- * Feature translations are not copied — the matrix save is per-plan, so a copy
- * starts with the default disabled matrix. Audits plan.duplicate. */
+/** Copies identity (suffixed " (copy)", inactive, not public), billing options,
+ * and feature translations (same featureId + enabled values), so a duplicate is
+ * a true starting point rather than a blank matrix. Audits plan.duplicate. */
 export async function duplicatePlan(tx: PlansDb, actorId: string, planId: string,
   reason: string): Promise<string | Error> {
   const row = await loadPlan(tx, planId);
+  const translations = await tx.featurePlanTranslation.findMany({ where: { planId } });
   const base = row.name.length > 73 ? row.name.slice(0, 73) : row.name;
   const name = `${base} (copy)`;
   const sortOrder = (await tx.plan.aggregate({ _max: { sortOrder: true } }))._max.sortOrder ?? -1;
@@ -126,6 +127,9 @@ export async function duplicatePlan(tx: PlansDb, actorId: string, planId: string
   for (const option of row.billingOptions)
     await tx.planBillingOption.create({ data: { planId: created.id, interval: option.interval,
       basePriceCents: option.basePriceCents, active: option.active, sortOrder: option.sortOrder } });
+  for (const translation of translations)
+    await tx.featurePlanTranslation.create({ data: { planId: created.id,
+      featureId: translation.featureId, enabled: translation.enabled } });
   await appendAudit(auditTx(tx), { actorId, targetId: created.id, action: 'plan.duplicate', reason,
     changes: { planName: created.name } });
   return created.id;
