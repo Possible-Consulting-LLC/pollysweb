@@ -156,7 +156,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
       subtitle: renewalLabel(option.interval), selected: option.id === selectedOptionId }));
   const selectedOption = optionRows.find(option => option.selected);
   return <section data-testid="assign-wizard" aria-label="Assign a plan"
-    className="space-y-4 rounded-3xl border border-[var(--plum)]/15 bg-[var(--panel)] p-4">
+    className="space-y-4 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="font-semibold">Assign a plan</h3>
       <Button type="button" variant="ghost" size="sm"
