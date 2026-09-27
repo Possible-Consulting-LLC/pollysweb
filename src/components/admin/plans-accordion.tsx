@@ -1,12 +1,14 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { PlanSummary } from '@/lib/admin/plans';
 import { FEATURE_REGISTRY } from '@/lib/features/registry';
 import { buttonVariants, Button } from '@/components/ui/button';
-import { cardClassName } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { counterChipClass, badgeTintClass, badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
+import { LiveSearch, suggestViaEndpoint } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
@@ -32,41 +34,43 @@ export type PlansAccordionViewProps = {
   onToggleSelected(id: string): void;
   trayCollapsed: boolean;
   onToggleTrayCollapsed(): void;
+  /** The explicit full-page fallback: submits the URL-param search (resets
+   * page and open plan). Plain typing in the live search NEVER navigates. */
+  onSearchSubmit(search: string): void;
 };
 
-function DetailCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className={cn(cardClassName, 'space-y-2 p-4')}>
-    <h3 className="text-sm font-semibold text-[var(--plum)]">{title}</h3>
-    {children}
+/** Mockup detail card: soft-bordered card with a labeled kv grid. */
+function DetailCard({ title, rows }: { title: string; rows: Array<{ label: string; value: ReactNode }> }) {
+  return <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
+    <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">{title}</h3>
+    <dl data-kv-grid className="grid grid-cols-[minmax(110px,130px)_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+      {rows.map(row => [<dt key={`${row.label}-dt`} className="font-semibold opacity-60">{row.label}</dt>,
+        <dd key={`${row.label}-dd`} className="min-w-0">{row.value}</dd>])}
+    </dl>
   </div>;
 }
 
 function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
-  return <div className="space-y-3 border-t border-[var(--plum)]/10 p-4 pt-4">
-    <div className="grid gap-3 md:grid-cols-3">
-      <DetailCard title="Identity">
-        <p>Type: {typeLabel[plan.planType] ?? plan.planType}</p>
-        <p>Active: {plan.active ? 'Yes' : 'No'}</p>
-        <p>Public: {plan.public
-          ? 'Yes — appears on public pricing (future phase)'
-          : 'No — assignable only'}</p>
-        <p>Spood allowance: {plan.maxSpiders === null ? 'Unlimited' : plan.maxSpiders}</p>
-        {plan.description ? <p>{plan.description}</p> : null}
-      </DetailCard>
-      <DetailCard title="Billing options">
-        {plan.billingOptions.length === 0
-          ? <p>None</p>
-          : plan.billingOptions.map(option => <p key={option.id}>
-              {option.interval} ${(option.basePriceCents / 100).toFixed(2)}{option.active ? '' : ' (inactive)'}
-            </p>)}
-      </DetailCard>
-      <DetailCard title="Usage">
-        <p>Enabled features: {plan.enabledFeatureCount} of {FEATURE_COUNT}</p>
-        <p>Effective subscriptions: {plan.subscriptionCount}</p>
-        <p>Last updated: {plan.updatedAt.toISOString().slice(0, 10)}</p>
-      </DetailCard>
-    </div>
-    <div className="flex flex-wrap gap-3">
+  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
+    <DetailCard title="Identity" rows={[
+      { label: 'Type', value: typeLabel[plan.planType] ?? plan.planType },
+      { label: 'Active', value: plan.active ? 'Yes' : 'No' },
+      { label: 'Public', value: plan.public
+        ? 'Yes — appears on public pricing (future phase)'
+        : 'No — assignable only' },
+      { label: 'Active spoods', value: plan.maxSpiders === null ? 'Unlimited' : plan.maxSpiders },
+      ...(plan.description ? [{ label: 'Description', value: plan.description as ReactNode }] : []),
+    ]} />
+    <DetailCard title="Billing options" rows={plan.billingOptions.length === 0
+      ? [{ label: 'Options', value: 'None' }]
+      : plan.billingOptions.map(option => ({ label: option.interval,
+          value: `${(option.basePriceCents / 100).toFixed(2)}${option.active ? '' : ' (inactive)'}` }))} />
+    <DetailCard title="Usage" rows={[
+      { label: 'Enabled features', value: `${plan.enabledFeatureCount} of ${FEATURE_COUNT}` },
+      { label: 'Effective subscriptions', value: plan.subscriptionCount },
+      { label: 'Last updated', value: plan.updatedAt.toISOString().slice(0, 10) },
+    ]} />
+    <div className="flex flex-wrap gap-2 pt-1">
       <Link href={`/admin/plans/${plan.id}/edit`} className={buttonVariants({ variant: 'primary', size: 'md' })}>Edit plan</Link>
       <MutationForm action={duplicatePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
         <input type="hidden" name="planId" value={plan.id} />
@@ -88,18 +92,25 @@ function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
 const FEATURE_COUNT = FEATURE_REGISTRY.length;
 
 /** Presentational body of the plans accordion (hook-free; the default export
- * below owns the selection/collapse state). */
+ * below owns the selection/collapse state). The toolbar pairs the live search
+ * with the gold counter chip, mockup-exact. */
 export function PlansAccordionView({ plans, total, search, page, openId, selectedItems,
-  onToggleSelected, trayCollapsed, onToggleTrayCollapsed }: PlansAccordionViewProps) {
+  onToggleSelected, trayCollapsed, onToggleTrayCollapsed, onSearchSubmit }:
+  PlansAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   return <>
-    <p className="text-sm">
-      {selectedItems.length > 0
-        ? <span className="rounded-full bg-[var(--gold)] px-3 py-1 text-xs font-semibold text-[var(--panel)]">
-            {`${selectedItems.length} of ${total} selected`}
-          </span>
-        : <span>{`${total} plan${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}</span>}
-    </p>
+    <div data-testid="plans-toolbar" className="flex flex-wrap items-center gap-2">
+      <LiveSearch id="plans-search" mode="popup" label="Search plans by name"
+        placeholder="Search plans by name…" value={search}
+        source={suggestViaEndpoint('plans')} selectedIds={selected}
+        onPick={suggestion => onToggleSelected(suggestion.id)}
+        onFallbackSubmit={onSearchSubmit} />
+      <span className={counterChipClass} data-testid="selected-count">
+        {selectedItems.length > 0
+          ? `${selectedItems.length} of ${total} selected`
+          : `${total} plan${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}
+      </span>
+    </div>
     <SelectionTray items={selectedItems} onDeselect={onToggleSelected}
       collapsed={trayCollapsed} onCollapsedToggle={onToggleTrayCollapsed} label="Selected">
       {(['active', 'public'] as const).flatMap(field =>
@@ -120,8 +131,12 @@ export function PlansAccordionView({ plans, total, search, page, openId, selecte
     </SelectionTray>
     {plans.map((plan, index) => {
       const isOpen = plan.id === openId;
-      return <div key={plan.id} className={cn(cardClassName, 'space-y-3')}>
-        <div className="flex items-start gap-3 p-4">
+      return <div key={plan.id} data-row-id={plan.id}
+        className={cn('rounded-2xl border', isOpen
+          ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+          : 'border-transparent')}>
+        <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
+          !isOpen && 'hover:bg-[var(--hover)]')}>
           <input type="checkbox" checked={selected.has(plan.id)} onChange={() => onToggleSelected(plan.id)}
             aria-label={`Select ${plan.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
           {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
@@ -131,19 +146,21 @@ export function PlansAccordionView({ plans, total, search, page, openId, selecte
             <ChevronDown aria-hidden="true"
               className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
             <span className="min-w-0">
-              <span className="block font-semibold">{plan.name}</span>
-              {plan.description ? <span className="block text-sm text-[var(--midnight)]/60">{plan.description}</span> : null}
+              <span className="block text-[15px] font-bold">{plan.name}</span>
+              {plan.description ? <span className="block text-xs opacity-60">{plan.description}</span> : null}
             </span>
-            <span className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-xs font-semibold text-[var(--plum-deep)]">{typeLabel[plan.planType] ?? plan.planType}</span>
-              {plan.active
-                ? <span className="rounded-full bg-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-950">Active</span>
-                : <span className="rounded-full px-2.5 py-1 text-xs font-semibold opacity-60">Inactive</span>}
-              {plan.public
-                ? <span className="rounded-full bg-sky-200 px-2.5 py-1 text-xs font-semibold text-sky-950">Public</span>
-                : <span className="rounded-full border border-dashed border-[var(--lavender-deep)] px-2.5 py-1 text-xs font-semibold opacity-60">Private</span>}
+            <span className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
+              <span className={badgeTintClass}>{typeLabel[plan.planType] ?? plan.planType}</span>
+              <span className="flex gap-1.5">
+                {plan.active
+                  ? <span className={badgeOnClass}>Active</span>
+                  : <span className={badgeOffClass}>Inactive</span>}
+                {plan.public
+                  ? <span className={badgeOnClass}>Public</span>
+                  : <span className={badgeOffClass}>Private</span>}
+              </span>
             </span>
-            <span className="w-full text-sm opacity-70 md:w-auto md:text-right">
+            <span className="w-full text-[11.5px] leading-relaxed opacity-70 md:w-auto md:text-right">
               {plan.maxSpiders === null ? 'Unlimited' : `${plan.maxSpiders} spoods`} ·
               {' '}{plan.enabledFeatureCount} features · {plan.subscriptionCount} subscriber{plan.subscriptionCount === 1 ? '' : 's'} ·
               {' '}updated {plan.updatedAt.toISOString().slice(0, 10)}
@@ -158,9 +175,13 @@ export function PlansAccordionView({ plans, total, search, page, openId, selecte
 
 /** Client owner of the selection state: an id→title map that grows as boxes
  * are checked and is never pruned by pagination or search, so selections and
- * the tray survive page changes, new searches, and re-renders. */
+ * the tray survive page changes, new searches, and re-renders. The live
+ * search's pick path only mutates this map — the explicit fallback (Enter
+ * with no suggestion highlighted) is the sole navigation. */
 export function PlansAccordion(props: Omit<PlansAccordionViewProps,
-  'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed'>) {
+  'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed' |
+  'onSearchSubmit'>) {
+  const router = useRouter();
   const [selection, setSelection] = useState<Map<string, string>>(new Map());
   const [trayCollapsed, setTrayCollapsed] = useState(false);
   return <PlansAccordionView {...props}
@@ -172,5 +193,6 @@ export function PlansAccordion(props: Omit<PlansAccordionViewProps,
       return next;
     })}
     trayCollapsed={trayCollapsed}
-    onToggleTrayCollapsed={() => setTrayCollapsed(collapsed => !collapsed)} />;
+    onToggleTrayCollapsed={() => setTrayCollapsed(collapsed => !collapsed)}
+    onSearchSubmit={search => router.push(listHref(search, 1))} />;
 }

@@ -53,6 +53,7 @@ function loadFeaturesAccordion() {
   });
   return exports as {
     FeaturesAccordionView: (props: Record<string, unknown>) => unknown;
+    FeaturesAccordion: (props: Record<string, unknown>) => unknown;
     accordionReducer: (state: AccordionState, action: AccordionAction) => AccordionState;
   };
 }
@@ -62,10 +63,21 @@ type AccordionAction =
   | { type: 'toggle'; key: string; title: string; subtitle: string }
   | { type: 'toggleTrayCollapsed' };
 
+let pushed: string[] = [];
+let lastLiveSearch: Record<string, unknown> | null = null;
+
 const deps: Record<string, unknown> = {
   react: {
-    useState: (initial: unknown) => [initial, () => {}],
+    useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
     useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
+  },
+  'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
+  '@/components/admin/live-search': {
+    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
+    LiveSearch: (props: Record<string, unknown>) => {
+      lastLiveSearch = props;
+      return jsx.jsx('div', { 'data-live-search': String(props.source) });
+    },
   },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
@@ -99,7 +111,7 @@ const deps: Record<string, unknown> = {
     bulkSetFeatureReleaseAction: 'bulk-set-feature-release' },
 };
 
-const { FeaturesAccordionView, accordionReducer } = loadFeaturesAccordion();
+const { FeaturesAccordionView, FeaturesAccordion, accordionReducer } = loadFeaturesAccordion();
 
 type FeatureRowView = { id: string; key: string; name: string; description: string;
   category: string; active: boolean; orphan: boolean; assignedPlans: string[]; totalPlans: number };
@@ -119,9 +131,15 @@ const orphanRow: FeatureRowView = { id: 'feature-9', key: 'legacy.bulk_import', 
 
 const base = { features: features(3), total: 34, search: '', page: 1, openKey: '',
   selectedItems: [] as Array<{ id: string; title: string; subtitle?: string }>,
-  onToggleSelected: (_key: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {} };
+  onToggleSelected: (_key: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSearchSubmit: (_search: string) => {} };
 
-const render = (overrides: Partial<typeof base> = {}) => FeaturesAccordionView({ ...base, ...overrides });
+const render = (overrides: Partial<typeof base> = {}) => {
+  lastLiveSearch = null;
+  const tree = FeaturesAccordionView({ ...base, ...overrides });
+  elements(tree); // resolve the live-search stub for prop assertions
+  return tree;
+};
 
 function elementsOf(tree: unknown) {
   const all = elements(tree);
@@ -171,7 +189,7 @@ test('accordion expansion renders detail cards and actions once; single-open via
   const tree = render({ features: rows, openKey: 'feature.key-1' });
   const body = textOf(tree);
   assert.equal((body.match(/Plan assignments/g) ?? []).length, 1, 'single-open detail');
-  assert.equal(body.includes('Key: feature.key-1'), true);
+  assert.equal(body.includes('feature.key-1'), true);
   assert.equal(body.includes('2 of 3 plans'), true);
   assert.equal(body.includes('Free, Basic'), true);
   assert.equal(body.includes('Released'), true);
@@ -273,4 +291,76 @@ test('state owner: the tray collapse flag flips via its own action', () => {
   assert.equal(state.trayCollapsed, true);
   state = accordionReducer(state, { type: 'toggleTrayCollapsed' });
   assert.equal(state.trayCollapsed, false);
+});
+
+// --- Task 7: live search toolbar + mockup visual parity ---
+
+function readSource(): string {
+  return readFileSync(new URL('./features-accordion.tsx', import.meta.url), 'utf8');
+}
+
+test('the toolbar hosts the live search combobox wired to the features endpoint', () => {
+  render({ selectedItems: [
+    { id: 'feature.key-1', title: 'Feature 1', subtitle: 'feature.key-1' }] });
+  assert.ok(lastLiveSearch, 'live search missing from the toolbar');
+  assert.equal(lastLiveSearch!.source, 'endpoint:features');
+  assert.equal(lastLiveSearch!.mode, 'popup');
+  assert.equal(lastLiveSearch!.value, '');
+  assert.deepEqual([...(lastLiveSearch!.selectedIds as Set<string>)], ['feature.key-1']);
+  assert.equal(lastLiveSearch!.onFallbackSubmit !== undefined, true);
+});
+
+test('picking a suggestion toggles the parent-owned selection by key', () => {
+  const toggled: string[] = [];
+  render({ onToggleSelected: (key: string) => { toggled.push(key); } });
+  (lastLiveSearch!.onPick as (suggestion: { id: string; title?: string }) => void)({ id: 'feature.key-2', title: 'Feature 2' });
+  assert.deepEqual(toggled, ['feature.key-2']);
+});
+
+test('the fallback submit navigates the full-page URL search', () => {
+  pushed = [];
+  const tree = FeaturesAccordion({ features: features(2), total: 34, search: '', page: 1, openKey: '' });
+  elements(tree);
+  assert.ok(lastLiveSearch, 'view not resolved through the shell');
+  (lastLiveSearch!.onFallbackSubmit as (text: string) => void)('feed');
+  assert.deepEqual(pushed, ['/admin/features?search=feed&page=1']);
+});
+
+test('the counter chip is gold and always in the toolbar', () => {
+  const none = render();
+  const chip = elements(none).find((item) => item.props['data-testid'] === 'selection-counter');
+  assert.ok(chip, 'counter chip missing');
+  assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
+  assert.equal(textOf(chip).includes('34 features'), true);
+});
+
+test('feature rows are freestanding hover rows with the mono key subtitle — no card enclosure', () => {
+  const tree = render({ features: features(2) });
+  const rows = elements(tree).filter((item) => item.props['data-row-id']);
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    const cls = String(row.props.className);
+    assert.equal(cls.split(' ').includes('card'), false, 'no cardClassName on the row container');
+  }
+  // The key rides the row as its subtitle (mockup's mono .s line) — the row
+  // body carries it, so the old key badge is gone from the badges cluster.
+  assert.equal(textOf(rows[0]).includes('feature.key-1'), true);
+});
+
+test('badges are theme-token driven — no hardcoded palette literals', () => {
+  assert.doesNotMatch(readSource(), /(?:emerald|sky|amber|teal|indigo)-\d00/);
+});
+
+test('detail cards are soft-bordered labeled kv grids at mockup density', () => {
+  const tree = render({ openKey: 'feature.key-1' });
+  const cards = elements(tree).filter((item) => item.props['data-detail-card']);
+  assert.equal(cards.length, 3);
+  for (const card of cards) {
+    const cls = String(card.props.className);
+    assert.equal(cls.split(' ').includes('card'), false);
+    assert.equal(cls.includes('border-[var(--hover)]'), true);
+    assert.equal(cls.includes('bg-[var(--background)]'), true);
+  }
+  const grids = elements(tree).filter((item) => item.type === 'dl' && item.props['data-kv-grid']);
+  assert.equal(grids.length, 3);
 });

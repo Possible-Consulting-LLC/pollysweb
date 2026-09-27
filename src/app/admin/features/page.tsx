@@ -91,19 +91,14 @@ export default async function FeatureCatalogPage({ searchParams }:
         ? <p>{missing.length} registry {missing.length === 1 ? 'feature is' : 'features are'} not in the database yet: {missing.map(definition => definition.key).join(', ')}</p>
         : <p>Every registry feature is in the database.</p>}
     </section>
-    <form method="get" className="flex flex-wrap items-end gap-3">
-      <label className="grid gap-1 text-sm">Search by name or key
-        <input name="search" defaultValue={parsed.search} maxLength={80}
-          className="rounded-xl border border-[var(--plum)]/25 p-2" />
-      </label>
-      <Button type="submit" variant="secondary" size="sm">Search</Button>
-      {parsed.search ? <Link href="/admin/features" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>Clear</Link> : null}
-    </form>
-    {/* Selection state lives in the client wrapper; rows, tray, and counter render there. */}
+    {/* Search lives in the accordion's live toolbar (mockup-exact): typing
+        suggests live, Enter is the explicit full-page fallback navigation. */}
     {total === 0
       ? <p>{parsed.search ? 'No features match this search.' : 'No features in the database yet. Run Sync registry to create all ' + FEATURE_REGISTRY.length + ' registry features as inactive.'}</p>
-      : <FeaturesAccordion features={features} total={total} search={parsed.search} page={page} openKey={openKey} />}
-    <nav className="flex items-center gap-3" aria-label="Features pagination">
+      : null}
+    {/* Selection state lives in the client wrapper; rows, tray, and counter render there. */}
+    <FeaturesAccordion features={features} total={total} search={parsed.search} page={page} openKey={openKey} />
+    <nav className="mt-4 flex items-center gap-3 border-t border-[var(--hover)] pt-3.5" aria-label="Features pagination">
       {page <= 1
         ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
         : <Link href={listHrefFor(parsed.search, page - 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}

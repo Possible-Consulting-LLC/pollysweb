@@ -100,3 +100,36 @@ test('selection tray renders nothing when the selection is empty', () => {
   assert.equal(SelectionTray({ items: [], onDeselect: () => {}, collapsed: false,
     onCollapsedToggle: () => {} }), null);
 });
+
+// --- Task 7: mockup parity ---
+
+test('the tray is a soft bordered panel — no card enclosure', () => {
+  const tree = SelectionTray({ items, onDeselect: () => {}, collapsed: false,
+    onCollapsedToggle: () => {} }) as unknown;
+  const section = elements(tree).find((item) => item.props['data-testid'] === 'selection-tray');
+  assert.ok(section, 'tray section missing');
+  const cls = String(section.props.className);
+  assert.equal(cls.split(' ').includes('card'), false, 'no cardClassName enclosure');
+  assert.equal(cls.includes('border-[var(--hover)]'), true, 'mockup tray border');
+  assert.equal(cls.includes('bg-[var(--card)]'), true, 'mockup tray background');
+});
+
+test('chips are hover-tinted pills with the plum-tinted border and plum removal', () => {
+  const tree = SelectionTray({ items, onDeselect: () => {}, collapsed: false,
+    onCollapsedToggle: () => {} }) as unknown;
+  const chip = elements(tree).find((item) => item.props['data-tray-chip'] === 'plan-1');
+  assert.ok(chip, 'chip missing');
+  const cls = String(chip.props.className);
+  assert.equal(cls.includes('bg-[var(--hover)]'), true);
+  assert.equal(cls.includes('border-[var(--plum)]/25'), true);
+  assert.equal(cls.includes('rounded-full'), true);
+  const remove = elements(chip).find((item) => item.type === 'button');
+  assert.equal(String(remove?.props.className).includes('text-[var(--plum)]'), true);
+});
+
+test('an optional trailing control renders in the tray head (the "Selected only" toggle)', () => {
+  const tree = SelectionTray({ items, onDeselect: () => {}, collapsed: false,
+    onCollapsedToggle: () => {}, trailing: jsx.jsx('button', { children: 'Selected only' }) }) as unknown;
+  assert.equal(elements(tree).some((item) => item.type === 'button' && text(item) === 'Selected only'),
+    true);
+});

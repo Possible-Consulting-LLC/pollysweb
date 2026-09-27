@@ -79,6 +79,7 @@ const deps: Record<string, unknown> = {
   // ts.transpileModule applies no esModuleInterop, so the default import reads .default directly.
   'next/link': { default: ({ href, children, className }: { href: string; children?: unknown; className?: string }) =>
     jsx.jsx('a', { href, className, children }) },
+  '@/components/admin/list-shared': { badgeOnClass: 'badge-on', badgeOffClass: 'badge-off' },
   '@/lib/admin/actor': { requireAdminActor: async () => ({ id: 'actor-1' }) },
   '@/lib/db': { prisma: {
     user: { findUnique: async ({ where: { id } }: { where: { id: string } }) => dbUsers[id] ?? null },
@@ -201,6 +202,26 @@ test('the list is searchable and paginated at 20 with URL-driven pages', async (
     [{ search: '', page: 99, pageSize: 20 }, { search: '', page: 2, pageSize: 20 }]);
 });
 
+test('rows are freestanding hover-tinted elements and badges are theme-token driven', async () => {
+  servedRows = [
+    row(),
+    row({ id: 'sub-2', userId: 'u-2', status: 'PAST_DUE', userName: 'Dan O.',
+      userEmail: 'dan@example.com' }),
+  ];
+  servedSubTotal = 2;
+  const tree = await render();
+  const rows = elements(tree).filter((item) => item.props['data-subscription-row']);
+  assert.equal(rows.length, 2);
+  for (const rowEl of rows) {
+    const cls = String(rowEl.props.className);
+    assert.equal(cls.split(' ').includes('card'), false, 'rows are freestanding, not card-enclosed');
+    assert.equal(cls.includes('hover:bg-[var(--hover)]'), true, 'mockup hover tint');
+  }
+  const source = readFileSync(new URL('../../app/admin/subscriptions/page.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /(?:emerald|sky|amber|teal|indigo)-\d00/,
+    'status badges must come from theme tokens');
+});
+
 test('＋ Add subscription unfolds the wizard above the list with the user step', async () => {
   capturedWizardProps = []; capturedUserQueries = [];
   servedRows = [row()]; servedSubTotal = 1;
@@ -215,7 +236,8 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
   assert.deepEqual(jsonOf(capturedWizardProps), [{
     step: 1, listSearch: '', listPage: 1, selectedUser: null, selectedPlan: null,
     selectedOptionId: '',
-    userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com' }],
+    userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com',
+          leading: 'MK' }],
       total: 1, page: 1, pageSize: 20, search: '' },
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);

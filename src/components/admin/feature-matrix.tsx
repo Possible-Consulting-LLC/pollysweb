@@ -122,7 +122,8 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
   return <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
     <h3 className="font-semibold">Feature matrix</h3>
     <p>Every registered feature has an explicit control. Disabling a feature removes that access from every account assigned to {planName} on its next gate check. Saves upsert the enabled state and never delete rows, so a disabled feature can be restored safely.</p>
-    {saveState?.warning ? <p role="alert" className="rounded-xl bg-amber-100 p-2 text-sm text-amber-950">{saveState.warning}</p> : null}
+    {saveState?.warning ? <p role="alert"
+      className="rounded-2xl border border-dashed border-[var(--lavender-deep)] bg-[var(--hover)] p-3 text-sm text-[var(--plum)]">{saveState.warning}</p> : null}
     <div className="grid gap-2 rounded-2xl border border-[var(--plum)]/15 p-3">
       <h4 className="font-semibold">Pricing preview</h4>
       <p className="text-sm">Monthly: {summary.monthlyCents === null ? 'No active monthly price' : price(summary.monthlyCents)} · Annual: {summary.annualCents === null ? 'No active annual price' : price(summary.annualCents)}</p>

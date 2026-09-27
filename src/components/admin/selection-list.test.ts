@@ -59,12 +59,23 @@ const trayExports = loadModule('./selection-tray.tsx', {
   '@/components/ui/card': { cardClassName: 'card' },
 });
 
+// Real shared class constants (mockup parity lives in one place).
+const listSharedExports = (() => {
+  const exports: Record<string, unknown> = {};
+  const code = ts.transpileModule(
+    readFileSync(new URL('./list-shared.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  runInNewContext(code, { exports });
+  return exports;
+})();
+
 // Button stub preserves variant/size plus every handler/aria prop so tests
 // can assert variant choice, disabled state and fired callbacks.
 const SelectionList = loadModule('./selection-list.tsx', {
   'react/jsx-runtime': jsx,
   '@/lib/utils': { cn },
   '@/components/ui/card': { cardClassName: 'card' },
+  '@/components/admin/list-shared': listSharedExports,
   '@/components/ui/button': {
     Button: ({ variant, size, className, ...props }: Record<string, unknown>) =>
       jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', className, ...props }),
@@ -99,7 +110,7 @@ test('renders every row with titles, subtitles, the selection counter and the pa
   assert.match(rendered, /Beta/);
   assert.match(rendered, /Gamma/);
   assert.match(rendered, /The third one/);
-  assert.match(rendered, /3 selected/);
+  assert.match(rendered, /3 of 45 selected/);
   assert.match(rendered, /Page 2 of 3/);
 });
 
@@ -108,16 +119,16 @@ test('empty lists fall back to the empty label', () => {
   assert.match(rendered, /No rows match\./);
 });
 
-test('row toggles fire onToggle with the row id and reflect selection state', () => {
+test('row checkboxes fire onToggle with the row id and reflect selection state', () => {
   let toggled: string | undefined;
   const tree = SelectionList({ ...baseProps, onToggle: (id: string) => { toggled = id; } });
   const alpha = findByLabel(tree, 'Toggle Alpha');
   assert.ok(alpha, 'toggle for Alpha not rendered');
-  assert.equal(alpha.props['aria-checked'], true);
-  assert.equal(alpha.props['data-variant'], 'gold');
+  assert.equal(alpha.props.type, 'checkbox');
+  assert.equal(alpha.props.checked, true);
   const beta = findByLabel(tree, 'Toggle Beta');
-  assert.equal(beta?.props['aria-checked'], false);
-  (alpha.props.onClick as () => void)();
+  assert.equal(beta?.props.checked, false);
+  (alpha.props.onChange as () => void)();
   assert.equal(toggled, 'alpha');
 });
 
@@ -235,7 +246,7 @@ test('"Selected only" switches the list content to the selected set', () => {
   assert.match(rendered, /Alpha/);
   assert.doesNotMatch(rendered, /Beta/);
   // Content is client-side: no search or pagination while filtered.
-  assert.equal(elements(filtered).some((item) => item.type === 'input'), false);
+  assert.equal(elements(filtered).some((item) => item.type === 'input' && item.props.type !== 'checkbox'), false);
   assert.equal(findByLabel(filtered, 'Next page'), undefined);
   assert.equal(buttons(filtered).find((item) => textOf(item) === 'Show all') !== undefined, true);
 });
@@ -313,4 +324,68 @@ test('single mode without a selection renders the full searchable list', () => {
   assert.match(rendered, /Gamma/);
   assert.equal(elements(tree).some((item) => item.type === 'input'), true);
   assert.equal(findByLabel(tree, 'Next page') !== undefined, true);
+});
+
+// --- Task 7: mockup-exact live-search toolbar + freestanding rows ---
+
+test('the toolbar pairs the search input with the gold "N of M selected" counter chip', () => {
+  const tree = SelectionList(baseProps) as unknown;
+  const toolbar = elements(tree).find((item) => item.props['data-testid'] === 'list-toolbar');
+  assert.ok(toolbar, 'toolbar row missing');
+  const chip = elements(toolbar).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.ok(chip, 'counter chip missing from the toolbar');
+  assert.equal(textOf(chip), '3 of 45 selected');
+  assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true,
+    'counter chip is the gold pill');
+  assert.equal(String(chip.props.className).includes('rounded-full'), true);
+  // The chip sits beside the search input in the same toolbar row.
+  assert.equal(elements(toolbar).some((item) => item.type === 'input'), true);
+});
+
+test('rows are freestanding hover-tinted elements with plum selected titles — no card enclosure', () => {
+  const tree = SelectionList(baseProps) as unknown;
+  const rows = elements(tree).filter((item) => item.props['data-row-id']);
+  assert.deepEqual(rows.map((row) => row.props['data-row-id']), ['alpha', 'beta', 'gamma']);
+  for (const row of rows) {
+    const cls = String(row.props.className);
+    assert.equal(cls.split(' ').includes('card'), false, 'rows must not be card-enclosed');
+    assert.equal(cls.includes('hover:bg-[var(--hover)]'), true, 'rows carry the mockup hover tint');
+    assert.equal(cls.includes('rounded'), true, 'rows are freestanding rounded elements');
+  }
+  const alphaSpans = elements(rows[0]).filter((item) => item.type === 'span' && textOf(item) === 'Alpha');
+  assert.ok(alphaSpans.some((item) => String(item.props.className).includes('text-[var(--plum)]')),
+    'selected rows mark their title plum');
+});
+
+test('a searchSlot replaces the plain search input (the live-search hosts it)', () => {
+  const slot = jsx.jsx('div', { 'data-slot-marker': 'live' });
+  const tree = SelectionList({ ...baseProps, searchSlot: slot }) as unknown;
+  assert.equal(elements(tree).some((item) => item.props['data-slot-marker'] === 'live'), true);
+  const textInputs = elements(tree).filter((item) => item.type === 'input' && item.props.type !== 'checkbox');
+  assert.equal(textInputs.length, 0, 'the plain search input is replaced by the slot');
+});
+
+test('toolbar={false} hands the toolbar to the host — picker surfaces render it themselves', () => {
+  const tree = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, toolbar: false }) as unknown;
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'selected-count'), false);
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'list-toolbar'), false);
+  const textInputs = elements(tree).filter((item) => item.type === 'input' && item.props.type !== 'checkbox');
+  assert.equal(textInputs.length, 0);
+  assert.match(textOf(tree), /Selected \(2\)/, 'rows and tray still render');
+  assert.match(textOf(tree), /Beta/);
+});
+
+test('single-mode rows are freestanding pickers with optional avatars', () => {
+  const tree = SelectionList({ ...singleProps, rows: [
+    { id: 'alpha', title: 'Alpha', subtitle: 'alpha@example.com', leading: 'AK' },
+    { id: 'beta', title: 'Beta' },
+  ] }) as unknown;
+  const alpha = findByLabel(tree, 'Select Alpha');
+  assert.ok(alpha, 'single-mode row missing');
+  assert.equal(String(alpha.props.className).includes('hover:bg-[var(--hover)]'), true);
+  assert.equal(String(alpha.props.className).includes('card'), false);
+  const avatar = elements(alpha).find((item) => item.props['data-row-avatar'] === 'AK');
+  assert.ok(avatar, 'leading avatar missing');
+  const beta = findByLabel(tree, 'Select Beta');
+  assert.equal(beta?.props['aria-pressed'], false);
 });

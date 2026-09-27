@@ -58,6 +58,8 @@ const buttonStub = {
   buttonVariants: ({ variant, size }: { variant?: string; size?: string } = {}) =>
     `variant-${variant ?? 'primary'} size-${size ?? 'md'}`,
 };
+const listSharedExports = loadModule('./list-shared.ts', {});
+
 const selectionTray = loadModule('./selection-tray.tsx', {
   'react/jsx-runtime': jsx,
   '@/lib/utils': { cn },
@@ -67,6 +69,7 @@ const selectionList = loadModule('./selection-list.tsx', {
   'react/jsx-runtime': jsx,
   '@/lib/utils': { cn },
   '@/components/ui/card': { cardClassName: 'card' },
+  '@/components/admin/list-shared': { counterChipClass: 'goldchip' },
   '@/components/ui/button': buttonStub,
   '@/components/admin/selection-tray': selectionTray,
 });
@@ -82,11 +85,25 @@ const deps: Record<string, unknown> = {
   },
   'react/jsx-runtime': jsx,
   'next/navigation': { useRouter: () => ({ push: () => {} }) },
+  // Live-search stub: records props and renders the result area through the
+  // view's own renderSuggestions callback (empty query = the base list).
+  '@/components/admin/live-search': {
+    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
+    LiveSearch: (props: Record<string, unknown>) => {
+      lastLiveSearch.push(props);
+      const renderSuggestions = props.renderSuggestions as
+        | ((suggestions: unknown[], query: string, loading: boolean) => unknown)
+        | undefined;
+      const resultArea = renderSuggestions?.([], String(props.value ?? ''), false) ?? null;
+      return jsx.jsx('div', { 'data-live-search': String(props.source), children: resultArea });
+    },
+  },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
   '@/lib/utils': { cn },
   '@/components/admin/selection-list': selectionList,
   '@/components/admin/selection-tray': selectionTray,
+  '@/components/admin/list-shared': listSharedExports,
   '@/components/ui/card': { cardClassName: 'card' },
   '@/components/ui/button': buttonStub,
   '@/components/mutation-form': { MutationForm: ({ action, children, ...props }: Record<string, unknown>) =>
@@ -104,6 +121,9 @@ const wizardHref = wizardModule.wizardHref as
   (list: { search: string; page: number }, nav: Record<string, unknown>) => string;
 
 const list = { search: '', page: 1 };
+
+/** Live-search stub captures (one per render); reset per test. */
+let lastLiveSearch: Array<Record<string, unknown>> = [];
 
 const baseUserPicker = {
   rows: [
@@ -140,6 +160,7 @@ const base: Partial<AssignPlanWizardViewProps> = {
 };
 
 const render = (overrides: Partial<AssignPlanWizardViewProps> = {}) => {
+  lastLiveSearch = [];
   const nav: string[] = [];
   const navSearch: string[] = [];
   const dispatched: FormData[] = [];
@@ -147,6 +168,9 @@ const render = (overrides: Partial<AssignPlanWizardViewProps> = {}) => {
     navigate: (href: string) => { nav.push(href); },
     navigateSearch: (href: string) => { navSearch.push(href); },
     assignDispatch: (form: FormData) => { dispatched.push(form); } }) as unknown;
+  // Resolving the tree invokes the function-component stubs (the live search
+  // hook) so tests can drive it.
+  elements(tree);
   return { tree, nav, navSearch, dispatched,
     buttons: () => elements(tree).filter((item) => item.type === 'button'),
     links: () => elements(tree).filter((item) => item.type === 'a'),
@@ -192,15 +216,18 @@ test('clicking a keeper navigates with the selection and keeps the picker view',
 
 test('keeper search resets to page 1 and pagination preserves the search', () => {
   const { navSearch, nav, tree } = render();
-  const searchInput = elements(tree).find((item) => item.type === 'input');
-  assert.ok(searchInput, 'keeper search input missing');
-  (searchInput!.props.onChange as (event: unknown) => void)({ target: { value: 'ma' } });
+  // The picker's search input is the live search; its explicit fallback (Enter
+  // with no suggestion highlighted) is the URL-param search — typed text and
+  // a reset to page 1.
+  assert.ok(live(), 'keeper search missing');
+  (live()!.onFallbackSubmit as (text: string) => void)('ma');
   // Dropping upage returns the picker to page 1.
   assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=ma']);
   const pager = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
   (pager.byLabel('Next page')!.props.onClick as () => void)();
   assert.deepEqual(pager.nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=3']);
   void nav;
+  void tree;
 });
 
 test('a selected keeper folds the list into the focused view with a change affordance', () => {
@@ -249,10 +276,9 @@ test('picking a plan clears a stale option and resets the plan search to page 1'
   const href = nav[0];
   assert.ok(href.includes('plan=p-1'), href);
   assert.equal(href.includes('option='), false, 'stale option must be cleared');
-  const { navSearch, tree } = render({ step: 2, selectedUser });
-  const searchInput = elements(tree).find((item) => item.type === 'input');
-  assert.ok(searchInput, 'plan search input missing');
-  (searchInput!.props.onChange as (event: unknown) => void)({ target: { value: 'pro' } });
+  const { navSearch } = render({ step: 2, selectedUser });
+  assert.ok(live(), 'plan search missing');
+  (live()!.onFallbackSubmit as (text: string) => void)('pro');
   assert.deepEqual(navSearch,
     ['/admin/subscriptions?wizard=open&step=2&user=u-1&psearch=pro']);
 });
@@ -377,4 +403,71 @@ test('the step chips mark the current step', () => {
   assert.match(textOf(chips[0]), /3 · Options/);
   assert.match(textOf(tree), /1 · User/);
   assert.match(textOf(tree), /2 · Plan/);
+});
+
+// --- Task 7: live search in the pickers ---
+
+type LiveProps = Record<string, unknown> & {
+  mode?: string; source?: string; value?: string; toolbarEnd?: unknown;
+  onFallbackSubmit?: (text: string) => void;
+  renderSuggestions?: (suggestions: unknown[], query: string, loading: boolean) => unknown;
+};
+
+const live = (): LiveProps => lastLiveSearch.at(-1) as LiveProps;
+
+test('step 1 search is a headless live search wired to the users endpoint', () => {
+  render(base);
+  const props = live();
+  assert.ok(props, 'live search missing');
+  assert.equal(props.mode, 'headless');
+  assert.equal(props.source, 'endpoint:users');
+  assert.equal(props.value, '');
+  assert.equal(props.onFallbackSubmit !== undefined, true);
+});
+
+test('typing live-renders matched keepers in place; picking is the click-based selection', () => {
+  const { nav, navSearch } = render(base);
+  const props = live();
+  // While loading, the base list stays put — no flash of "no matches".
+  const loadingArea = props.renderSuggestions!([], 'nova', true) as unknown;
+  assert.equal(elements(loadingArea).some((item) =>
+    item.props['aria-label'] === 'Select Nova Keeper'), false);
+  // Results land: matched keepers render as clickable rows in place.
+  const area = props.renderSuggestions!(
+    [{ id: 'u-9', title: 'Nova Keeper', subtitle: 'nova@example.com' }], 'nova', false) as unknown;
+  const rows = elements(area).filter((item) => item.props['aria-label'] === 'Select Nova Keeper');
+  assert.equal(rows.length, 1);
+  assert.equal(String(rows[0].props.className).includes('hover:bg-[var(--hover)]'), true);
+  (rows[0].props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&user=u-9'],
+    'picking selects the keeper (click-based), nothing else navigates');
+  assert.deepEqual(navSearch, [], 'browsing never navigates');
+});
+
+test('Enter with no highlighted suggestion falls back to the URL-param search (debounced)', () => {
+  const { navSearch, nav } = render(base);
+  const props = live();
+  (props.onFallbackSubmit as (text: string) => void)('nova');
+  assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=nova']);
+  assert.deepEqual(nav, [], 'fallback only, never a pick');
+});
+
+test('the picker toolbar carries the gold count chip beside the search input', () => {
+  render(base);
+  const chip = live().toolbarEnd as Element | undefined;
+  assert.ok(chip, 'toolbar counter chip missing');
+  assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
+  assert.equal(textOf(chip), '2 keepers', 'the chip shows the matched-set total');
+});
+
+test('step 2 plan search uses the assignable-plans endpoint and picking selects the plan', () => {
+  const { nav } = render({ ...base, step: 2 });
+  const props = live();
+  assert.equal(props.source, 'endpoint:assignable-plans');
+  const area = props.renderSuggestions!([{ id: 'p-9', title: 'Pro', subtitle: 'STANDARD' }],
+    'pro', false) as unknown;
+  const row = elements(area).find((item) => item.props['aria-label'] === 'Select Pro');
+  assert.ok(row, 'matched plan row missing');
+  (row.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&plan=p-9']);
 });

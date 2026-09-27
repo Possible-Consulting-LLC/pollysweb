@@ -236,7 +236,8 @@ export function LiveSearch({ value, source, mode = 'popup', debounceMs = SUGGEST
   }) {
   const [state, dispatch] = useReducer(liveSearchReducer, value, initialLiveSearchState);
   const latest = useRef({ source, mode, debounceMs });
-  latest.current = { source, mode, debounceMs };
+  // Sync the latest props for event handlers (post-render, per lint rules).
+  useEffect(() => { latest.current = { source, mode, debounceMs }; });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controller = useRef<AbortController | null>(null);
   const runQuery = (text: string) => {

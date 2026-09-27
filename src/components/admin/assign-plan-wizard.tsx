@@ -3,6 +3,8 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { SelectionList } from '@/components/admin/selection-list';
+import { counterChipClass } from '@/components/admin/list-shared';
+import { LiveSearch, suggestViaEndpoint } from '@/components/admin/live-search';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
@@ -134,13 +136,13 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
           className={cn('rounded-full px-3 py-1 text-xs font-semibold',
             step === n ? 'bg-[var(--plum)] text-[var(--on-accent)]'
               : step > n ? 'bg-[var(--lavender)] text-[var(--midnight)]'
-              : 'bg-[var(--card)] text-[var(--midnight)] opacity-60')}>
+              : 'bg-[var(--hover)] text-[var(--midnight)] opacity-55')}>
           {n} · {label}
         </span>
       </span>)}
     </nav>
     {step >= 2 && selectedUser ? <div data-testid="wizard-context"
-        className="flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--plum)]/15 bg-[var(--card)] p-3">
+        className="flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--plum)]/20 bg-[var(--card)] px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         <Avatar label={selectedUser.name || selectedUser.email} />
         <span className="min-w-0">
@@ -160,16 +162,30 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               subtitle: selectedUser.email, selected: true }]}
             onChange={() => navigate(wizardHref(list, { step: 1,
               usearch: userPicker.search, upage: userPicker.page }))} />
-        : <SelectionList selectionMode="single" rows={userPicker.rows} total={userPicker.total}
-            page={userPicker.page} pageSize={userPicker.pageSize} search={userPicker.search}
-            selectedCount={0} onToggle={inertListCallbacks.onToggle}
-            emptyLabel="No keepers match this search."
-            onRowSelect={id => navigate(wizardHref(list, { step: 1, user: id,
-              usearch: userPicker.search, upage: userPicker.page }))}
-            onSearchChange={value => navigateSearch(wizardHref(list, { step: 1,
-              usearch: value, upage: 1 }))}
-            onPageChange={page => navigate(wizardHref(list, { step: 1,
-              usearch: userPicker.search, upage: page }))} />}
+        : <LiveSearch mode="headless" id="wizard-user-search"
+            label="Search keepers by name or email"
+            placeholder="Search keepers by name or email…" value={userPicker.search}
+            source={suggestViaEndpoint('users')}
+            toolbarEnd={<span className={counterChipClass} data-testid="picker-count">
+              {`${userPicker.total} keeper${userPicker.total === 1 ? '' : 's'}`}
+            </span>}
+            renderSuggestions={(suggestions, query, loading) => {
+              // A query equal to the committed URL search is the base list's
+              // own filter — only a genuinely typed query renders live matches.
+              const live = !loading && query.trim() !== '' && query !== userPicker.search;
+              return <SelectionList selectionMode="single" toolbar={false}
+                rows={live ? suggestions : userPicker.rows}
+                total={live ? suggestions.length : userPicker.total}
+                page={live ? 1 : userPicker.page} pageSize={userPicker.pageSize}
+                search="" selectedCount={0} {...inertListCallbacks}
+                emptyLabel="No keepers match this search."
+                onRowSelect={id => navigate(wizardHref(list, { step: 1, user: id,
+                  usearch: userPicker.search, upage: userPicker.page }))}
+                onPageChange={page => navigate(wizardHref(list, { step: 1,
+                  usearch: userPicker.search, upage: page }))} />;
+            }}
+            onFallbackSubmit={text => navigateSearch(wizardHref(list, { step: 1,
+              usearch: text, upage: 1 }))} />}
       <div className="flex items-center justify-end gap-2">
         {selectedUser
           ? <Link href={wizardHref(list, { step: 2, user: selectedUser.id })}
@@ -187,16 +203,28 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               selected: true }]}
             onChange={() => navigate(wizardHref(list, { step: 2, user: userId,
               psearch: planPicker.search, ppage: planPicker.page }))} />
-        : <SelectionList selectionMode="single" rows={planPicker.rows} total={planPicker.total}
-            page={planPicker.page} pageSize={planPicker.pageSize} search={planPicker.search}
-            selectedCount={0} onToggle={inertListCallbacks.onToggle}
-            emptyLabel="No active plans match this search."
-            onRowSelect={id => navigate(wizardHref(list, { step: 2, user: userId, plan: id,
-              psearch: planPicker.search, ppage: planPicker.page }))}
-            onSearchChange={value => navigateSearch(wizardHref(list, { step: 2, user: userId,
-              psearch: value, ppage: 1 }))}
-            onPageChange={page => navigate(wizardHref(list, { step: 2, user: userId,
-              psearch: planPicker.search, ppage: page }))} />}
+        : <LiveSearch mode="headless" id="wizard-plan-search"
+            label="Search plans by name"
+            placeholder="Search plans by name…" value={planPicker.search}
+            source={suggestViaEndpoint('assignable-plans')}
+            toolbarEnd={<span className={counterChipClass} data-testid="picker-count">
+              {`${planPicker.total} plan${planPicker.total === 1 ? '' : 's'}`}
+            </span>}
+            renderSuggestions={(suggestions, query, loading) => {
+              const live = !loading && query.trim() !== '' && query !== planPicker.search;
+              return <SelectionList selectionMode="single" toolbar={false}
+                rows={live ? suggestions : planPicker.rows}
+                total={live ? suggestions.length : planPicker.total}
+                page={live ? 1 : planPicker.page} pageSize={planPicker.pageSize}
+                search="" selectedCount={0} {...inertListCallbacks}
+                emptyLabel="No active plans match this search."
+                onRowSelect={id => navigate(wizardHref(list, { step: 2, user: userId, plan: id,
+                  psearch: planPicker.search, ppage: planPicker.page }))}
+                onPageChange={page => navigate(wizardHref(list, { step: 2, user: userId,
+                  psearch: planPicker.search, ppage: page }))} />;
+            }}
+            onFallbackSubmit={text => navigateSearch(wizardHref(list, { step: 2, user: userId,
+              psearch: text, ppage: 1 }))} />}
       <div className="flex items-center justify-between gap-2">
         <Link href={wizardHref(list, { step: 1, user: userId })}
           className={buttonVariants({ variant: 'soft', size: 'md' })}>Back to user</Link>
@@ -226,7 +254,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
             className="rounded-xl border border-[var(--plum)]/25 p-2" />
         </label>
         <div data-testid="wizard-summary"
-          className="space-y-1 rounded-2xl border border-[var(--plum)]/15 bg-[var(--card)] p-3 text-sm">
+          className="space-y-1 rounded-2xl border border-[var(--hover)] bg-[var(--card)] p-3.5 text-sm">
           <p><span className="font-semibold">Assigning:</span> {selectedPlan?.name ?? '—'}{selectedOption ? ` (${selectedOption.title})` : ''}</p>
           <p><span className="font-semibold">To:</span> {selectedUser ? `${selectedUser.name} (${selectedUser.email})` : '—'}</p>
           <p><span className="font-semibold">Effective:</span> {effectiveAt ? effectiveAt.replace('T', ' ') : 'now — leave the field empty to assign immediately'}</p>

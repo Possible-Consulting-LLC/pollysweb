@@ -30,20 +30,14 @@ export default async function PlansPage({ searchParams }:
       <p>Plan identity is the id; display names may repeat. Active billing options are limited to one per interval, and plans with subscription history are deactivated instead of deleted. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
     </header>
     <p><Link href="/admin/plans/new" className={buttonVariants({ variant: 'primary', size: 'md' })}>Create a plan</Link></p>
-    <form method="get" className="flex flex-wrap items-end gap-3">
-      <label className="grid gap-1 text-sm">Search by name
-        <input name="search" defaultValue={parsed.search} maxLength={80}
-          className="rounded-xl border border-[var(--plum)]/25 p-2" />
-      </label>
-      <Button type="submit" variant="secondary" size="sm">Search</Button>
-      {parsed.search ? <Link href="/admin/plans" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>Clear</Link> : null}
-    </form>
+    {/* Search lives in the accordion's live toolbar (mockup-exact): typing
+        suggests live, Enter is the explicit full-page fallback navigation. */}
     {/* Selection state lives in the client wrapper; rows, tray, and counter render there. */}
     <PlansAccordion plans={plans} total={total} search={parsed.search} page={page} openId={openId} />
     {plans.length === 0
       ? <p>{total === 0 && parsed.search ? 'No plans match this search.' : 'No plans yet. Create the first plan to start the catalog.'}</p>
       : null}
-    <nav className="flex items-center gap-3" aria-label="Plans pagination">
+    <nav className="mt-4 flex items-center gap-3 border-t border-[var(--hover)] pt-3.5" aria-label="Plans pagination">
       {page <= 1
         ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
         : <Link href={listHref(parsed.search, page - 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}

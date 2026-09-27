@@ -57,12 +57,40 @@ function loadAccordionView() {
       return deps[name];
     },
   });
-  return exports.PlansAccordionView as (props: Record<string, unknown>) => unknown;
+  return exports as {
+    PlansAccordionView: (props: Record<string, unknown>) => unknown;
+    PlansAccordion: (props: Record<string, unknown>) => unknown;
+  };
 }
 
+let pushed: string[] = [];
+let lastLiveSearch: Record<string, unknown> | null = null;
+
+const listSharedExports = (() => {
+  const exports: Record<string, unknown> = {};
+  const code = ts.transpileModule(
+    readFileSync(new URL('./list-shared.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  runInNewContext(code, { exports, URLSearchParams });
+  return exports;
+})();
+
 const deps: Record<string, unknown> = {
-  // The client wrapper's useState import is stubbed; only the hook-free view is exercised.
-  react: { useState: () => [undefined, () => {}] },
+  // The client wrapper's hooks are stubbed; only the hook-free view is exercised
+  // (plus the shell's fallback wiring, which needs a working initial state).
+  react: {
+    useState: (initial: unknown) =>
+      [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
+  },
+  'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
+  '@/components/admin/live-search': {
+    suggestViaEndpoint: (entity: string) => `endpoint:${entity}`,
+    LiveSearch: (props: Record<string, unknown>) => {
+      lastLiveSearch = props;
+      return jsx.jsx('div', { 'data-live-search': String(props.source) });
+    },
+  },
+  '@/components/admin/list-shared': listSharedExports,
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
   'lucide-react': { ChevronDown: (props: Record<string, unknown>) => jsx.jsx('svg', props) },
@@ -94,7 +122,7 @@ const deps: Record<string, unknown> = {
     reorderPlanAction: 'reorder-plan', bulkSetPlanFlagsAction: 'bulk-set-plan-flags' },
 };
 
-const PlansAccordionView = loadAccordionView();
+const { PlansAccordionView, PlansAccordion } = loadAccordionView();
 
 type PlanLike = { id: string; name: string; description: string; planType: string;
   maxSpiders: number | null; active: boolean; public: boolean; sortOrder: number;
@@ -112,10 +140,15 @@ function plans(count: number): PlanLike[] {
 
 const base = { plans: plans(3), total: 3, search: '', page: 1, openId: '',
   selectedItems: [] as Array<{ id: string; title: string }>,
-  onToggleSelected: (_id: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {} };
+  onToggleSelected: (_id: string) => {}, trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSearchSubmit: (_search: string) => {} };
 
-const render = (overrides: Partial<typeof base> = {}) =>
-  PlansAccordionView({ ...base, ...overrides });
+const render = (overrides: Partial<typeof base> = {}) => {
+  lastLiveSearch = null;
+  const tree = PlansAccordionView({ ...base, ...overrides });
+  elements(tree); // resolve the live-search stub for prop assertions
+  return tree;
+};
 
 function elementsOf(tree: unknown) {
   const all = elements(tree);
@@ -211,4 +244,91 @@ test('accordion expansion, detail cards, and collapse toggle keep working with s
   assert.equal(String(editLink.props.className).includes('variant-primary'), true);
   const collapse = elementsOf(tree).links.find(link => link.props.href === '/admin/plans?page=1');
   assert.ok(collapse, 'collapse toggle missing');
+});
+
+// --- Task 7: live search toolbar + mockup visual parity ---
+
+function readSource(): string {
+  return readFileSync(new URL('./plans-accordion.tsx', import.meta.url), 'utf8');
+}
+
+test('the toolbar hosts the live search combobox wired to the plans endpoint', () => {
+  render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
+  assert.ok(lastLiveSearch, 'live search missing from the toolbar');
+  assert.equal(lastLiveSearch!.source, 'endpoint:plans');
+  assert.equal(lastLiveSearch!.mode, 'popup');
+  assert.equal(lastLiveSearch!.value, '');
+  assert.equal(lastLiveSearch!.placeholder, 'Search plans by name…');
+  assert.deepEqual([...(lastLiveSearch!.selectedIds as Set<string>)], ['plan-1'],
+    'already-picked plans are passed as selected markers');
+});
+
+test('picking a suggestion toggles the parent-owned selection directly', () => {
+  const toggled: string[] = [];
+  render({ onToggleSelected: (id: string) => { toggled.push(id); } });
+  (lastLiveSearch!.onPick as (suggestion: { id: string; title?: string }) => void)({ id: 'plan-2', title: 'Plan 2' });
+  assert.deepEqual(toggled, ['plan-2']);
+  assert.equal(lastLiveSearch!.onFallbackSubmit !== undefined, true,
+    'the explicit full-page fallback is wired separately');
+});
+
+test('the fallback submit navigates the full-page URL search; the pick path never routes', () => {
+  pushed = [];
+  const tree = PlansAccordion({ plans: plans(2), total: 2, search: '', page: 1, openId: '' });
+  elements(tree);
+  assert.ok(lastLiveSearch, 'view not resolved through the shell');
+  (lastLiveSearch!.onFallbackSubmit as (text: string) => void)('term');
+  assert.deepEqual(pushed, ['/admin/plans?search=term&page=1'],
+    'fallback resets page and open plan exactly like the old GET form');
+});
+
+test('the counter chip is gold, lives in the toolbar, and counts selected of total', () => {
+  const none = render();
+  const chip = elements(none).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.ok(chip, 'counter chip missing');
+  assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
+  assert.equal(textOf(chip).includes('3 plans'), true);
+  const some = render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
+  const someChip = elements(some).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.equal(textOf(someChip!).includes('1 of 3 selected'), true);
+});
+
+test('plan rows are freestanding hover-tinted rows — no card enclosure', () => {
+  const tree = render();
+  const rows = elements(tree).filter((item) => item.props['data-row-id']);
+  assert.equal(rows.length, 3);
+  for (const row of rows)
+    assert.equal(String(row.props.className).includes('card'), false,
+      'no cardClassName on the row container');
+  const hoverRows = elements(tree).filter((item) =>
+    String(item.props.className ?? '').includes('hover:bg-[var(--hover)]'));
+  assert.equal(hoverRows.length, 3, 'each row carries the mockup hover tint');
+});
+
+test('the open accordion row becomes a plum-bordered card; closed rows stay freestanding', () => {
+  const tree = render({ openId: 'plan-1' });
+  const rows = elements(tree).filter((item) => item.props['data-row-id']);
+  const open = rows.find((row) => row.props['data-row-id'] === 'plan-1');
+  const closed = rows.find((row) => row.props['data-row-id'] === 'plan-2');
+  assert.equal(String(open!.props.className).includes('border-[var(--plum)]'), true);
+  assert.equal(String(open!.props.className).includes('bg-[var(--card)]'), true);
+  assert.equal(String(closed!.props.className).includes('border-transparent'), true);
+});
+
+test('badges are theme-token driven — no hardcoded palette literals', () => {
+  assert.doesNotMatch(readSource(), /(?:emerald|sky|amber|teal|indigo)-\d00/);
+});
+
+test('detail cards are soft-bordered labeled kv grids at mockup density', () => {
+  const tree = render({ openId: 'plan-1' });
+  const cards = elements(tree).filter((item) => item.props['data-detail-card']);
+  assert.equal(cards.length, 3);
+  for (const card of cards) {
+    const cls = String(card.props.className);
+    assert.equal(cls.split(' ').includes('card'), false, 'no cardClassName');
+    assert.equal(cls.includes('border-[var(--hover)]'), true);
+    assert.equal(cls.includes('bg-[var(--background)]'), true);
+  }
+  const grids = elements(tree).filter((item) => item.type === 'dl' && item.props['data-kv-grid']);
+  assert.equal(grids.length, 3, 'each detail card renders a labeled kv grid');
 });

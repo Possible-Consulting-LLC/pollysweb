@@ -5,8 +5,7 @@ import { listEffectiveSubscriptions, listAssignablePlans, searchUsers,
   type AssignablePlanRow, type UserSummary } from '@/lib/admin/plan-assignment';
 import { clampPage, parseListQuery } from '@/lib/admin/paginated-list';
 import { buttonVariants, Button } from '@/components/ui/button';
-import { cardClassName } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { AssignPlanWizard } from '@/components/admin/assign-plan-wizard';
@@ -16,10 +15,10 @@ export const dynamic = 'force-dynamic';
 const intervalLabel: Record<string, string> = { MONTHLY: 'Monthly', ANNUAL: 'Annual' };
 const typeLabel: Record<string, string> = { STANDARD: 'Standard', CUSTOM: 'Custom',
   INTERNAL: 'Internal' };
-const statusBadge: Record<string, { label: string; className: string }> = {
-  ACTIVE: { label: 'Active', className: 'bg-emerald-200 text-emerald-950' },
-  TRIALING: { label: 'Trialing', className: 'bg-sky-200 text-sky-950' },
-  PAST_DUE: { label: 'Past due', className: 'bg-amber-200 text-amber-950' },
+const statusBadge: Record<string, { label: string; on: boolean }> = {
+  ACTIVE: { label: 'Active', on: true },
+  TRIALING: { label: 'Trialing', on: true },
+  PAST_DUE: { label: 'Past due', on: false },
 };
 const price = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const day = (date: Date) => date.toISOString().slice(0, 10);
@@ -116,7 +115,8 @@ export default async function SubscriptionsPage({ searchParams }:
     // Focused views keep the picker's search/page so "Change" restores the view.
     userPicker: userList
       ? { rows: userList.data.users.map((user: UserSummary) =>
-          ({ id: user.id, title: user.name, subtitle: user.email })),
+          ({ id: user.id, title: user.name, subtitle: user.email,
+            leading: initialsOf(user.name || user.email) })),
           total: userList.data.total, page: userList.page,
           pageSize: userPickerQuery.pageSize, search: userPickerQuery.search }
       : { ...emptyPicker, page: userPickerQuery.page, search: userPickerQuery.search },
@@ -157,7 +157,7 @@ export default async function SubscriptionsPage({ searchParams }:
           <input key={key} type="hidden" name={key} value={value} />) : null}
         <label className="grid gap-1 text-sm">Search by keeper, plan, or status
           <input name="search" defaultValue={parsed.search} maxLength={80}
-            className="rounded-xl border border-[var(--plum)]/25 p-2" />
+            className="h-11 rounded-2xl border border-[var(--lavender-deep)] bg-[var(--input)] px-3.5 text-sm" />
         </label>
         <Button type="submit" variant="secondary" size="sm">Search</Button>
         {parsed.search
@@ -172,7 +172,7 @@ export default async function SubscriptionsPage({ searchParams }:
           const badge = statusBadge[row.status];
           const keeper = row.userName || row.userEmail || row.userId;
           return <div key={row.id} data-subscription-row={row.id}
-            className={cn(cardClassName, 'flex flex-wrap items-center gap-3 p-4')}>
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-transparent px-3.5 py-3 transition-colors hover:bg-[var(--hover)]">
             <span aria-hidden="true"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-sm font-bold text-[var(--midnight)]">
               {initialsOf(keeper)}
@@ -187,8 +187,8 @@ export default async function SubscriptionsPage({ searchParams }:
               {row.optionPriceCents === null ? '' : ` — ${price(row.optionPriceCents)}`}
             </span>
             {badge
-              ? <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', badge.className)}>{badge.label}</span>
-              : <span className="rounded-full border border-dashed border-[var(--lavender-deep)] px-2.5 py-1 text-xs font-semibold opacity-60">{row.status}</span>}
+              ? <span className={badge.on ? badgeOnClass : badgeOffClass}>{badge.label}</span>
+              : <span className={badgeOffClass}>{row.status}</span>}
             <span className="text-sm opacity-70">
               since {day(row.startedAt)} · {row.renewsAt ? `renews ${day(row.renewsAt)}`
                 : row.expiresAt ? `ends ${day(row.expiresAt)}` : 'no renewal'}

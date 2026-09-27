@@ -71,6 +71,9 @@ const tray = loadModule('./selection-tray.tsx', {
 const selectionList = loadModule('./selection-list.tsx', {
   ...buttonDeps,
   '@/components/admin/selection-tray': tray,
+  '@/components/admin/list-shared': {
+    counterChipClass: 'goldchip', categoryLabel: (category: string) => category,
+  },
   '@/components/ui/button': {
     Button: ({ variant, size, ...props }: Record<string, unknown>) =>
       jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', ...props }),
@@ -175,7 +178,8 @@ test('save submits the full enabled set for every registry key, not just the vis
   assert.equal(String(planId?.props.value), 'plan-1');
   // Page-2 keys not enabled are submitted as part of the full matrix implicitly:
   // the checkbox rows on page 2 render so the admin sees their state.
-  const toggles = elements(tree).filter(item => item.type === 'button' && item.props['aria-label']?.toString().startsWith('Toggle '));
+  const toggles = elements(tree).filter(item => item.type === 'input' &&
+    item.props.type === 'checkbox' && item.props['aria-label']?.toString().startsWith('Toggle '));
   assert.ok(toggles.length >= page2Keys.length - 2, 'page 2 rows must render');
 });
 
@@ -184,8 +188,8 @@ test('the counter and selectedRows reflect the full enabled set across the page 
     enabled: enabledMap([...page1Keys.slice(0, 2), ...page2Keys.slice(0, 3)]),
     page: 2,
   });
-  const counter = elements(tree).find(item => item.type === 'p' && item.props['data-testid'] === 'selected-count');
-  assert.equal(textOf(counter), '5 selected');
+  const counter = elements(tree).find(item => item.props['data-testid'] === 'selected-count');
+  assert.equal(textOf(counter), '5 of 34 selected');
   // The tray chips carry the off-page keys too (subtitle = key).
   const body = textOf(tree);
   assert.ok(body.includes(page1Keys[0]), 'off-page selected key missing from the tray');
@@ -229,8 +233,9 @@ test('toggles flow through onToggle with the feature key', () => {
   const toggled: string[] = [];
   const tree = render({ onToggle: (key: string) => { toggled.push(key); } });
   const first = elements(tree)
-    .find(item => item.type === 'button' && String(item.props['aria-label'] ?? '').startsWith('Toggle '));
-  (first?.props.onClick as () => void)();
+    .find(item => item.type === 'input' && item.props.type === 'checkbox' &&
+      String(item.props['aria-label'] ?? '').startsWith('Toggle '));
+  (first?.props.onChange as () => void)();
   assert.equal(toggled.length, 1);
   assert.equal(typeof toggled[0], 'string');
 });
@@ -288,4 +293,39 @@ test('state owner: the tray collapse flag flips and seeding resolves registry ti
   assert.deepEqual({ page: seededState.page, search: seededState.search,
     selectedOnly: seededState.selectedOnly, trayCollapsed: seededState.trayCollapsed },
     { page: 1, search: '', selectedOnly: false, trayCollapsed: false });
+});
+
+// --- Task 7: live-search parity (client-side-ideal pattern) + visual parity ---
+
+test('searching filters the full registry in place — matches beyond the loaded page appear, no navigation', () => {
+  // The registry is fully client-resident: the filter is instant and spans ALL
+  // rows by construction (the ratified client-side-ideal pattern for the
+  // matrix), so typing never navigates and never submits.
+  const tree = render({ search: 'journey', page: 1 });
+  const rowIds = elements(tree)
+    .filter((item) => item.props['data-row-id'])
+    .map((item) => String(item.props['data-row-id']));
+  assert.ok(rowIds.some((id) => id.startsWith('journey')),
+    'matches from every registry category render in place');
+  // No link-based navigation machinery anywhere in the search path.
+  assert.equal(elements(tree).some((item) => item.type === 'a'), false);
+});
+
+test('selected-state markers: enabled rows render plum titles on the filtered surface', () => {
+  const enabledKey = registry.FEATURE_REGISTRY.find((feature: { key: string }) =>
+    feature.key.includes('journey'))!.key;
+  const tree = render({ search: 'journey', enabled: enabledMap([enabledKey]) });
+  const row = elements(tree)
+    .filter((item) => item.props['data-row-id'] === enabledKey)[0];
+  assert.ok(row, 'enabled row missing from the filtered view');
+  const title = elements(row).find((item) =>
+    item.type === 'span' && String(item.props.className ?? '').includes('text-[var(--plum)]'));
+  assert.ok(title, 'enabled rows must carry the plum selected marker');
+});
+
+test('matrix feedback and accents are theme-token driven — no palette literals, no navigation', () => {
+  const source = readFileSync(new URL('./feature-matrix.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /(?:emerald|sky|amber|teal|indigo)-\d00/);
+  assert.equal(source.includes('next/navigation'), false,
+    'the matrix search never navigates — pure client filtering');
 });

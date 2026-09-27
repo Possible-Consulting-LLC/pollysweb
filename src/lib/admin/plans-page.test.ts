@@ -98,7 +98,8 @@ test('plans page feeds the accordion the server page and the URL open plan', asy
   // Resolving the tree invokes the stubbed client component.
   elementsOf(tree);
   assert.deepEqual(capturedProps, [{ plans: servedPlans, total: 2, search: '', page: 1, openId: 'plan-2' }]);
-  assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), true);
+  // Search is owned by the accordion's live toolbar (Task 7) — no GET form here.
+  assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), false);
   assert.ok(elements(tree).some(item => item.type === 'a' && item.props.href === '/admin/plans/new'),
     'create link missing');
   assert.deepEqual(capturedQueries, [{ search: '', page: 1, pageSize: 20 }]);
@@ -134,6 +135,9 @@ test('plans page paginates at 20 with disabled bounds and working pager links', 
   assert.equal(elementsOf(page2).buttons.find(button => text(button) === 'Next')?.props.disabled, true);
   assert.deepEqual(capturedQueries,
     [{ search: '', page: 1, pageSize: 20 }, { search: '', page: 2, pageSize: 20 }]);
+  // Mockup footer: the pager sits on a hover-toned rule.
+  const nav = elements(page2).find((item: { type: string }) => item.type === 'nav');
+  assert.equal(String(nav!.props.className).includes('border-[var(--hover)]'), true);
 });
 
 test('plans page passes the search to the service and clamps out-of-range pages', async () => {
@@ -142,15 +146,17 @@ test('plans page passes the search to the service and clamps out-of-range pages'
   // First fetch uses the URL page; the clamp refetch targets the last valid page.
   assert.deepEqual(capturedQueries,
     [{ search: 'plan', page: 99, pageSize: 20 }, { search: 'plan', page: 2, pageSize: 20 }]);
-  // Pager links preserve the search term; the search input echoes it back.
-  const { inputs } = elementsOf(await render({ search: 'plan' }));
-  assert.equal(inputs.find(input => input.props.name === 'search')?.props.defaultValue, 'plan');
+  // The accordion receives the URL search (its live toolbar echoes it back).
+  capturedProps = [];
+  const tree = await render({ search: 'plan' });
+  elementsOf(tree);
+  assert.equal((capturedProps[0] as { search: string }).search, 'plan');
 });
 
-test('search form carries no hidden state, so a new search resets page and open plan', async () => {
+test('search is URL-owned with no form state — the live toolbar owns the input', async () => {
   capturedProps = []; servedPlans = [{ id: 'plan-1', name: 'Plan 1' }]; servedTotal = 1;
   const tree = await render({ search: 'plan', open: 'plan-1', page: '1' });
   const { inputs } = elementsOf(tree);
-  assert.equal(inputs.some(input => input.type === 'hidden'), false);
-  assert.equal(inputs.find(input => input.props.name === 'search')?.props.defaultValue, 'plan');
+  assert.equal(inputs.length, 0, 'no search form on the page; the accordion toolbar owns it');
+  assert.equal((capturedProps[0] as { search: string }).search, 'plan');
 });

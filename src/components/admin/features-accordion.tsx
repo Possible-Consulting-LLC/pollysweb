@@ -1,11 +1,13 @@
 'use client';
 import Link from 'next/link';
-import { useReducer } from 'react';
+import { useRouter } from 'next/navigation';
+import { useReducer, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
-import { cardClassName } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { listHref, categoryLabel } from '@/components/admin/list-shared';
+import { listHref, categoryLabel, counterChipClass, badgeTintClass, badgeOnClass,
+  badgeOffClass } from '@/components/admin/list-shared';
+import { LiveSearch, suggestViaEndpoint } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
@@ -48,35 +50,40 @@ export type FeaturesAccordionViewProps = {
   onToggleSelected(key: string): void;
   trayCollapsed: boolean;
   onToggleTrayCollapsed(): void;
+  /** The explicit full-page fallback: submits the URL-param search (resets
+   * page and open feature). Plain typing in the live search NEVER navigates. */
+  onSearchSubmit(search: string): void;
 };
 
-function DetailCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className={cn(cardClassName, 'space-y-2 p-4')}>
-    <h3 className="text-sm font-semibold text-[var(--plum)]">{title}</h3>
-    {children}
+/** Mockup detail card: soft-bordered card with a labeled kv grid. */
+function DetailCard({ title, rows }: { title: string; rows: Array<{ label: string; value: ReactNode }> }) {
+  return <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
+    <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">{title}</h3>
+    <dl data-kv-grid className="grid grid-cols-[minmax(110px,130px)_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+      {rows.map(row => [<dt key={`${row.label}-dt`} className="font-semibold opacity-60">{row.label}</dt>,
+        <dd key={`${row.label}-dd`} className="min-w-0">{row.value}</dd>])}
+    </dl>
   </div>;
 }
 
 function FeatureDetail({ row }: { row: FeatureRowView }) {
-  return <div className="space-y-3 border-t border-[var(--plum)]/10 p-4">
-    <div className="grid gap-3 md:grid-cols-3">
-      <DetailCard title="Identity">
-        <p>Key: <code className="text-xs">{row.key}</code></p>
-        <p>Category: {categoryLabel(row.category)}</p>
-        <p>{row.description}</p>
-      </DetailCard>
-      <DetailCard title="Release state">
-        <p>{row.active
-          ? <span className="rounded-full bg-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-950">Released</span>
-          : <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-xs font-semibold text-[var(--plum-deep)]">Not released</span>}</p>
-      </DetailCard>
-      <DetailCard title="Plan assignments">
-        <p>{row.assignedPlans.length} of {row.totalPlans} plans</p>
-        {row.assignedPlans.length
-          ? <p>{row.assignedPlans.join(', ')}</p>
-          : <p>No plans use this feature yet.</p>}
-      </DetailCard>
-    </div>
+  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
+    <DetailCard title="Identity" rows={[
+      { label: 'Key', value: <code className="text-xs">{row.key}</code> },
+      { label: 'Category', value: categoryLabel(row.category) },
+      { label: 'Description', value: row.description },
+    ]} />
+    <DetailCard title="Release state" rows={[
+      { label: 'Status', value: row.active
+        ? <span className={badgeOnClass}>Released</span>
+        : <span className={badgeOffClass}>Not released</span> },
+    ]} />
+    <DetailCard title="Plan assignments" rows={[
+      { label: 'Assigned', value: `${row.assignedPlans.length} of ${row.totalPlans} plans` },
+      { label: 'Plans', value: row.assignedPlans.length
+        ? row.assignedPlans.join(', ')
+        : 'No plans use this feature yet.' },
+    ]} />
     {/* A disabled fieldset makes every control inert for orphaned features. */}
     <fieldset disabled={row.orphan} className="grid gap-3">
       <div className="flex flex-wrap gap-3">
@@ -112,18 +119,23 @@ function FeatureDetail({ row }: { row: FeatureRowView }) {
  * below owns the selection/collapse state). Grouping is derived from the rows
  * themselves — orphaned categories slot in alphabetically like registry ones. */
 export function FeaturesAccordionView({ features, total, search, page, openKey, selectedItems,
-  onToggleSelected, trayCollapsed, onToggleTrayCollapsed }: FeaturesAccordionViewProps) {
+  onToggleSelected, trayCollapsed, onToggleTrayCollapsed, onSearchSubmit }:
+  FeaturesAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const categories = [...new Set(features.map(feature => feature.category))].sort();
   return <>
-    <p className="text-sm">
-      {selectedItems.length > 0
-        ? <span className="rounded-full bg-[var(--gold)] px-3 py-1 text-xs font-semibold text-[var(--panel)]"
-            data-testid="selection-counter">
-            {`${selectedItems.length} of ${total} selected`}
-          </span>
-        : <span>{`${total} feature${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}</span>}
-    </p>
+    <div data-testid="features-toolbar" className="flex flex-wrap items-center gap-2">
+      <LiveSearch id="features-search" mode="popup" label="Search features by name or key"
+        placeholder="Search features…" value={search}
+        source={suggestViaEndpoint('features')} selectedIds={selected}
+        onPick={suggestion => onToggleSelected(suggestion.id)}
+        onFallbackSubmit={onSearchSubmit} />
+      <span className={counterChipClass} data-testid="selection-counter">
+        {selectedItems.length > 0
+          ? `${selectedItems.length} of ${total} selected`
+          : `${total} feature${total === 1 ? '' : 's'}${search ? ' matching the search' : ''}`}
+      </span>
+    </div>
     <SelectionTray items={selectedItems} onDeselect={onToggleSelected}
       collapsed={trayCollapsed} onCollapsedToggle={onToggleTrayCollapsed} label="Selected">
       {(['true', 'false'] as const).map(setting =>
@@ -139,13 +151,17 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
         </MutationForm>)}
     </SelectionTray>
     {categories.map(category =>
-      <section key={category} className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--midnight)]/70"
+      <section key={category} className="space-y-0">
+        <h3 className="mb-1 mt-3.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--plum)]"
           data-group-header={category}>{categoryLabel(category)}</h3>
         {features.filter(feature => feature.category === category).map(row => {
           const isOpen = row.key === openKey;
-          return <div key={row.id} className={cn(cardClassName, 'space-y-3', row.orphan && 'opacity-70')}>
-            <div className="flex items-start gap-3 p-4">
+          return <div key={row.id} data-row-id={row.key}
+            className={cn('rounded-2xl border', row.orphan && 'opacity-70', isOpen
+              ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+              : 'border-transparent')}>
+            <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
+              !isOpen && 'hover:bg-[var(--hover)]')}>
               {/* Orphaned features are excluded from bulk selection. */}
               <input type="checkbox" checked={selected.has(row.key)} disabled={row.orphan}
                 onChange={() => onToggleSelected(row.key)}
@@ -157,15 +173,14 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
                 <ChevronDown aria-hidden="true"
                   className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
                 <span className="min-w-0">
-                  <span className="block font-semibold">{row.name}</span>
-                  <span className="block text-sm text-[var(--midnight)]/60">{row.description}</span>
+                  <span className="block text-sm font-semibold">{row.name}</span>
+                  <span className="block truncate font-mono text-[11px] opacity-55">{row.key}</span>
                 </span>
-                <span className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-xs font-semibold text-[var(--plum-deep)]">{row.key}</span>
+                <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
                   {row.active
-                    ? <span className="rounded-full bg-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-950">Released</span>
-                    : <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-xs font-semibold text-[var(--plum-deep)]">Not released</span>}
-                  {row.orphan ? <span className="rounded-full bg-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-950">Orphaned</span> : null}
+                    ? <span className={badgeOnClass}>Released</span>
+                    : <span className={badgeOffClass}>Not released</span>}
+                  {row.orphan ? <span className={badgeOffClass}>Orphaned</span> : null}
                 </span>
               </Link>
             </div>
@@ -180,8 +195,9 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
  * guarantee is directly testable: the selection map changes only through
  * toggles (copy-on-write) and is never pruned by props — it survives
  * pagination and accordion navigation (both URL-driven). A fresh search
- * submit is a GET form navigation that remounts the client island, so
- * selection resets there by design. */
+ * submit is the live search's explicit fallback navigation, so selection
+ * resets there by design (the mockup's own behavior); live-suggest picking
+ * never navigates and never resets. */
 export type AccordionState = {
   selection: Map<string, { title: string; subtitle: string }>;
   trayCollapsed: boolean;
@@ -206,7 +222,9 @@ export function accordionReducer(state: AccordionState, action: AccordionAction)
 
 /** Thin client shell around accordionReducer. */
 export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
-  'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed'>) {
+  'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed' |
+  'onSearchSubmit'>) {
+  const router = useRouter();
   const [state, dispatch] = useReducer(accordionReducer,
     { selection: new Map<string, { title: string; subtitle: string }>(), trayCollapsed: false });
   return <FeaturesAccordionView {...props}
@@ -217,5 +235,6 @@ export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
       dispatch({ type: 'toggle', key, title: row?.name ?? key, subtitle: key });
     }}
     trayCollapsed={state.trayCollapsed}
-    onToggleTrayCollapsed={() => dispatch({ type: 'toggleTrayCollapsed' })} />;
+    onToggleTrayCollapsed={() => dispatch({ type: 'toggleTrayCollapsed' })}
+    onSearchSubmit={search => router.push(listHrefFor(search, 1))} />;
 }

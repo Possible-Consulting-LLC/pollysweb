@@ -170,9 +170,18 @@ test('features page queries 20 per page with a name-or-key search and feeds the 
       assignedPlans: row.id === DB_ROWS[20].id ? ['Basic'] : [], totalPlans: 3 })),
     total: 25, search: 'spood', page: 2, openKey: DB_ROWS[1].key,
   });
-  assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), true);
+  // Search is owned by the accordion's live toolbar (Task 7) — no GET form here.
+  assert.equal(elementsOf(tree).inputs.some(input => input.props.name === 'search'), false);
   const syncForm = elementsOf(tree).forms.find(form => form.props.action === 'sync-registry');
   assert.ok(syncForm, 'sync registry card missing');
+});
+
+test('the accordion (with its live toolbar) renders even when nothing matches yet', async () => {
+  featureQueries = []; capturedProps = []; servedRows = []; servedTotal = 0;
+  const tree = await render({});
+  elementsOf(tree);
+  assert.equal(capturedProps.length, 1,
+    'FeaturesAccordion always renders so the live search stays available');
 });
 
 test('a page beyond the total clamps back to the last valid page', async () => {
