@@ -11,6 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "test": "tsx --test src/lib/*.test.ts src/lib/**/*.test.ts src/components/*.test.ts src/components/**/*.test.ts",
+    "test:integration": "playwright test",
+    "test:integration:ui": "playwright test --ui",
     "postinstall": "prisma generate",
     "db:migrate:dev": "prisma migrate dev"
   },
@@ -41,6 +43,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.19.43",

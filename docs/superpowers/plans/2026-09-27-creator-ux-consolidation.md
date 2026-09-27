@@ -173,4 +173,60 @@ Spec coverage: all user walkthrough findings mapped (buttons/theme → Tasks 1/3
 - [ ] **Step 2: Implement** fixtures (auth, prefix lifecycle), the three spec files, screenshot capture.
 - [ ] **Step 3: Run** `npx playwright test` — all green; artifacts present; **no leftover `ZZ-e2e-` rows** (assert cleanup).
 - [ ] **Step 4: Full checks** (`npm test` unchanged) + commit `feat: playwright integration suite for creator surfaces`.
-- [ ] **Step 5: Report includes the artifact paths** so the human can review the screenshots.
+- [ ] **Step 5: Report includes the artifact paths** so the human can review the screenshots. (Review additions per user: `test:integration:ui` script exists; config runs in all three modes — headless/--headed/--ui; baselines committed/openable.)
+
+---
+
+### Task 7: Live search parity + visual parity (user design-fidelity directives)
+
+**Files:**
+- Create: suggestion endpoint per surface (e.g. `src/app/admin/suggest/route.ts` or per-page routes), `src/components/admin/live-search.tsx`, tests
+- Modify: the three creator surfaces' search inputs + wrappers to consume it; **all creator list components' visual styling to mockup parity** (`features-accordion.tsx`, `plans-accordion.tsx`, `feature-matrix.tsx`, `selection-tray.tsx`, subscriptions page/wizard)
+
+**Requirements A — live search (user-ratified — mockup-exact fidelity with Option B machinery):**
+- Typing filters/suggests LIVE: debounced (~250ms) server query spanning ALL rows (not just loaded page) — suggestions render in place, NO navigation, NO submit for browsing
+- Selected-state markers visible in suggestions (rows already picked render selected/plum)
+- Picking from suggestions updates the parent's owned state directly — tray/counter never flash or move
+- Keyboard: arrow-through-suggestions, Enter selects, Escape closes; typeahead a11y pattern
+- Submit-and-filter (the existing URL-param search) remains ONLY as the explicit full-page fallback control
+- Applies to all three creator surfaces (plans, features catalog, user picker step 1) + matrix search
+
+**Requirements B — visual parity (user directive: "these pages look poor in design compared to the mockups"):**
+The mockups' design language — freestanding hover-tinted rows, NOT card-grid tables — is the binding visual spec. Per-element parity, from the mockup CSS:
+- **Rows**: freestanding rounded (radius ~14px) hover-tinted rows (`padding 12px 14px`, transparent border, `--hover` background on hover, card+plum border when open/selected) — remove the enclosing `cardClassName` grid; each row is its own element
+- **Airiness**: the mockups' spacing (row padding, section gaps, tray padding) — not dense form-pack
+- **Search input**: mockup-style — large (44px, radius 14px), lavender-deep border, sitting beside the gold counter chip in a toolbar row
+- **Tray**: soft bordered panel with plum toggle + gold-highlighted chips, the mockup's spacing
+- **Counter chip**: gold pill with `N of M selected`, always in the toolbar
+- **Badges**: keep current pill shape but drive ALL colors from theme tokens (kill emerald/amber hardcodes) — mockup badges use `--lavender`/`--hover`/dashed
+- **Hover feedback everywhere** (rows, chips, buttons) — the mockups' `--hover` tint
+- **Detail cards** (expanded accordion): mockup density — labeled `kv` grids inside soft-bordered cards, generous padding
+- All on theme tokens so both themes render correctly by construction; verified by updated screenshot baselines
+
+- [ ] **Step 1: Failing tests** — search: suggestion endpoint (query shapes, spans-all-rows, selected markers), component (debounce, in-place render, keyboard, no-navigation), wrapper integration (picking updates map, tray stable). Visual: class-structure assertions on rows (freestanding vs card-enclosed), token-driven colors (no emerald/amber/other palette literals), toolbar layout presence
+- [ ] **Step 2–4: RED → implement → GREEN → full checks →** commit `feat: mockup-exact live search and visual parity on creator surfaces`
+- [ ] **Step 5: Rebaseline screenshots** — updated baselines committed; before/after diff included in the report so the human sees the visual change
+
+(Sequenced AFTER Task 6: the browser suite first pins current behavior + rendering baselines, then Task 7 changes behavior + visuals under those baselines. Together with Task 8's parity audit — which verifies BOTH interaction and visual fidelity element-by-element — this closes the slice's fidelity obligations before the GLM 5.3 final review.)
+
+---
+
+### Task 8: Mockup-parity audit (user design-fidelity directive — global bar)
+
+**Files:**
+- Create: `docs/superpowers/audits/2026-09-27-creator-mockup-parity.md` (the parity ledger)
+- Modify: whatever the audit finds divergent (each divergence = failing test first, then fix, per slice rules)
+
+**Requirements (user-ratified global bar): "Each section should mirror the design and functionality of the mockup approved."**
+
+Method — surface by surface, interaction by interaction:
+1. For each of the five approved mockups (selection-list interactive, plans, features, subscriptions, user-picker): enumerate every interaction the mockup exhibits (typing/live-filter, selecting, folding, tray behavior, counter parity, action buttons and their feedback, keyboard behavior, theme toggle rendering)
+2. Walk the shipped surface (via the Task 6 browser suite / dev build) and verdict each interaction: MIRROR (indistinguishable) / DIVERGES (what differs, how the mockup behaved)
+3. Every DIVERGES becomes: failing test pinning the mockup behavior → fix → green → (rebaseline screenshots if visual)
+4. Known divergences entering this audit: search behavior (Task 7's scope), catalog GET-search resetting client selection (mockup never reset), subscriptions End without confirm (mockup showed alert-flow; bulk-action pattern uses dialogs), accordion detail density/order, any hardcoded palette breaks under theme toggle
+
+- [ ] **Step 1: The parity ledger** — every mockup interaction enumerated, every surface walked, every divergence listed with mockup-vs-shipped evidence
+- [ ] **Step 2: Fix loop per divergence** — failing test → fix → green (Task 7's search work is pre-ruled; audit verifies it landed mockup-exact)
+- [ ] **Step 3: Final parity verdict** — every interaction MIRRORs, committed ledger as the standing record
+
+(After Task 6; together with Task 7 this closes the slice's fidelity obligations before the GLM 5.3 final review.)

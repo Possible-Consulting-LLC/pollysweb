@@ -53,6 +53,12 @@ next-env.d.ts
 .windsurf/
 /.superpowers/brainstorm/
 skills-lock.json
+
+# Playwright integration suite: run artifacts are ignored, committed baselines are not
+tests/integration/.auth/
+tests/integration/artifacts/**
+!tests/integration/artifacts/baselines/
+!tests/integration/artifacts/baselines/**
 AGENTS.md
 CLAUDE.md
 *.webp
