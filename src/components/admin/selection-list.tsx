@@ -211,7 +211,7 @@ export function SelectionList({
           onCollapsedToggle={onTrayCollapsedToggle}
           trailing={onlyToggle}
         />
-      ) : onlyToggle ? <div>{onlyToggle}</div> : null}
+      ) : null}
       {sections.length === 0 ? <p className="text-sm text-[var(--midnight)]/70">{emptyLabel}</p> : null}
       {sections.map((section, index) => (
         <div key={section.header ?? `ungrouped-${index}`} className="space-y-0">
