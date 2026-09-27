@@ -150,7 +150,6 @@ test('validateAssignment rejects missing ids, bad reasons, and invalid dates', (
 test('assignPlanSubscription inserts an ACTIVE row and audits plan.assign with planId, status, effectiveAt', async () => {
   const f = fixture();
   const id = await f.assignment.assignPlanSubscription(f.tx, 'owner-1', validInput);
-  console.log('DBG149', id instanceof Error ? 'ERR ' + id.message : id);
   assert.ok(typeof id === 'string' && !isFailure(id));
   const row = f.subscriptionStore.get(id as string)!;
   assert.equal(row.userId, 'user-1');
@@ -258,8 +257,10 @@ test('listEffectiveSubscriptions returns only currently effective rows', async (
       startedAt: new Date(0), renewsAt: null, expiresAt: new Date(NOW - 86_400_000),
       createdAt: new Date(0), updatedAt: new Date(0) },
     { id: 'sub-4', userId: 'user-4', planId: 'plan-1', planBillingOptionId: 'opt-1', status: 'TRIALING',
-      startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: new Date(NOW + 86_400_000),
-      createdAt: new Date(0), updatedAt: new Date(0) },
+      // Anchored to the wall clock: the production predicate compares against
+      // new Date(), so fixed fixture dates become stale and time-bomb the suite.
+      startedAt: new Date(Date.now() - 86_400_000), renewsAt: null,
+      expiresAt: new Date(Date.now() + 86_400_000), createdAt: new Date(0), updatedAt: new Date(0) },
   ] });
   const summaries = await f.assignment.listEffectiveSubscriptions(f.tx);
   assert.deepEqual(summaries.map(row => row.id).sort(), ['sub-1', 'sub-4']);
