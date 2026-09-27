@@ -168,3 +168,73 @@ test('sync action delegates to the real registry sync inside the admin boundary'
   assert.equal(f.store.get(ORPHANED.key)!.active, true);
   assert.equal(f.audits.length, 0);
 });
+
+test('bulk release audits one feature.release mutation per selected feature', async () => {
+  const f = fixture('super_admin');
+  await f.api.syncRegistryAction(new FormData());
+  f.audits.length = 0; f.updates.length = 0; f.revalidated.length = 0;
+  // spood.create is released first so the second call covers both the flip
+  // and the already-in-state branch.
+  const warmup = new FormData();
+  warmup.append('key', 'spood.create'); warmup.set('active', 'true');
+  assert.deepEqual(jsonOf(await f.api.bulkSetFeatureReleaseAction(warmup)), { success: true });
+  f.audits.length = 0; f.updates.length = 0; f.revalidated.length = 0; f.mutations.length = 0;
+  const form = new FormData();
+  form.append('key', 'spood.create'); form.append('key', 'care.feed.log');
+  form.set('active', 'true');
+  assert.deepEqual(jsonOf(await f.api.bulkSetFeatureReleaseAction(form)), { success: true });
+  assert.deepEqual(f.mutations, ['admin:bulksetfeaturerelease']);
+  assert.deepEqual(f.revalidated, ['/admin/features']);
+  assert.equal(f.audits.length, 2);
+  const flip = f.audits.find(audit => audit.changes.featureKey === 'care.feed.log');
+  assert.equal(flip!.action, 'feature.release');
+  assert.equal(flip!.reason, 'Toggled feature care.feed.log release');
+  assert.deepEqual(flip!.changes, { featureKey: 'care.feed.log', previousActive: false, active: true });
+  // A feature already in the requested state is still audited, with no change.
+  assert.deepEqual(f.audits.find(audit => audit.changes.featureKey === 'spood.create')!.changes,
+    { featureKey: 'spood.create', fieldsChanged: 'none' });
+  assert.equal(f.updates.filter(update => update.data.active === true).length, 1);
+  // Orphaned keys fail closed, consistent with the single-feature action.
+  const orphanForm = new FormData();
+  orphanForm.append('key', ORPHANED.key); orphanForm.set('active', 'true');
+  assert.ok((await f.api.bulkSetFeatureReleaseAction(orphanForm)).error);
+  assert.equal(f.store.get(ORPHANED.key)!.active, true);
+});
+
+test('bulk unrelease flips active features down with the same derived reason', async () => {
+  const f = fixture('super_admin');
+  await f.api.syncRegistryAction(new FormData());
+  const release = new FormData();
+  release.append('key', 'spood.create'); release.set('active', 'true');
+  await f.api.bulkSetFeatureReleaseAction(release);
+  f.audits.length = 0; f.updates.length = 0; f.revalidated.length = 0;
+  const form = new FormData();
+  form.append('key', 'spood.create'); form.set('active', 'false');
+  assert.deepEqual(jsonOf(await f.api.bulkSetFeatureReleaseAction(form)), { success: true });
+  assert.deepEqual(f.updates, [{ where: { key: 'spood.create' }, data: { active: false } }]);
+  assert.deepEqual(f.audits[0].changes, { featureKey: 'spood.create', previousActive: true, active: false });
+  assert.equal(f.audits[0].reason, 'Toggled feature spood.create release');
+});
+
+test('bulk release is denied for non-super-admins and fails closed on empty or unknown selections', async () => {
+  const denied = fixture('admin');
+  const form = new FormData();
+  form.append('key', 'spood.create'); form.set('active', 'true');
+  assert.ok((await denied.api.bulkSetFeatureReleaseAction(form)).error);
+  assert.equal(denied.updates.length, 0);
+  assert.equal(denied.audits.length, 0);
+
+  const f = fixture('super_admin');
+  await f.api.syncRegistryAction(new FormData());
+  f.audits.length = 0; f.updates.length = 0; f.revalidated.length = 0;
+  assert.ok((await f.api.bulkSetFeatureReleaseAction(new FormData())).error, 'empty selection');
+  const ghost = new FormData();
+  ghost.append('key', 'ghost.key'); ghost.set('active', 'true');
+  assert.ok((await f.api.bulkSetFeatureReleaseAction(ghost)).error, 'unknown key');
+  const badState = new FormData();
+  badState.append('key', 'spood.create'); badState.set('active', 'maybe');
+  assert.ok((await f.api.bulkSetFeatureReleaseAction(badState)).error, 'invalid state');
+  assert.equal(f.updates.length, 0);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.revalidated.length, 0);
+});

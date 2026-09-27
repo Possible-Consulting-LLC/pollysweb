@@ -29,6 +29,45 @@ export async function syncRegistryAction(form: FormData): Promise<Result> {
   });
 }
 
+/** One audited mutation per selected feature: release flips with the
+ * established derived-reason format. A feature already in the requested state
+ * is still audited (one entry per feature per bulk action) with fieldsChanged
+ * 'none'. Orphaned/unknown keys fail closed before any write. Bulk metadata
+ * edits and deletion are deliberately not bulk actions. */
+export async function bulkSetFeatureReleaseAction(form: FormData): Promise<Result> {
+  return withMutation(form, 'admin', 'bulksetfeaturerelease', async () => {
+    try {
+      const keys = form.getAll('key').map(String)
+        .filter(key => key && key.length <= 128);
+      if (keys.length === 0) throw Error('Select at least one feature first.');
+      const requested = String(form.get('active') ?? '');
+      if (requested !== 'true' && requested !== 'false') throw Error('Choose release or retire.');
+      const active = requested === 'true';
+      await withAdminControl(async (tx, actor) => {
+        for (const key of keys) {
+          const row = await tx.feature.findUnique({ where: { key } });
+          if (!row) throw Error('That feature is not in the catalog. Sync the registry first.');
+          if (!isRegisteredFeatureKey(key)) throw Error('Orphaned features are locked until their key returns to the code registry.');
+          const reason = `Toggled feature ${key} release`;
+          if (row.active !== active) {
+            await tx.feature.update({ where: { key }, data: { active } });
+            await appendAudit(tx, { actorId: actor.id, targetId: row.id, action: 'feature.release', reason,
+              changes: { featureKey: key, previousActive: row.active, active } });
+          } else {
+            await appendAudit(tx, { actorId: actor.id, targetId: row.id, action: 'feature.release', reason,
+              changes: { featureKey: key, fieldsChanged: 'none' } });
+          }
+        }
+      });
+      revalidatePath('/admin/features');
+      return { success: true };
+    } catch (error) {
+      if (error instanceof MaintenanceError) throw error;
+      return { error: error instanceof Error ? error.message : 'The bulk change was not applied. Reload and check your administrator access.' };
+    }
+  });
+}
+
 export async function saveFeatureMetadataAction(form: FormData): Promise<Result> {
   return withMutation(form, 'admin', 'savefeaturemetadata', async () => {
     try {
