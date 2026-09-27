@@ -33,8 +33,10 @@ export type SelectionListProps = {
   groups?: string[];
   emptyLabel?: string;
   /** Full selected set across all pages (multi mode). When non-empty the
-   * shared SelectionTray renders it and a "Selected only" content filter
-   * becomes available. Absent/empty → no tray, no toggle. */
+   * shared SelectionTray renders it and a "Selected only" paginated filter
+   * over the SAME list becomes available (the host pages over the selected
+   * rows; toolbar, pager, and counter stay live). Absent/empty → no tray,
+   * no toggle. */
   selectedRows?: SelectionRow[];
   /** 'multi' (default): checkboxes + counter + tray. 'single': click-to-select
    * rows via `onRowSelect`, no checkboxes/counter/tray, and a selected row
@@ -46,15 +48,20 @@ export type SelectionListProps = {
   /** Single mode only: fired by the focused view's change affordance to
    * unfold the list again. */
   onChange?(): void;
-  /** Parent-owned state for the "Selected only" content filter (multi mode). */
+  /** Parent-owned state for the "Selected only" paginated filter (multi mode). */
   selectedOnly?: boolean;
   onSelectedOnlyChange?(selectedOnly: boolean): void;
   /** Parent-owned collapsed flag for the shared tray (multi mode). */
   trayCollapsed?: boolean;
   onTrayCollapsedToggle?(): void;
-  /** Replaces the plain search input inside the toolbar — the host renders a
-   * live-search there. Absent → the plain (mockup-styled) input. */
+  /** Replaces the plain search input inside the toolbar — the host renders
+   * the headless narrowing input there (LiveSearchInput). Absent → the plain
+   * (mockup-styled) input. A search slot must narrow the RENDERED LIST
+   * headlessly (ruling 1): no dropdown by construction. */
   searchSlot?: ReactNode;
+  /** Primary footer action rendered at the footer's right (mockup's "Save
+   * matrix", INT:89-96) — the host passes its own form/button. */
+  footerAction?: ReactNode;
   /** When false the host renders the toolbar itself (picker surfaces whose
    * live search owns the toolbar row). Rows, tray, and pager still render. */
   toolbar?: boolean;
@@ -89,6 +96,7 @@ export function SelectionList({
   trayCollapsed = false,
   onTrayCollapsedToggle,
   searchSlot,
+  footerAction,
   toolbar = true,
 }: SelectionListProps) {
   const single = selectionMode === 'single';
@@ -117,13 +125,20 @@ export function SelectionList({
   const trayItems = single || !selectedRows?.length
     ? []
     : selectedRows.map(({ id, title, subtitle }) => ({ id, title, subtitle }));
-  const visibleRows = !single && selectedOnly && trayItems.length > 0 ? selectedRows ?? [] : rows;
-  const onlyToggle = !single && trayItems.length > 0
+  // "Selected only" is a paginated filter over the SAME list: the host pages
+  // over the selected rows, so this component just renders what it is given —
+  // toolbar, pager, and counter stay live either way.
+  const visibleRows = rows;
+  const onlyToggle = !single && trayItems.length > 0 && onSelectedOnlyChange
     ? (
-      <Button variant={selectedOnly ? 'gold' : 'ghost'} size="sm"
-        onClick={() => onSelectedOnlyChange?.(!selectedOnly)}>
-        {selectedOnly ? 'Show all' : 'Selected only'}
-      </Button>
+      // Mockup affordance (INT:82): a checkbox label in the tray head, not a button.
+      <label data-testid="selected-only-toggle"
+        className="flex cursor-pointer items-center gap-1.5 text-[13px] font-bold text-[var(--plum)]">
+        <input type="checkbox" checked={selectedOnly}
+          onChange={() => onSelectedOnlyChange(!selectedOnly)}
+          className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
+        Selected only
+      </label>
     )
     : undefined;
   const sections: Array<{ header: string | null; rows: SelectionRow[] }> = groups
@@ -170,8 +185,17 @@ export function SelectionList({
       </button>
     </li>
   ) : (
+    // Multi-mode rows click-to-toggle (mockup's delegated rows, INT:222-227):
+    // the whole row toggles; the checkbox stays and its own change event is
+    // ignored by the row handler to guard against a double fire.
     <li key={row.id} data-row-id={row.id}
+      onClick={single ? undefined : (event) => {
+        const target = event.target as HTMLElement;
+        if (row.disabled || target.tagName === 'INPUT') return;
+        onToggle(row.id);
+      }}
       className={cn('flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors hover:bg-[var(--hover)]',
+        !single && !row.disabled && 'cursor-pointer',
         row.disabled && 'cursor-not-allowed opacity-45')}>
       <input
         type="checkbox"
@@ -192,11 +216,12 @@ export function SelectionList({
   );
   return (
     <section className="space-y-3">
-      {toolbar && !selectedOnly ? (
+      {toolbar ? (
         <div className="flex flex-wrap items-center gap-2" data-testid="list-toolbar">
           {searchSlot ?? (
             <input
               value={search}
+              placeholder="Search features…"
               aria-label="Search rows"
               onChange={(event) => onSearchChange(event.target.value)}
               className="h-11 min-w-0 flex-1 rounded-2xl border border-[var(--lavender-deep)] bg-[var(--input)] px-3.5 text-sm"
@@ -218,7 +243,11 @@ export function SelectionList({
           trailing={onlyToggle}
         />
       ) : null}
-      {sections.length === 0 ? <p className="text-sm text-[var(--midnight)]/70">{emptyLabel}</p> : null}
+      {sections.length === 0 ? (
+        <p className="text-sm text-[var(--midnight)]/70">
+          {search.trim() ? <>Nothing matches “{search.trim()}”.</> : emptyLabel}
+        </p>
+      ) : null}
       {sections.map((section, index) => (
         <div key={section.header ?? `ungrouped-${index}`} className="space-y-0">
           {section.header ? (
@@ -232,44 +261,50 @@ export function SelectionList({
           <ul>{section.rows.map(renderRow)}</ul>
         </div>
       ))}
-      <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--hover)] pt-3.5">
-        {onToggleAll && !single && !selectedOnly ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label="Toggle all on page"
-            disabled={toggleAllIds.length === 0}
-            onClick={() => onToggleAll(toggleAllIds)}
-          >
-            Toggle all on page
-          </Button>
-        ) : <span />}
-        {!selectedOnly ? (
+      {totalPages > 1 || footerAction || (onToggleAll && !single) ? (
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--hover)] pt-3.5">
+          {/* S12: the pager is hidden on single-page lists (mockup parity). */}
+          {totalPages > 1 ? (
+            <div className="flex items-center gap-2" data-testid="list-pager">
+              <Button
+                variant="soft"
+                size="sm"
+                aria-label="Previous page"
+                disabled={page <= 1}
+                onClick={() => onPageChange(page - 1)}
+              >
+                Prev
+              </Button>
+              <span className="text-[12.5px] opacity-70" data-page-label>
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="soft"
+                size="sm"
+                aria-label="Next page"
+                disabled={page >= totalPages}
+                onClick={() => onPageChange(page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          ) : <span />}
           <div className="flex items-center gap-2">
-            <Button
-              variant="soft"
-              size="sm"
-              aria-label="Previous page"
-              disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
-            >
-              Prev
-            </Button>
-            <span className="text-[12.5px] opacity-70" data-page-label>
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              variant="soft"
-              size="sm"
-              aria-label="Next page"
-              disabled={page >= totalPages}
-              onClick={() => onPageChange(page + 1)}
-            >
-              Next
-            </Button>
+            {onToggleAll && !single ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label="Toggle all on page"
+                disabled={toggleAllIds.length === 0}
+                onClick={() => onToggleAll(toggleAllIds)}
+              >
+                Toggle all on page
+              </Button>
+            ) : null}
+            {footerAction}
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }

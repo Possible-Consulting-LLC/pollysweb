@@ -232,32 +232,117 @@ test('the tray collapses only when the parent asks', () => {
   assert.doesNotMatch(textOf(collapsed), /Zeta/);
 });
 
-test('"Selected only" switches the list content to the selected set', () => {
+test('"Selected only" is a paginated filter over the same list (toolbar, pager, counter stay live)', () => {
   let shown: boolean | undefined;
-  const normal = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, onSelectedOnlyChange: (v: boolean) => { shown = v; } });
-  const toggle = buttons(normal).find((item) => textOf(item) === 'Selected only');
-  assert.ok(toggle, '"Selected only" toggle not rendered');
-  (toggle.props.onClick as () => void)();
+  const normal = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, onSelectedOnlyChange: (v: boolean) => { shown = v; } }) as unknown;
+  // Mockup affordance (INT:82): a checkbox in the tray head, not a Button.
+  const toggle = elements(normal).find((item) => item.props['data-testid'] === 'selected-only-toggle');
+  assert.ok(toggle, '"Selected only" checkbox missing from the tray');
+  const box = elements(toggle).find((item) => item.type === 'input');
+  assert.ok(box, 'checkbox affordance missing');
+  (box.props.onChange as () => void)();
   assert.equal(shown, true);
 
-  const filtered = SelectionList({ ...baseProps, rows: [baseRows[0]], selectedRows: selectedRowsProp, selectedOnly: true }) as unknown;
+  // Active: the host pages over the selected rows; the SAME toolbar, pager,
+  // and counter stay live over the narrowed set (mockup INT:160, 176-180).
+  const filtered = SelectionList({
+    ...baseProps, rows: [
+      { id: 'alpha', title: 'Alpha', selected: true, subtitle: 'First pick' },
+      { id: 'zeta', title: 'Zeta', selected: true, subtitle: 'From page 2' },
+    ], total: 2, page: 1, pageSize: 1, selectedRows: selectedRowsProp, selectedOnly: true,
+  }) as unknown;
   const rendered = textOf(filtered);
   assert.match(rendered, /Zeta/);
   assert.match(rendered, /Alpha/);
   assert.doesNotMatch(rendered, /Beta/);
-  // Content is client-side: no search or pagination while filtered.
-  assert.equal(elements(filtered).some((item) => item.type === 'input' && item.props.type !== 'checkbox'), false);
-  assert.equal(findByLabel(filtered, 'Next page'), undefined);
-  assert.equal(buttons(filtered).find((item) => textOf(item) === 'Show all') !== undefined, true);
+  // The toolbar, counter, and pager stay live — the old unpaged dump is gone.
+  assert.ok(elements(filtered).some((item) => item.props['data-testid'] === 'list-toolbar'));
+  assert.ok(elements(filtered).some((item) => item.props['data-testid'] === 'selected-count'));
+  assert.ok(elements(filtered).some((item) => item.props['data-testid'] === 'list-pager'),
+    'selected-only pages recompute over the selected rows');
+  const page2 = SelectionList({
+    ...baseProps, rows: [
+      { id: 'zeta', title: 'Zeta', selected: true, subtitle: 'From page 2' },
+    ], total: 2, page: 2, pageSize: 1, selectedRows: selectedRowsProp, selectedOnly: true,
+  }) as unknown;
+  assert.match(textOf(page2), /Zeta/);
+  assert.match(textOf(page2), /Page 2 of 2/);
 });
 
 test('no tray and no "Selected only" toggle when selectedRows is absent or empty', () => {
   for (const selectedRows of [undefined, []]) {
     const tree = SelectionList({ ...baseProps, selectedRows }) as unknown;
     assert.equal(findByLabel(tree, 'Deselect Alpha'), undefined);
-    assert.equal(buttons(tree).find((item) => textOf(item) === 'Selected only'), undefined);
+    assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'selected-only-toggle'), false,
+      '"Selected only" must be gone without a selection');
     assert.doesNotMatch(textOf(tree), /Selected \(2\)/);
   }
+});
+
+// --- Task 8 fix round 1: row toggling, footer slot, placeholder, pager hiding ---
+
+test('multi-mode rows click-to-toggle like the mockup\'s delegated rows (no double fire)', () => {
+  let toggles = 0;
+  const toggled: string[] = [];
+  const tree = SelectionList({ ...baseProps,
+    onToggle: (id: string) => { toggles += 1; toggled.push(id); } }) as unknown;
+  // Clicking the row (not the checkbox) toggles.
+  const row = elements(tree).find((item) => item.props['data-row-id'] === 'beta');
+  assert.ok(row, 'row missing');
+  (row.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.deepEqual(toggled, ['beta']);
+  // A click on the checkbox itself delegates once — no double fire.
+  (row.props.onClick as (event: unknown) => void)({ target: { tagName: 'INPUT' } });
+  assert.equal(toggles, 1, 'checkbox-originated clicks toggle once');
+  // Disabled rows stay inert.
+  const gamma = elements(tree).find((item) => item.props['data-row-id'] === 'gamma');
+  assert.ok(gamma, 'disabled row missing');
+  (gamma.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.equal(toggles, 1);
+});
+
+test('the footer hosts the primary action slot beside the pager (mockup "Save matrix")', () => {
+  let clicked = false;
+  const action = jsx.jsx('button', { 'data-footer-action': true,
+    onClick: () => { clicked = true; } });
+  const tree = SelectionList({ ...baseProps, footerAction: action }) as unknown;
+  const footer = elements(tree).filter((item) => item.props['data-footer-action']);
+  assert.equal(footer.length, 1, 'the footer action renders in the list footer');
+  (footer[0].props.onClick as () => void)();
+  assert.equal(clicked, true);
+  // The pager and the action share the footer row.
+  assert.ok(findByLabel(tree, 'Previous page'), 'pager still renders beside the action');
+});
+
+test('toggle-all stays, moves to the footer arrangement around the action slot', () => {
+  const tree = SelectionList({ ...baseProps, onToggleAll: () => {},
+    footerAction: jsx.jsx('button', { children: 'Save matrix' }) }) as unknown;
+  const all = findByLabel(tree, 'Toggle all on page');
+  assert.ok(all, 'toggle-all missing');
+  const save = buttons(tree).find((item) => textOf(item) === 'Save matrix');
+  assert.ok(save, 'footer action missing');
+  // Both sit on the action side of the footer, pager on the other.
+  assert.ok(findByLabel(tree, 'Previous page'));
+});
+
+test('the pager footer hides when totalPages ≤ 1; the action still renders', () => {
+  const single = SelectionList({ ...baseProps, total: 3, page: 1, pageSize: 20 }) as unknown;
+  assert.equal(findByLabel(single, 'Previous page'), undefined, 'pager hidden on one page');
+  assert.equal(findByLabel(single, 'Next page'), undefined);
+  const withAction = SelectionList({ ...baseProps, total: 3, page: 1, pageSize: 20,
+    footerAction: jsx.jsx('button', { children: 'Save matrix' }) }) as unknown;
+  assert.equal(findByLabel(withAction, 'Previous page'), undefined);
+  assert.match(textOf(withAction), /Save matrix/, 'the footer action survives');
+});
+
+test('the default search input carries the mockup placeholder and the empty state echoes the query', () => {
+  const tree = SelectionList({ ...baseProps, rows: [], total: 0, page: 1, search: 'molt' }) as unknown;
+  const input = elements(tree).find((item) => item.type === 'input' && item.props.type !== 'checkbox');
+  assert.equal(input?.props.placeholder, 'Search features…');
+  assert.match(textOf(tree), /Nothing matches “\s*molt\s*”\./);
+  const idle = SelectionList({ ...baseProps, rows: [], total: 0, page: 1, search: '',
+    emptyLabel: 'No rows match.' }) as unknown;
+  assert.match(textOf(idle), /No rows match\./);
 });
 
 // --- Single selection mode ---

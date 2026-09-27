@@ -72,8 +72,9 @@ export type MatrixAction =
 /** Pure state owner of the matrix: the enabled map changes ONLY through
  * toggles (copy-on-write), so pagination, search, and the selected-only
  * filter can never prune, alter, or lose a pending change — a save during any
- * visible page still reconstructs the complete set. Page/search actions reset
- * each other and the selected-only filter. */
+ * visible page still reconstructs the complete set. Search resets to page 1;
+ * "Selected only" persists across paging and typing (the mockup filters the
+ * same list; both filters apply together). */
 export function matrixReducer(state: MatrixState, action: MatrixAction): MatrixState {
   switch (action.type) {
     case 'toggle': {
@@ -83,11 +84,11 @@ export function matrixReducer(state: MatrixState, action: MatrixAction): MatrixS
       return { ...state, enabled };
     }
     case 'page':
-      return { ...state, page: action.page, selectedOnly: false };
+      return { ...state, page: action.page };
     case 'search':
-      return { ...state, search: action.search, page: 1, selectedOnly: false };
+      return { ...state, search: action.search, page: 1 };
     case 'selectedOnly':
-      return { ...state, selectedOnly: action.selectedOnly };
+      return { ...state, selectedOnly: action.selectedOnly, page: 1 };
     case 'trayCollapsed':
       return { ...state, trayCollapsed: !state.trayCollapsed };
   }
@@ -115,10 +116,19 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
         `${definition.key} ${definition.name} ${definition.description} ${definition.category}`
           .toLowerCase().includes(query))
     : FEATURE_REGISTRY;
-  const rows: SelectionRow[] = filtered
-    .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-    .map(definition => ({ id: definition.key, title: definition.name, subtitle: definition.key,
-      group: definition.category, selected: enabledKeys.has(definition.key) }));
+  const filteredSelected = selectedRows.filter(row =>
+    !query || `${row.id} ${row.title} ${row.subtitle ?? ''} ${row.group ?? ''}`.toLowerCase().includes(query));
+  // "Selected only" is a paginated filter over the SAME list (mockup INT:160,
+  // 176-180): the pool becomes the selected rows, the search still applies,
+  // and the pager pages over the matches with live toolbar/counter.
+  const pool: SelectionRow[] = selectedOnly
+    ? filteredSelected.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+        .map(definition => ({ id: definition.key, title: definition.name,
+          subtitle: definition.key, group: definition.category,
+          selected: enabledKeys.has(definition.key) }));
+  const rows: SelectionRow[] = pool;
+  const shownTotal = selectedOnly ? filteredSelected.length : filtered.length;
   return <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
     <h3 className="font-semibold">Feature matrix</h3>
     <p>Every registered feature has an explicit control. Disabling a feature removes that access from every account assigned to {planName} on its next gate check. Saves upsert the enabled state and never delete rows, so a disabled feature can be restored safely.</p>
@@ -137,25 +147,27 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
             : null;
         })}
     </div>
-    <SelectionList rows={rows} total={filtered.length} page={page} pageSize={PAGE_SIZE}
+    <SelectionList rows={rows} total={shownTotal} page={page} pageSize={PAGE_SIZE}
       search={search} selectedCount={enabled.size} groups={registryCategories()}
       emptyLabel="No features match this search."
       selectedRows={selectedRows} selectedOnly={selectedOnly}
       trayCollapsed={trayCollapsed}
       onPageChange={onPageChange} onSearchChange={onSearchChange} onToggle={onToggle}
-      onSelectedOnlyChange={onSelectedOnlyChange} onTrayCollapsedToggle={onTrayCollapsedToggle} />
-    {/* The save always submits the complete enabled set (the action reconstructs
-        the full registry matrix from these keys), whatever page is visible. */}
-    <MutationForm action={onSave} className="grid gap-3">
-      <MutationContextInput />
-      <input type="hidden" name="planId" value={planId} />
-      {FEATURE_REGISTRY.filter(definition => enabledKeys.has(definition.key)).map(definition =>
-        <input key={definition.key} type="hidden" name="feature" value={definition.key} />)}
-      <Button type="submit" variant="primary" size="md" disabled={saving}>
-        {saving ? 'Saving…' : 'Save feature matrix'}
-      </Button>
-      {saveState?.error ? <p role="alert" className="text-sm text-rose-700">{saveState.error}</p> : null}
-    </MutationForm>
+      onSelectedOnlyChange={onSelectedOnlyChange} onTrayCollapsedToggle={onTrayCollapsedToggle}
+      footerAction={
+        /* The mockup's footer primary action (INT:89-96): the save form lives
+           in the shared list's footer slot and always submits the complete
+           enabled set, whatever page is visible. */
+        <MutationForm action={onSave} className="contents">
+          <MutationContextInput />
+          <input type="hidden" name="planId" value={planId} />
+          {FEATURE_REGISTRY.filter(definition => enabledKeys.has(definition.key)).map(definition =>
+            <input key={definition.key} type="hidden" name="feature" value={definition.key} />)}
+          <Button type="submit" variant="primary" size="md" disabled={saving}>
+            {saving ? 'Saving…' : 'Save feature matrix'}
+          </Button>
+          {saveState?.error ? <p role="alert" className="text-sm text-rose-700">{saveState.error}</p> : null}
+        </MutationForm>} />
   </section>;
 }
 
