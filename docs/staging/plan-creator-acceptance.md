@@ -39,7 +39,7 @@ No seed script is used — the creator is the catalog's only author.
 
 Plan surfaces:
 
-4. [ ] `/admin/plans`: list, edit, duplicate, reorder, activate, and confirm the plan appears on the public pricing surface.
+4. [ ] `/admin/plans`: list, edit, duplicate, reorder, and activate all work. The public Pricing page is intentionally unchanged in this slice (catalog-driven pricing is a deferred later phase, migration stage 7) — as the regression check, confirm it still renders its existing (legacy, unchanged) content identically to before this slice.
 5. [ ] Feature catalog on `/admin/features`: release toggles behave (persist across reload).
 6. [ ] Feature matrix on each plan editor: save succeeds; removing an assigned feature shows the removal warning before applying.
 7. [ ] `/admin/subscriptions`: assign a plan to a test user; observe subscriber counts update.
@@ -49,11 +49,11 @@ Quality bar:
 
 9. [ ] Keyboard operability: every new admin page (plans list/editor, features, matrix, subscriptions) is fully operable by keyboard.
 10. [ ] Themes: the new pages render correctly in both light and dark themes.
-11. [ ] Regression check: existing product pages behave identically to before this slice (spot-check the user-facing flows).
+11. [ ] Regression check: existing product pages behave identically to before this slice — spot-check the user-facing flows, including the public pricing page at `/upgrade` and the marketing pricing section on `/` (both legacy, unchanged by this slice).
 
 ## 3. Final verification (Step 4 — complete)
 
-Run at branch head `5b2b521` with the four migrations applied locally (test runs are local; they do not touch staging data):
+Test, lint, and type checks run locally on branch head `5b2b521` against this branch's code; they do not touch staging data. The four migrations themselves were applied to the STAGING database (see section 1), not locally:
 
 | Check | Command | Result |
 | --- | --- | --- |
