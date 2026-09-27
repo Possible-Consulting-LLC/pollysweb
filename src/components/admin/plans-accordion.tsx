@@ -10,7 +10,7 @@ import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { counterChipClass, badgeTintClass, badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
-  type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
+  fetchSelectableRows, type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
@@ -131,6 +131,12 @@ export type PlansAccordionViewProps = {
    * refreshes the narrowed rows (the committed rows refresh via the action's
    * revalidatePath — the MutationForm success pattern). */
   onSaveEdit(form: FormData): Promise<MutationResult>;
+  /** S13c: the mockup #7 select pair between the search input and the gold
+   * counter. Select all spans EVERY plan matching the ACTIVE view across ALL
+   * pages (ids endpoint in the shell); Select none clears the whole
+   * selection. Optional — absent → no buttons. */
+  onSelectAll?(): void;
+  onSelectNone?(): void;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -320,7 +326,7 @@ const FEATURE_COUNT = FEATURE_REGISTRY.length;
 export function PlansAccordionView({ plans, total, search, page, pageSize, openId,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
   onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingId,
-  onStartEdit, onCancelEdit, onSaveEdit }: PlansAccordionViewProps) {
+  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone }: PlansAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -331,6 +337,16 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
         placeholder="Search plans by name…" value={narrowing.text}
         onType={narrowing.onType} onEscape={narrowing.onEscape}
         onEnter={onSearchSubmit} className="min-w-0 flex-1" />
+      {/* S13c: the mockup #7 pair between the search input and the gold
+          counter — compact soft buttons. */}
+      {onSelectAll
+        ? <Button type="button" variant="soft" size="sm" data-testid="select-all"
+            onClick={onSelectAll}>Select all</Button>
+        : null}
+      {onSelectNone
+        ? <Button type="button" variant="soft" size="sm" data-testid="select-none"
+            onClick={onSelectNone}>Select none</Button>
+        : null}
       <span className={counterChipClass} data-testid="selected-count">
         {`${selectedItems.length} of ${counterTotal} selected`}
       </span>
@@ -442,6 +458,20 @@ export function PlansAccordion(props: Omit<PlansAccordionViewProps,
     return result;
   });
   const rowOf = (id: string) => props.plans.find(plan => plan.id === id);
+  // S13c: Select all spans EVERY plan matching the ACTIVE view (the narrowed
+  // query while narrowed, else the committed search) across ALL pages — one
+  // lean ids fetch on click, merged into the same selection map as manual
+  // picks with display data. Select none clears the whole map.
+  const selectAll = () => {
+    const query = narrowing.narrowed ? narrowing.query : props.search;
+    return fetchSelectableRows('plans', query).then(rows =>
+      setSelection(previous => {
+        const next = new Map(previous);
+        for (const row of rows)
+          next.set(row.id, { title: row.title, subtitle: row.subtitle });
+        return next;
+      }));
+  };
   return <PlansAccordionView {...props} narrowing={viewNarrowing}
     selectedItems={[...selection].map(([id, item]) => ({ id, title: item.title, subtitle: item.subtitle }))}
     onToggleSelected={id => setSelection(previous => {
@@ -464,5 +494,7 @@ export function PlansAccordion(props: Omit<PlansAccordionViewProps,
     onStartEdit={id => setEditingId(id)}
     onCancelEdit={() => setEditingId('')}
     onSaveEdit={saveEdit}
+    onSelectAll={selectAll}
+    onSelectNone={() => setSelection(new Map())}
     onSearchSubmit={search => router.push(listHref(search, 1))} />;
 }

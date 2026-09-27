@@ -40,6 +40,14 @@ function loadSuggest() {
     NARROW_MAX_PAGE_SIZE: number;
     narrowRows: (tx: unknown, entity: string, search: string, page: number,
       pageSize: number) => Promise<{ rows: unknown[]; total: number }>;
+    SELECT_ALL_CAP: number;
+    SELECTABLE_ENTITIES: readonly string[];
+    selectableRows: (tx: unknown, entity: string, search: string) =>
+      Promise<Array<{ id: string; title: string; subtitle: string }>>;
+    selectableFeatureRows: (tx: unknown, search: string) =>
+      Promise<Array<{ id: string; title: string; subtitle: string }>>;
+    selectablePlanRows: (tx: unknown, search: string) =>
+      Promise<Array<{ id: string; title: string; subtitle: string }>>;
   };
 }
 
@@ -268,4 +276,87 @@ test('page and pageSize are clamped to sane bounds', async () => {
 
 test('an unknown entity is rejected (fail closed)', async () => {
   await assert.rejects(() => suggest.narrowRows(prisma, 'accounts', 'x', 1, 10));
+});
+
+// --- S13c: select all / select none (lean ids service) ----------------------
+
+test('S13c: selectableFeatureRows serves display triples for EVERY matching feature in one count-free query', async () => {
+  reset();
+  featureFixtures = [
+    { id: 'feature-1', key: 'care.feed.log', name: 'Log feeding',
+      description: 'Feeding records for a spood', category: 'care', active: true },
+    { id: 'feature-9', key: 'legacy.bulk_import', name: 'Old import',
+      description: 'Legacy path', category: 'legacy', active: true },
+  ];
+  const rows = await suggest.selectableRows(prisma, 'features', 'feed');
+  // Exactly ONE query on click: the display columns only, capped, no count
+  // pass, no page math, no assignments join — lean by design.
+  assert.equal(featureCalls.length, 1);
+  assert.equal(translationCalls.length, 0);
+  assert.equal(planCalls.length + subCalls.length + listPlansCalls.length, 0);
+  const query = featureCalls[0] as { where: unknown; take: number; skip?: number;
+    select: Record<string, unknown>; orderBy: unknown };
+  // The committed pages' search where-shape (name OR key, case-insensitive).
+  assert.deepEqual(plain(query.where), { OR: [
+    { name: { contains: 'feed', mode: 'insensitive' } },
+    { key: { contains: 'feed', mode: 'insensitive' } },
+  ] });
+  assert.equal(query.take, suggest.SELECT_ALL_CAP, 'the payload is capped');
+  assert.equal(query.skip, undefined, 'no pagination — select all spans all pages');
+  assert.deepEqual(plain(query.orderBy), { key: 'asc' });
+  assert.deepEqual(Object.keys(query.select).sort(), ['key', 'name']);
+  // Display triples keyed by the surface's selection identity (the KEY), the
+  // same id the checkbox and narrowed pick paths use. The stub serves every
+  // fixture as a matched row; the orphaned key is excluded from the result
+  // (pinned harder in the next test).
+  assert.deepEqual(plain(rows),
+    [{ id: 'care.feed.log', title: 'Log feeding', subtitle: 'care.feed.log' }]);
+});
+
+test('S13c: orphaned features never join Select all (registry check at query time)', async () => {
+  reset();
+  featureFixtures = [
+    { id: 'feature-1', key: 'care.feed.log', name: 'Log feeding',
+      description: 'Feeding records', category: 'care', active: true },
+    { id: 'feature-9', key: 'legacy.bulk_import', name: 'Old import',
+      description: 'Legacy path', category: 'legacy', active: true },
+  ];
+  // The stub returns BOTH fixtures as matched rows; the legacy key is absent
+  // from the code registry, so only the registry filter explains its absence.
+  const rows = await suggest.selectableRows(prisma, 'features', '');
+  assert.deepEqual(plain(rows.map(row => row.id)), ['care.feed.log'],
+    'a key absent from the code registry is excluded from the selectable set');
+});
+
+test('S13c: a blank query selects EVERYTHING — the current view has no filter', async () => {
+  reset();
+  // Unlike narrowing (blank → nothing), Select all with an empty search must
+  // span the whole table: the committed view shows all rows unfiltered.
+  await suggest.selectableRows(prisma, 'features', '   ');
+  assert.equal(featureCalls.length, 1);
+  assert.deepEqual(plain((featureCalls[0] as { where: unknown }).where), {},
+    'no where-clause for an empty search');
+});
+
+test('S13c: selectablePlanRows mirrors the committed plans search shape, lean and capped', async () => {
+  reset();
+  const rows = await suggest.selectableRows(prisma, 'plans', 'bas');
+  assert.equal(planCalls.length, 1);
+  assert.equal(subCalls.length + featureCalls.length + listPlansCalls.length, 0,
+    'no rich-row cost — the ids service is one lean query');
+  const query = planCalls[0] as { where: unknown; take: number;
+    select: Record<string, unknown>; orderBy: unknown };
+  // listPlans' where-shape: name contains, case-insensitive.
+  assert.deepEqual(plain(query.where), { name: { contains: 'bas', mode: 'insensitive' } });
+  assert.deepEqual(plain(query.orderBy), [{ sortOrder: 'asc' }, { name: 'asc' }]);
+  assert.deepEqual(Object.keys(query.select).sort(), ['id', 'name', 'planType']);
+  assert.equal(query.take, suggest.SELECT_ALL_CAP);
+  assert.deepEqual(plain(rows),
+    [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }]);
+});
+
+test('S13c: only the multi-select surfaces are selectable entities (single-mode pickers excluded)', async () => {
+  assert.deepEqual([...suggest.SELECTABLE_ENTITIES], ['features', 'plans']);
+  await assert.rejects(() => suggest.selectableRows(prisma, 'users', 'ada'));
+  await assert.rejects(() => suggest.selectableRows(prisma, 'accounts', 'x'));
 });

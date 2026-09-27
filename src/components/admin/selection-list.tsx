@@ -95,6 +95,13 @@ export type SelectionListProps = {
   detailFor?(row: SelectionRow): ReactNode;
   /** S13a expand mode: fired by a row click (and never by the checkbox). */
   onExpandToggle?(id: string): void;
+  /** S13c — the mockup #7 select pair, rendered between the search input and
+   * the gold counter when the host passes the handlers (absent → they don't
+   * render; single mode never renders them). Select-all semantics span ALL
+   * pages of the current view, so the HOST closes over its full set — this
+   * component stays a passive renderer of the affordance. */
+  onSelectAll?(): void;
+  onSelectNone?(): void;
   /** Primary footer action rendered at the footer's right (mockup's "Save
    * matrix", INT:89-96) — the host passes its own form/button. */
   footerAction?: ReactNode;
@@ -138,6 +145,8 @@ export function SelectionList({
   expandedId,
   detailFor,
   onExpandToggle,
+  onSelectAll,
+  onSelectNone,
 }: SelectionListProps) {
   const single = selectionMode === 'single';
   const selectedRow = rows.find((row) => row.selected) ?? selectedRows?.find((row) => row.selected);
@@ -287,6 +296,16 @@ export function SelectionList({
               className="h-11 min-w-0 flex-1 rounded-2xl border border-[var(--lavender-deep)] bg-[var(--input)] px-3.5 text-sm"
             />
           )}
+          {/* S13c: the mockup #7 pair between search and counter — the compact
+              .btn-soft mini equivalent. Handlers optional; absent → no render. */}
+          {!single && onSelectAll
+            ? <Button type="button" variant="soft" size="sm" data-testid="select-all"
+                onClick={onSelectAll}>Select all</Button>
+            : null}
+          {!single && onSelectNone
+            ? <Button type="button" variant="soft" size="sm" data-testid="select-none"
+                onClick={onSelectNone}>Select none</Button>
+            : null}
           {!single
             ? <span className={counterChipClass} data-testid="selected-count">
                 {`${selectedCount} of ${total} selected`}

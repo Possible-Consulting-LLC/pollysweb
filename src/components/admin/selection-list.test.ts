@@ -616,3 +616,44 @@ test('S13a: single mode ignores the rowClick flag (pick rows keep their own cont
   assert.equal(picked, 'beta');
   assert.deepEqual(expanded, []);
 });
+
+// --- S13c: select all / select none -----------------------------------------
+
+test('S13c: Select all / Select none render between the search input and the counter when the host passes handlers', () => {
+  const fired: string[] = [];
+  const tree = SelectionList({ ...baseProps,
+    onSelectAll: () => { fired.push('all'); },
+    onSelectNone: () => { fired.push('none'); } }) as unknown;
+  const toolbar = elements(tree).find((item) => item.props['data-testid'] === 'list-toolbar');
+  assert.ok(toolbar, 'toolbar row missing');
+  const kids = (Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  const kinds = kids.map((kid) => kid.type === 'input' ? 'search'
+    : textOf(kid) === 'Select all' || textOf(kid) === 'Select none' ? 'select'
+    : kid.props['data-testid'] === 'selected-count' ? 'counter' : String(kid.type));
+  assert.deepEqual(JSON.parse(JSON.stringify(kinds)), ['search', 'select', 'select', 'counter'],
+    'the pair sits between the search input and the gold counter (mockup #7)');
+  const all = kids.find((kid) => textOf(kid) === 'Select all');
+  const none = kids.find((kid) => textOf(kid) === 'Select none');
+  assert.ok(all && none);
+  // The mockup's .btn-soft mini equivalent: compact soft token-styled buttons.
+  // (The Button stub is a function component: variant lives on the raw
+  // element's props until resolved.)
+  assert.equal(String(all.props['data-variant'] ?? all.props.variant), 'soft');
+  assert.equal(String(all.props['data-size'] ?? all.props.size), 'sm');
+  assert.equal(String(none.props['data-variant'] ?? none.props.variant), 'soft');
+  assert.equal(String(none.props['data-size'] ?? none.props.size), 'sm');
+  (all.props.onClick as () => void)();
+  (none.props.onClick as () => void)();
+  assert.deepEqual(fired, ['all', 'none']);
+});
+
+test('S13c: without handlers no select buttons render, and single mode never renders them', () => {
+  const tree = SelectionList(baseProps) as unknown;
+  assert.equal(buttons(tree).some((item) => textOf(item) === 'Select all'), false);
+  assert.equal(buttons(tree).some((item) => textOf(item) === 'Select none'), false);
+  const single = SelectionList({ ...singleProps,
+    onSelectAll: () => {}, onSelectNone: () => {} }) as unknown;
+  assert.equal(buttons(single).some((item) => textOf(item) === 'Select all'), false,
+    'single-mode pickers are excluded by the owner rule');
+});

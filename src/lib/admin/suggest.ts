@@ -198,3 +198,64 @@ export async function narrowRows(tx: SuggestDb, entity: NarrowEntity, search: st
     default: throw new Error(`Unknown narrowing entity: ${String(entity)}`);
   }
 }
+
+// --- S13c: select all / select none (lean ids service) ----------------------
+
+/** Select-all fetches the FULL matching set on CLICK (never per keystroke):
+ * exactly one indexed, count-free, page-free select of the display columns
+ * only, capped so a huge catalog can't blow the payload (the counter stays
+ * truthful — "N of M" with N possibly < M is still honest). */
+export const SELECT_ALL_CAP = 500;
+
+/** The multi-select surfaces (S13c): the feature matrix is registry-local and
+ * needs no service; the two accordions fetch from here. The pickers are
+ * single-mode and excluded by the owner's rule itself. */
+export const SELECTABLE_ENTITIES = ['features', 'plans'] as const;
+export type SelectableEntity = (typeof SELECTABLE_ENTITIES)[number];
+
+/** The select-all wire row: the surface's selection identity plus the display
+ * triple, so merged picks land in the same tray structures as manual picks —
+ * never a bare id. */
+export type SelectableIdRow = { id: string; title: string; subtitle: string };
+
+/** Features matching the committed search (name OR key, case-insensitive —
+ * narrowFeatures' where-shape), key order. An EMPTY search means the current
+ * view is unfiltered, so it selects EVERYTHING (unlike narrowing's blank
+ * no-op). Orphaned keys never join: a key absent from the code registry is
+ * unselectable everywhere (the client re-checks at render time by ruling). */
+export async function selectableFeatureRows(
+  tx: Pick<SuggestDb, 'feature'>, search: string): Promise<SelectableIdRow[]> {
+  const trimmed = search.trim();
+  const where: Prisma.FeatureWhereInput = trimmed ? { OR: [
+    { name: { contains: trimmed, mode: 'insensitive' } },
+    { key: { contains: trimmed, mode: 'insensitive' } },
+  ] } : {};
+  const rows = await tx.feature.findMany({ where,
+    select: { key: true, name: true }, orderBy: { key: 'asc' }, take: SELECT_ALL_CAP });
+  return rows.filter(row => isRegisteredFeatureKey(row.key))
+    .map(row => ({ id: row.key, title: row.name, subtitle: row.key }));
+}
+
+/** Plans matching the committed search (name contains, case-insensitive —
+ * listPlans' where-shape), display order, display columns only. */
+export async function selectablePlanRows(
+  tx: Pick<SuggestDb, 'plan'>, search: string): Promise<SelectableIdRow[]> {
+  const trimmed = search.trim();
+  const where: Prisma.PlanWhereInput = trimmed
+    ? { name: { contains: trimmed, mode: 'insensitive' } } : {};
+  const rows = await tx.plan.findMany({ where,
+    select: { id: true, name: true, planType: true },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], take: SELECT_ALL_CAP });
+  return rows.map(row => ({ id: row.id, title: row.name, subtitle: row.planType }));
+}
+
+/** Dispatch a selectable entity's ids query — one lean query per call,
+ * nothing else. */
+export async function selectableRows(tx: Pick<SuggestDb, 'feature' | 'plan'>,
+  entity: SelectableEntity, search: string): Promise<SelectableIdRow[]> {
+  switch (entity) {
+    case 'features': return selectableFeatureRows(tx, search);
+    case 'plans': return selectablePlanRows(tx, search);
+    default: throw new Error(`Unknown selectable entity: ${String(entity)}`);
+  }
+}

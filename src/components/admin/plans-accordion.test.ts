@@ -75,6 +75,10 @@ function loadAccordionView() {
 let pushed: string[] = [];
 let lastLiveSearch: Record<string, unknown> | null = null;
 let lastNarrowSource: unknown = null;
+/** S13c: capture the ids-endpoint fetches (click-only) and the selection-map
+ * setters, so the shell's merge/clear behavior is directly assertable. */
+let idFetches: Array<{ entity: string; query: string }> = [];
+let stateSetterCalls: unknown[] = [];
 
 /** The canned narrowing state the view receives; tests flip `narrowed` and
  * swap `rows`/`total` to exercise the live replacement paths. */
@@ -97,8 +101,10 @@ const deps: Record<string, unknown> = {
   // The client wrapper's hooks are stubbed; only the hook-free view is exercised
   // (plus the shell's fallback wiring, which needs a working initial state).
   react: {
-    useState: (initial: unknown) =>
-      [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
+    useState: (initial: unknown) => {
+      const value = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+      return [value, (next: unknown) => { stateSetterCalls.push(next); }];
+    },
     useEffect: () => {},
     useRef: () => ({ current: null }),
     useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
@@ -108,6 +114,10 @@ const deps: Record<string, unknown> = {
     narrowViaEndpoint: (entity: string, pageSize: number) => {
       lastNarrowSource = `endpoint:${entity}:${pageSize}`;
       return lastNarrowSource;
+    },
+    fetchSelectableRows: (entity: string, query: string) => {
+      idFetches.push({ entity, query });
+      return Promise.resolve([{ id: 'plan-1', title: 'Plan 1', subtitle: 'STANDARD' }]);
     },
     useNarrowing: () => narrowingState,
     LiveSearchInput: (props: Record<string, unknown>) => {
@@ -172,6 +182,8 @@ const base = { plans: plans(3), total: 3, search: '', page: 1, pageSize: 20, ope
   onToggleSelected: (_id: string) => {},
   onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
   trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSelectAll: undefined as (() => void) | undefined,
+  onSelectNone: undefined as (() => void) | undefined,
   onSearchSubmit: (_search: string) => {},
   narrowedOpenId: '', onNarrowedOpenToggle: (_id: string) => {},
   editingId: '', onStartEdit: (_id: string) => {}, onCancelEdit: () => {},
@@ -681,4 +693,71 @@ test('P5: formatUpdatedAt is relative within a week, a short date beyond', () =>
     'older than a week falls back to a short human date');
   assert.equal(formatUpdatedAt(new Date(now.getTime() + 86_400_000), now), 'just now',
     'clock skew / future dates stay sensible, never "negative ago"');
+});
+
+// --- S13c: select all / select none -----------------------------------------
+
+test('S13c: the toolbar hosts Select all / Select none between the search input and the gold counter', () => {
+  const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
+  const toolbar = elements(tree).find(item => item.props['data-testid'] === 'plans-toolbar');
+  assert.ok(toolbar, 'plans toolbar missing');
+  const kids = (Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  // The pair's search/counter kinds: the stubs are function components, so the
+    // label decides — the search slot resolves to empty text.
+  const kinds = kids.map(kid => {
+    const label = text(kid);
+    if (label === 'Select all' || label === 'Select none') return 'select';
+    if (kid.props['data-testid'] === 'selected-count') return 'counter';
+    return 'search';
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(kinds)), ['search', 'select', 'select', 'counter'],
+    'the pair sits between the search input and the counter (mockup #7)');
+  const all = kids.find(kid => text(kid) === 'Select all')!;
+  const none = kids.find(kid => text(kid) === 'Select none')!;
+  // The mockup's .btn-soft mini equivalent: compact soft token-styled buttons
+  // (the Button stub is a function component — variant rides the raw props).
+  assert.equal(String(all.props['data-variant'] ?? all.props.variant), 'soft');
+  assert.equal(String(all.props['data-size'] ?? all.props.size), 'sm');
+  assert.equal(String(none.props['data-variant'] ?? none.props.variant), 'soft');
+  assert.equal(String(none.props['data-size'] ?? none.props.size), 'sm');
+});
+
+test('S13c: without handlers the pair does not render', () => {
+  const tree = render();
+  assert.equal(elements(tree).some(item => item.type === 'button' && text(item) === 'Select all'), false);
+  assert.equal(elements(tree).some(item => item.type === 'button' && text(item) === 'Select none'), false);
+});
+
+test('S13c: Select all fetches the ids endpoint at the active query and merges full display data', async () => {
+  idFetches = []; stateSetterCalls = [];
+  narrowingState.narrowed = false; narrowingState.query = '';
+  const tree = PlansAccordion({ plans: plans(2), total: 3, search: 'bas', page: 1,
+    pageSize: 20, openId: '' });
+  const all = elements(tree).find(item => item.type === 'button' && text(item) === 'Select all');
+  assert.ok(all, 'the shell must wire Select all');
+  await (all!.props.onClick as () => Promise<void>)();
+  assert.deepEqual(idFetches, [{ entity: 'plans', query: 'bas' }],
+    'the committed search scopes Select all; one fetch on click, never per keystroke');
+  // The functional updater merges every fetched row with display data —
+  // select-all flows through the same selection map as manual picks.
+  const updater = stateSetterCalls[0] as
+    (previous: Map<string, { title: string; subtitle: string }>) =>
+      Map<string, { title: string; subtitle: string }>;
+  const merged = updater(new Map([['plan-9', { title: 'Kept', subtitle: 'STANDARD' }]]));
+  assert.equal(merged.get('plan-9')!.title, 'Kept', 'existing picks survive');
+  assert.deepEqual(plain(merged.get('plan-1')), { title: 'Plan 1', subtitle: 'STANDARD' },
+    'tray chips carry title/subtitle, never a bare id');
+});
+
+test('S13c: Select none clears the whole selection map', () => {
+  stateSetterCalls = [];
+  const tree = PlansAccordion({ plans: plans(2), total: 3, search: '', page: 1,
+    pageSize: 20, openId: '' });
+  const none = elements(tree).find(item => item.type === 'button' && text(item) === 'Select none');
+  assert.ok(none, 'the shell must wire Select none');
+  (none!.props.onClick as () => void)();
+  assert.equal(stateSetterCalls.length, 1);
+  assert.equal((stateSetterCalls[0] as Map<string, unknown>).size, 0,
+    'Select none empties the tray; the counter returns to 0 of M');
 });

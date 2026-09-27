@@ -60,6 +60,8 @@ function loadFeaturesAccordion() {
     FeaturesAccordion: (props: Record<string, unknown>) => unknown;
     accordionReducer: (state: AccordionState, action: AccordionAction) => AccordionState;
     narrowedFeatureView: (row: Record<string, unknown>) => Record<string, unknown>;
+    selectableSelectionItems: (rows: Array<{ id: string; title: string; subtitle: string }>) =>
+      Array<{ key: string; title: string; subtitle: string }>;
     narrowingWithRefresh: (narrowing: Record<string, unknown>,
       refresh: Record<string, unknown> | null) => Record<string, unknown>;
   };
@@ -68,11 +70,16 @@ function loadFeaturesAccordion() {
 type AccordionState = { selection: Map<string, { title: string; subtitle: string }>; trayCollapsed: boolean };
 type AccordionAction =
   | { type: 'toggle'; key: string; title: string; subtitle: string }
+  | { type: 'merge'; items: Array<{ key: string; title: string; subtitle: string }> }
+  | { type: 'clearSelection' }
   | { type: 'toggleTrayCollapsed' };
 
 let pushed: string[] = [];
 let lastLiveSearch: Record<string, unknown> | null = null;
 let lastNarrowSource: unknown = null;
+/** S13c: capture the ids-endpoint fetches (click-only) and serve a fixture. */
+let idFetches: Array<{ entity: string; query: string }> = [];
+let selectableFixture: Array<{ id: string; title: string; subtitle: string }> = [];
 
 /** The canned narrowing state the view receives; tests flip `narrowed` and
  * swap `rows`/`total` to exercise the live replacement paths. */
@@ -95,6 +102,10 @@ const deps: Record<string, unknown> = {
       lastLiveSearch = null;
       lastNarrowSource = `endpoint:${entity}:${pageSize}`;
       return lastNarrowSource;
+    },
+    fetchSelectableRows: (entity: string, query: string) => {
+      idFetches.push({ entity, query });
+      return Promise.resolve(selectableFixture.map(row => ({ ...row })));
     },
     useNarrowing: () => narrowingState,
     LiveSearchInput: (props: Record<string, unknown>) => {
@@ -143,7 +154,7 @@ const deps: Record<string, unknown> = {
 };
 
 const { FeaturesAccordionView, FeaturesAccordion, accordionReducer,
-  narrowedFeatureView, narrowingWithRefresh } = loadFeaturesAccordion();
+  narrowedFeatureView, narrowingWithRefresh, selectableSelectionItems } = loadFeaturesAccordion();
 
 type FeatureRowView = { id: string; key: string; name: string; description: string;
   category: string; active: boolean; orphan: boolean; assignedPlans: string[]; totalPlans: number };
@@ -167,6 +178,8 @@ const base = { features: features(3), total: 34, search: '', page: 1, pageSize: 
   onToggleSelected: (_key: string) => {},
   onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
   trayCollapsed: false, onToggleTrayCollapsed: () => {},
+  onSelectAll: undefined as (() => void) | undefined,
+  onSelectNone: undefined as (() => void) | undefined,
   onSearchSubmit: (_search: string) => {},
   narrowedOpenId: '', onNarrowedOpenToggle: (_key: string) => {},
   editingKey: '', onStartEdit: (_key: string) => {}, onCancelEdit: () => {},
@@ -764,4 +777,89 @@ test('S13 refresh: a successful save overlays fresh narrowed rows only for the s
     'stale-overlay guard: query moved on');
   assert.equal(narrowingWithRefresh(narrowed as Record<string, unknown>, null), narrowed,
     'no refresh yet → the narrowing state passes through');
+});
+
+// --- S13c: select all / select none -----------------------------------------
+
+test('S13c: the toolbar hosts Select all / Select none between the search input and the gold counter', () => {
+  const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
+  const toolbar = elements(tree).find(item => item.props['data-testid'] === 'features-toolbar');
+  assert.ok(toolbar, 'features toolbar missing');
+  const kids = (Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  // The pair's search/counter kinds: the stubs are function components, so the
+    // label decides — the search slot resolves to empty text.
+  const kinds = kids.map(kid => {
+    const label = text(kid);
+    if (label === 'Select all' || label === 'Select none') return 'select';
+    if (kid.props['data-testid'] === 'selected-count') return 'counter';
+    return 'search';
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(kinds)), ['search', 'select', 'select', 'counter'],
+    'the pair sits between the search input and the counter (mockup #7)');
+  const all = kids.find(kid => text(kid) === 'Select all')!;
+  const none = kids.find(kid => text(kid) === 'Select none')!;
+  // The mockup's .btn-soft mini equivalent: compact soft token-styled buttons
+  // (the Button stub is a function component — variant rides the raw props).
+  assert.equal(String(all.props['data-variant'] ?? all.props.variant), 'soft');
+  assert.equal(String(all.props['data-size'] ?? all.props.size), 'sm');
+  assert.equal(String(none.props['data-variant'] ?? none.props.variant), 'soft');
+  assert.equal(String(none.props['data-size'] ?? none.props.size), 'sm');
+});
+
+test('S13c: without handlers the pair does not render', () => {
+  const tree = render();
+  assert.equal(elements(tree).some(item => item.type === 'button' && text(item) === 'Select all'), false);
+  assert.equal(elements(tree).some(item => item.type === 'button' && text(item) === 'Select none'), false);
+});
+
+test('S13c: Select all fetches the full matching id set from the features ids endpoint at the ACTIVE view', async () => {
+  idFetches = []; selectableFixture = [];
+  narrowingState.narrowed = false; narrowingState.query = '';
+  const tree = FeaturesAccordion({ features: features(2), total: 34, search: 'molt',
+    page: 1, pageSize: 20, openKey: '' });
+  const all = elements(tree).find(item => item.type === 'button' && text(item) === 'Select all');
+  assert.ok(all, 'the shell must wire Select all');
+  await (all!.props.onClick as () => Promise<void>)();
+  assert.deepEqual(idFetches, [{ entity: 'features', query: 'molt' }],
+    'the committed search scopes Select all; one fetch on click, never per keystroke');
+  // While narrowed, the ACTIVE view is the narrowed query.
+  idFetches = [];
+  narrowingState.narrowed = true; narrowingState.query = 'feed';
+  const narrowedTree = FeaturesAccordion({ features: features(2), total: 34, search: 'molt',
+    page: 1, pageSize: 20, openKey: '' });
+  const allNarrowed = elements(narrowedTree)
+    .find(item => item.type === 'button' && text(item) === 'Select all');
+  await (allNarrowed!.props.onClick as () => Promise<void>)();
+  assert.deepEqual(idFetches, [{ entity: 'features', query: 'feed' }],
+    'Select all matches the narrowed view the counter is scoped to');
+  narrowingState.narrowed = false; narrowingState.query = '';
+});
+
+test('S13c: selectableSelectionItems keeps only registry keys with display triples (render-time orphan check)', () => {
+  const items = selectableSelectionItems([
+    { id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' },
+    { id: 'legacy.bulk_import', title: 'Old import', subtitle: 'legacy.bulk_import' },
+  ]);
+  assert.deepEqual(plain(items),
+    [{ key: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' }],
+    'orphaned keys never join the selection — every chip carries its title');
+});
+
+test('S13c: state owner: merge adds every item with display data and never drops picks; clearSelection empties', () => {
+  let state: AccordionState = { selection:
+    new Map([['feature.key-1', { title: 'Feature 1', subtitle: 'feature.key-1' }]]),
+    trayCollapsed: false };
+  const frozen = new Map(state.selection);
+  state = accordionReducer(state, { type: 'merge', items: [
+    { key: 'feature.key-1', title: 'Feature 1 renamed', subtitle: 'feature.key-1' },
+    { key: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' }] });
+  assert.equal(state.selection.size, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.selection.get('feature.key-2'))),
+    { title: 'Feature 2', subtitle: 'feature.key-2' },
+    'select-all flows through the same selection structures as manual picks');
+  assert.deepEqual([...frozen.keys()], ['feature.key-1'], 'copy-on-write');
+  state = accordionReducer(state, { type: 'clearSelection' });
+  assert.equal(state.selection.size, 0, 'Select none empties the tray');
+  assert.equal(state.trayCollapsed, false, 'only the selection clears');
 });

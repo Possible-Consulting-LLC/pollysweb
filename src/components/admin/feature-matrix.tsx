@@ -32,6 +32,11 @@ export type FeatureMatrixViewProps = {
   selectedOnly: boolean;
   trayCollapsed: boolean;
   onToggle(key: string): void;
+  /** S13c: Select all — the keys are EVERY registry key matching the current
+   * view (search + Selected-only) across ALL pages, computed locally. */
+  onSelectAll?(keys: string[]): void;
+  /** S13c: Select none — clears the whole enabled set. */
+  onSelectNone?(): void;
   onPageChange(page: number): void;
   onSearchChange(search: string): void;
   onSelectedOnlyChange(selectedOnly: boolean): void;
@@ -64,6 +69,8 @@ export const seedMatrixState = (keys: string[]): MatrixState =>
 
 export type MatrixAction =
   | { type: 'toggle'; key: string }
+  | { type: 'selectAll'; keys: string[] }
+  | { type: 'selectNone' }
   | { type: 'page'; page: number }
   | { type: 'search'; search: string }
   | { type: 'selectedOnly'; selectedOnly: boolean }
@@ -83,6 +90,18 @@ export function matrixReducer(state: MatrixState, action: MatrixAction): MatrixS
       else enabled.set(action.key, seedEntry(action.key));
       return { ...state, enabled };
     }
+    // S13c: Select all merges every key the current view matches across ALL
+    // pages (registry-local — no server query); existing picks survive and
+    // every merged key carries its display triple. Copy-on-write like toggle.
+    case 'selectAll': {
+      const enabled = new Map(state.enabled);
+      for (const key of action.keys) if (!enabled.has(key)) enabled.set(key, seedEntry(key));
+      return { ...state, enabled };
+    }
+    // S13c: Select none clears the whole selection — the tray empties and the
+    // counter returns to 0 of M. Only the selection changes; view state stays.
+    case 'selectNone':
+      return { ...state, enabled: new Map() };
     case 'page':
       return { ...state, page: action.page };
     case 'search':
@@ -100,8 +119,9 @@ export function matrixReducer(state: MatrixState, action: MatrixAction): MatrixS
  * only" toggle work off the full set, and pagination is purely visual over the
  * code registry. */
 export function FeatureMatrixView({ planId, planName, options, enabled, page, search,
-  selectedOnly, trayCollapsed, onToggle, onPageChange, onSearchChange, onSelectedOnlyChange,
-  onTrayCollapsedToggle, saveState, saving, onSave }: FeatureMatrixViewProps) {
+  selectedOnly, trayCollapsed, onToggle, onSelectAll, onSelectNone, onPageChange,
+  onSearchChange, onSelectedOnlyChange, onTrayCollapsedToggle, saveState, saving,
+  onSave }: FeatureMatrixViewProps) {
   const enabledKeys = new Set(enabled.keys());
   const entries = FEATURE_REGISTRY.map(definition =>
     ({ key: definition.key, enabled: enabledKeys.has(definition.key) }));
@@ -129,6 +149,12 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
           selected: enabledKeys.has(definition.key) }));
   const rows: SelectionRow[] = pool;
   const shownTotal = selectedOnly ? filteredSelected.length : filtered.length;
+  // S13c: Select all spans the CURRENT VIEW across ALL pages — the same pool
+  // the pager pages over, unpaginated. Registry keys are never orphans (the
+  // registry is code-owned), so every match is selectable.
+  const selectAllKeys = (selectedOnly
+    ? filteredSelected.map(row => row.id)
+    : filtered.map(definition => definition.key));
   return <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
     <h3 className="font-semibold">Feature matrix</h3>
     <p>Every registered feature has an explicit control. Disabling a feature removes that access from every account assigned to {planName} on its next gate check. Saves upsert the enabled state and never delete rows, so a disabled feature can be restored safely.</p>
@@ -153,6 +179,8 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
       selectedRows={selectedRows} selectedOnly={selectedOnly}
       trayCollapsed={trayCollapsed}
       onPageChange={onPageChange} onSearchChange={onSearchChange} onToggle={onToggle}
+      onSelectAll={onSelectAll ? () => onSelectAll(selectAllKeys) : undefined}
+      onSelectNone={onSelectNone}
       onSelectedOnlyChange={onSelectedOnlyChange} onTrayCollapsedToggle={onTrayCollapsedToggle}
       footerAction={
         /* The mockup's footer primary action (INT:89-96): the save form lives
@@ -192,6 +220,8 @@ export function FeatureMatrix({ planId, planName, options, initialEnabledKeys }:
     selectedOnly={state.selectedOnly} trayCollapsed={state.trayCollapsed}
     saveState={saveState} saving={saving} onSave={dispatchSave}
     onToggle={key => dispatch({ type: 'toggle', key })}
+    onSelectAll={keys => dispatch({ type: 'selectAll', keys })}
+    onSelectNone={() => dispatch({ type: 'selectNone' })}
     onPageChange={page => dispatch({ type: 'page', page })}
     onSearchChange={search => dispatch({ type: 'search', search })}
     onSelectedOnlyChange={selectedOnly => dispatch({ type: 'selectedOnly', selectedOnly })}

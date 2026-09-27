@@ -8,12 +8,12 @@ import { cn } from '@/lib/utils';
 import { listHref, categoryLabel, counterChipClass, badgeOnClass, badgeOffClass,
   badgeTintClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
-  type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
+  fetchSelectableRows, type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
 import { isRegisteredFeatureKey } from '@/lib/features/registry';
-import type { NarrowFeatureRow } from '@/lib/admin/suggest';
+import type { NarrowFeatureRow, SelectableIdRow } from '@/lib/admin/suggest';
 import { bulkSetFeatureReleaseAction, saveFeatureMetadataAction,
   setFeatureReleaseAction } from '@/app/admin/features/actions';
 
@@ -117,6 +117,12 @@ export type FeaturesAccordionViewProps = {
    * and refreshes the narrowed rows (the committed rows refresh via the
    * action's revalidatePath — the MutationForm success pattern). */
   onSaveEdit(form: FormData): Promise<MutationResult>;
+  /** S13c: the mockup #7 select pair between the search input and the gold
+   * counter. Select all spans EVERY selectable feature matching the ACTIVE
+   * view across ALL pages (ids endpoint + registry check in the shell);
+   * Select none clears the whole selection. Optional — absent → no buttons. */
+  onSelectAll?(): void;
+  onSelectNone?(): void;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -280,7 +286,7 @@ function FeatureRow({ row, checked, onToggle, href, expanded, onToggleExpand,
 export function FeaturesAccordionView({ features, total, search, page, pageSize, openKey,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
   onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingKey,
-  onStartEdit, onCancelEdit, onSaveEdit }: FeaturesAccordionViewProps) {
+  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone }: FeaturesAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -292,6 +298,16 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
         placeholder="Search features…" value={narrowing.text}
         onType={narrowing.onType} onEscape={narrowing.onEscape}
         onEnter={onSearchSubmit} className="min-w-0 flex-1" />
+      {/* S13c: the mockup #7 pair between the search input and the gold
+          counter — compact soft buttons. */}
+      {onSelectAll
+        ? <Button type="button" variant="soft" size="sm" data-testid="select-all"
+            onClick={onSelectAll}>Select all</Button>
+        : null}
+      {onSelectNone
+        ? <Button type="button" variant="soft" size="sm" data-testid="select-none"
+            onClick={onSelectNone}>Select none</Button>
+        : null}
       <span className={counterChipClass} data-testid="selected-count">
         {`${selectedItems.length} of ${counterTotal} selected`}
       </span>
@@ -382,6 +398,8 @@ export type AccordionState = {
 
 export type AccordionAction =
   | { type: 'toggle'; key: string; title: string; subtitle: string }
+  | { type: 'merge'; items: Array<{ key: string; title: string; subtitle: string }> }
+  | { type: 'clearSelection' }
   | { type: 'toggleTrayCollapsed' };
 
 export function accordionReducer(state: AccordionState, action: AccordionAction): AccordionState {
@@ -392,10 +410,28 @@ export function accordionReducer(state: AccordionState, action: AccordionAction)
       else selection.set(action.key, { title: action.title, subtitle: action.subtitle });
       return { ...state, selection };
     }
+    // S13c: Select all merges the fetched display triples into the same
+    // selection map the manual picks use — adds only, never drops; Select
+    // none empties it. Copy-on-write like toggle.
+    case 'merge': {
+      const selection = new Map(state.selection);
+      for (const item of action.items)
+        selection.set(item.key, { title: item.title, subtitle: item.subtitle });
+      return { ...state, selection };
+    }
+    case 'clearSelection':
+      return { ...state, selection: new Map() };
     case 'toggleTrayCollapsed':
       return { ...state, trayCollapsed: !state.trayCollapsed };
   }
 }
+
+/** S13c: the ids endpoint returns display triples keyed by the feature KEY;
+ * orphaned keys (absent from the code registry) never join — the render-time
+ * registry check rules, same as the committed rows' lock. */
+export const selectableSelectionItems = (rows: SelectableIdRow[]) =>
+  rows.filter(row => isRegisteredFeatureKey(row.id))
+    .map(row => ({ key: row.id, title: row.title, subtitle: row.subtitle }));
 
 /** Thin client shell around accordionReducer; owns the headless narrowing
  * search plus the S13 client-side state. Narrowed feature rows carry the
@@ -432,6 +468,16 @@ export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
     }
     return result;
   });
+  // S13c: Select all spans EVERY selectable feature matching the ACTIVE view
+  // (the narrowed query while narrowed, else the committed search) across ALL
+  // pages — one lean ids fetch on click, merged through the same selection
+  // structures as manual picks (display triples, orphans filtered by the
+  // render-time registry check). Select none clears the whole map.
+  const selectAll = () => {
+    const query = narrowing.narrowed ? narrowing.query : props.search;
+    return fetchSelectableRows('features', query)
+      .then(rows => dispatch({ type: 'merge', items: selectableSelectionItems(rows) }));
+  };
   return <FeaturesAccordionView {...props} narrowing={viewNarrowing}
     selectedItems={[...state.selection].map(([key, item]) =>
       ({ id: key, title: item.title, subtitle: item.subtitle }))}
@@ -449,5 +495,7 @@ export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
     onStartEdit={key => setEditingKey(key)}
     onCancelEdit={() => setEditingKey('')}
     onSaveEdit={saveEdit}
+    onSelectAll={selectAll}
+    onSelectNone={() => dispatch({ type: 'clearSelection' })}
     onSearchSubmit={search => router.push(listHrefFor(search, 1))} />;
 }

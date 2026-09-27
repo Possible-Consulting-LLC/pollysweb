@@ -122,6 +122,8 @@ type MatrixState = { enabled: Map<string, { title: string; subtitle: string; gro
   page: number; search: string; selectedOnly: boolean; trayCollapsed: boolean };
 type MatrixAction =
   | { type: 'toggle'; key: string }
+  | { type: 'selectAll'; keys: string[] }
+  | { type: 'selectNone' }
   | { type: 'page'; page: number }
   | { type: 'search'; search: string }
   | { type: 'selectedOnly'; selectedOnly: boolean }
@@ -146,6 +148,8 @@ const base = {
   page: 1, pageSize: PAGE_SIZE, search: '',
   selectedOnly: false, trayCollapsed: false,
   onToggle: (_key: string) => {}, onPageChange: (_page: number) => {},
+  onSelectAll: undefined as ((keys: string[]) => void) | undefined,
+  onSelectNone: undefined as (() => void) | undefined,
   onSearchChange: (_search: string) => {}, onSelectedOnlyChange: (_selectedOnly: boolean) => {},
   onTrayCollapsedToggle: () => {},
   saveState: undefined as undefined | { error?: string; warning?: string; success?: boolean },
@@ -328,4 +332,85 @@ test('matrix feedback and accents are theme-token driven — no palette literals
   assert.doesNotMatch(source, /(?:emerald|sky|amber|teal|indigo)-\d00/);
   assert.equal(source.includes('next/navigation'), false,
     'the matrix search never navigates — pure client filtering');
+});
+
+// --- S13c: select all / select none (registry-local, no server query) -------
+
+test('S13c: Select all / Select none sit between the search input and the gold counter in the shared toolbar', () => {
+  const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
+  const toolbar = elements(tree).find(item => item.props['data-testid'] === 'list-toolbar');
+  assert.ok(toolbar, 'the shared toolbar must host the pair');
+  const kids = (Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  const kinds = kids.map(kid => kid.type === 'input' ? 'search'
+    : text(kid) === 'Select all' || text(kid) === 'Select none' ? 'select'
+    : kid.props['data-testid'] === 'selected-count' ? 'counter' : String(kid.type));
+  assert.deepEqual(JSON.parse(JSON.stringify(kinds)), ['search', 'select', 'select', 'counter'],
+    'the pair sits between the search input and the counter (mockup #7)');
+});
+
+test('S13c: Select all fires with EVERY registry key matching the current view across ALL pages', () => {
+  const calls: string[][] = [];
+  const tree = render({ search: 'view',
+    onSelectAll: keys => { calls.push([...keys]); }, onSelectNone: () => {} });
+  const all = elements(tree)
+    .find(item => item.type === 'button' && text(item) === 'Select all');
+  assert.ok(all, 'Select all missing from the matrix toolbar');
+  (all!.props.onClick as () => void)();
+  assert.equal(calls.length, 1);
+  const expected = registry.FEATURE_REGISTRY
+    .filter(definition => `${definition.key} ${definition.name} ${definition.description} ${definition.category}`
+      .toLowerCase().includes('view'))
+    .map(definition => definition.key);
+  assert.deepEqual([...calls[0]].sort(), [...expected].sort(),
+    'the full matching set across every page, never just the visible 20');
+  assert.ok(expected.some(key => page2Keys.includes(key)),
+    'the fixture must match beyond the visible page');
+});
+
+test('S13c: Select all respects the Selected-only view (the selected pool adds nothing new)', () => {
+  const selected = ['spood.create', 'photo.upload'];
+  const calls: string[][] = [];
+  const tree = render({ selectedOnly: true, enabled: enabledMap(selected),
+    onSelectAll: keys => { calls.push([...keys]); }, onSelectNone: () => {} });
+  const all = elements(tree)
+    .find(item => item.type === 'button' && text(item) === 'Select all');
+  (all!.props.onClick as () => void)();
+  assert.deepEqual([...calls[0]].sort(), [...selected].sort());
+});
+
+test('S13c: Select none fires the clear callback', () => {
+  let cleared = false;
+  const tree = render({ enabled: enabledMap(['spood.create']),
+    onSelectAll: () => {}, onSelectNone: () => { cleared = true; } });
+  const none = elements(tree)
+    .find(item => item.type === 'button' && text(item) === 'Select none');
+  assert.ok(none, 'Select none missing from the matrix toolbar');
+  (none!.props.onClick as () => void)();
+  assert.equal(cleared, true);
+});
+
+test('S13c: state owner: selectAll merges seed entries for every key and never drops existing picks', () => {
+  let state: MatrixState = seedMatrixState([page1Keys[0]]);
+  const before = new Map(state.enabled);
+  state = matrixReducer(state, { type: 'selectAll', keys: [page2Keys[0], page2Keys[1]] });
+  assert.equal(state.enabled.size, 3);
+  assert.ok(state.enabled.has(page1Keys[0]), 'existing picks survive');
+  const definition = registry.FEATURE_REGISTRY.find(feature => feature.key === page2Keys[0])!;
+  assert.deepEqual(JSON.parse(JSON.stringify(state.enabled.get(page2Keys[0]))),
+    { title: definition.name, subtitle: page2Keys[0], group: definition.category },
+    'every merged key carries its display triple (tray chips stay titled)');
+  assert.deepEqual([...before.keys()], [page1Keys[0]], 'copy-on-write: previous map untouched');
+  // Idempotent: a repeated Select all neither adds nor drops.
+  const snapshot = [...state.enabled.keys()].sort();
+  state = matrixReducer(state, { type: 'selectAll', keys: [page1Keys[0], page2Keys[0]] });
+  assert.deepEqual([...state.enabled.keys()].sort(), snapshot);
+});
+
+test('S13c: state owner: selectNone empties the enabled map (the counter returns to 0 of M)', () => {
+  let state: MatrixState = seedMatrixState([page1Keys[0], page2Keys[0]]);
+  state = matrixReducer(state, { type: 'page', page: 2 });
+  state = matrixReducer(state, { type: 'selectNone' });
+  assert.equal(state.enabled.size, 0);
+  assert.equal(state.page, 2, 'only the selection clears — view state survives');
 });

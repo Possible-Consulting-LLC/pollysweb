@@ -250,3 +250,15 @@ export const narrowViaEndpoint = (entity: string, pageSize?: number) =>
     const data = await response.json() as Partial<NarrowingResult>;
     return { rows: data.rows ?? [], total: data.total ?? 0 };
   };
+
+/** S13c select-all fetcher for the ids endpoint
+ * (`/admin/suggest/<entity>/ids?q=…`): every selectable row matching the
+ * active view as display triples, capped server-side. Fired on CLICK only,
+ * never per keystroke; degrades to an empty set on failure (a failed
+ * select-all changes nothing). */
+export const fetchSelectableRows = (entity: string, query: string) =>
+  fetch(`/admin/suggest/${entity}/ids?q=${encodeURIComponent(query)}`)
+    .then(async (response) => (response.ok
+      ? (await response.json() as { rows?: Array<{ id: string; title: string; subtitle: string }> }).rows ?? []
+      : []))
+    .catch(() => []);
