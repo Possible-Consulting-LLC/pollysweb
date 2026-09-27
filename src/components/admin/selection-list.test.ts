@@ -11,8 +11,9 @@ function elements(node: unknown): Element[] {
   if (Array.isArray(node)) return node.flatMap(elements);
   if (!node || typeof node !== 'object' || !('props' in node)) return [];
   const item = node as Element;
-  // Nested function components (e.g. the ui/button stub) are resolved by
-  // calling them with their props, since no React renderer is involved.
+  // Nested function components (e.g. the ui/button stub and the real
+  // SelectionTray) are resolved by calling them with their props, since no
+  // React renderer is involved.
   if (typeof item.type === 'function') return elements((item.type as (props: unknown) => unknown)(item.props));
   const children = Array.isArray(item.props.children) ? item.props.children : [item.props.children];
   return [item, ...children.flatMap((child) => elements(child))];
@@ -22,29 +23,24 @@ function text(node: unknown): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(text).filter(Boolean).join(' ');
   if (!node || typeof node !== 'object' || !('props' in node)) return '';
-  return text((node as Element).props.children);
+  const item = node as Element & { type?: unknown };
+  if (typeof item.type === 'function') return text((item.type as (props: unknown) => unknown)(item.props));
+  return text(item.props.children);
 }
 
 function textOf(tree: unknown): string {
   return text(tree).replace(/\s+/g, ' ').trim();
 }
 
-function loadSelectionList() {
+const cn = (...parts: unknown[]) => parts.filter(Boolean).join(' ');
+
+/** Transpile-and-run a component module against stubbed dependencies. */
+function loadModule(path: string, deps: Record<string, unknown>): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(
-    readFileSync(new URL('./selection-list.tsx', import.meta.url), 'utf8'),
+    readFileSync(new URL(path, import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } },
   ).outputText;
-  const deps: Record<string, unknown> = {
-    'react/jsx-runtime': jsx,
-    '@/lib/utils': { cn: (...parts: unknown[]) => parts.filter(Boolean).join(' ') },
-    // Button stub preserves variant/size plus every handler/aria prop so tests
-    // can assert variant choice, disabled state and fired callbacks.
-    '@/components/ui/button': {
-      Button: ({ variant, size, className, ...props }: Record<string, unknown>) =>
-        jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', className, ...props }),
-    },
-  };
   runInNewContext(code, {
     exports,
     require: (name: string) => {
@@ -52,10 +48,29 @@ function loadSelectionList() {
       return deps[name];
     },
   });
-  return exports.SelectionList as (props: Record<string, unknown>) => unknown;
+  return exports;
 }
 
-const SelectionList = loadSelectionList();
+// The real shared SelectionTray is exercised, not a stub: its card dependency
+// is stubbed to a class string and everything else runs as written.
+const trayExports = loadModule('./selection-tray.tsx', {
+  'react/jsx-runtime': jsx,
+  '@/lib/utils': { cn },
+  '@/components/ui/card': { cardClassName: 'card' },
+});
+
+// Button stub preserves variant/size plus every handler/aria prop so tests
+// can assert variant choice, disabled state and fired callbacks.
+const SelectionList = loadModule('./selection-list.tsx', {
+  'react/jsx-runtime': jsx,
+  '@/lib/utils': { cn },
+  '@/components/ui/card': { cardClassName: 'card' },
+  '@/components/ui/button': {
+    Button: ({ variant, size, className, ...props }: Record<string, unknown>) =>
+      jsx.jsx('button', { 'data-variant': variant ?? 'primary', 'data-size': size ?? 'md', className, ...props }),
+  },
+  '@/components/admin/selection-tray': trayExports,
+}).SelectionList as (props: Record<string, unknown>) => unknown;
 
 const baseRows = [
   { id: 'alpha', title: 'Alpha', selected: true },
@@ -65,8 +80,17 @@ const baseRows = [
 
 const baseProps = { rows: baseRows, total: 45, page: 2, pageSize: 20, search: '', selectedCount: 3 };
 
+const selectedRowsProp = [
+  { id: 'alpha', title: 'Alpha', subtitle: 'First pick' },
+  { id: 'zeta', title: 'Zeta', subtitle: 'From page 2' },
+];
+
 function buttons(tree: unknown): Element[] {
   return elements(tree).filter((item) => item.type === 'button');
+}
+
+function findByLabel(tree: unknown, label: string): Element | undefined {
+  return elements(tree).find((item) => item.props['aria-label'] === label);
 }
 
 test('renders every row with titles, subtitles, the selection counter and the page label', () => {
@@ -87,11 +111,11 @@ test('empty lists fall back to the empty label', () => {
 test('row toggles fire onToggle with the row id and reflect selection state', () => {
   let toggled: string | undefined;
   const tree = SelectionList({ ...baseProps, onToggle: (id: string) => { toggled = id; } });
-  const alpha = buttons(tree).find((item) => item.props['aria-label'] === 'Toggle Alpha');
+  const alpha = findByLabel(tree, 'Toggle Alpha');
   assert.ok(alpha, 'toggle for Alpha not rendered');
   assert.equal(alpha.props['aria-checked'], true);
   assert.equal(alpha.props['data-variant'], 'gold');
-  const beta = buttons(tree).find((item) => item.props['aria-label'] === 'Toggle Beta');
+  const beta = findByLabel(tree, 'Toggle Beta');
   assert.equal(beta?.props['aria-checked'], false);
   (alpha.props.onClick as () => void)();
   assert.equal(toggled, 'alpha');
@@ -99,7 +123,7 @@ test('row toggles fire onToggle with the row id and reflect selection state', ()
 
 test('disabled rows render inert controls', () => {
   const tree = SelectionList(baseProps);
-  const gamma = buttons(tree).find((item) => item.props['aria-label'] === 'Toggle Gamma');
+  const gamma = findByLabel(tree, 'Toggle Gamma');
   assert.ok(gamma, 'toggle for Gamma not rendered');
   assert.equal(gamma.props.disabled, true);
 });
@@ -107,8 +131,8 @@ test('disabled rows render inert controls', () => {
 test('prev/next fire onPageChange with the neighbouring page numbers and disable at bounds', () => {
   let page: number | undefined;
   const tree = SelectionList({ ...baseProps, onPageChange: (p: number) => { page = p; } });
-  const prev = buttons(tree).find((item) => item.props['aria-label'] === 'Previous page');
-  const next = buttons(tree).find((item) => item.props['aria-label'] === 'Next page');
+  const prev = findByLabel(tree, 'Previous page');
+  const next = findByLabel(tree, 'Next page');
   assert.ok(prev && next);
   assert.equal(prev.props.disabled, false);
   assert.equal(next.props.disabled, false);
@@ -117,9 +141,9 @@ test('prev/next fire onPageChange with the neighbouring page numbers and disable
   (next.props.onClick as () => void)();
   assert.equal(page, 3);
   const first = SelectionList({ ...baseProps, page: 1 }) as unknown;
-  assert.equal(buttons(first).find((item) => item.props['aria-label'] === 'Previous page')?.props.disabled, true);
+  assert.equal(findByLabel(first, 'Previous page')?.props.disabled, true);
   const last = SelectionList({ ...baseProps, page: 3 }) as unknown;
-  assert.equal(buttons(last).find((item) => item.props['aria-label'] === 'Next page')?.props.disabled, true);
+  assert.equal(findByLabel(last, 'Next page')?.props.disabled, true);
 });
 
 test('search input fires onSearchChange with the typed value', () => {
@@ -155,9 +179,138 @@ test('group headers render in the given order when groups are provided', () => {
 test('toggle-all fires with the eligible row ids on the page', () => {
   let toggledAll: string[] | undefined;
   const tree = SelectionList({ ...baseProps, onToggleAll: (ids: string[]) => { toggledAll = ids; } });
-  const all = buttons(tree).find((item) => item.props['aria-label'] === 'Toggle all on page');
+  const all = findByLabel(tree, 'Toggle all on page');
   assert.ok(all, 'toggle-all not rendered');
   assert.equal(all.props.disabled, false);
   (all.props.onClick as () => void)();
   assert.deepEqual(toggledAll, ['alpha', 'beta']);
+});
+
+// --- Selection review tray (multi mode) ---
+
+test('the shared tray renders every selected row together, from any page', () => {
+  // Only Alpha is on the current page; Zeta was selected pages ago.
+  const tree = SelectionList({ ...baseProps, rows: [baseRows[0]], selectedRows: selectedRowsProp });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Selected \(2\)/);
+  assert.match(rendered, /Alpha/);
+  assert.match(rendered, /First pick/);
+  assert.match(rendered, /Zeta/);
+  assert.match(rendered, /From page 2/);
+});
+
+test('tray chip removal fires onToggle with the deselected id', () => {
+  let toggled: string | undefined;
+  const tree = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, onToggle: (id: string) => { toggled = id; } });
+  const chip = findByLabel(tree, 'Deselect Zeta');
+  assert.ok(chip, 'tray chip for Zeta not rendered');
+  (chip.props.onClick as () => void)();
+  assert.equal(toggled, 'zeta');
+});
+
+test('the tray collapses only when the parent asks', () => {
+  const expanded = SelectionList({ ...baseProps, selectedRows: selectedRowsProp }) as unknown;
+  const expandToggle = buttons(expanded).find((item) => textOf(item).includes('Selected (2)'));
+  assert.ok(expandToggle, 'tray header not rendered');
+  assert.equal(expandToggle.props['aria-expanded'], true);
+  assert.match(textOf(expanded), /Zeta/);
+  const collapsed = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, trayCollapsed: true }) as unknown;
+  const collapseToggle = buttons(collapsed).find((item) => textOf(item).includes('Selected (2)'));
+  assert.ok(collapseToggle, 'collapsed tray header not rendered');
+  assert.equal(collapseToggle.props['aria-expanded'], false);
+  assert.doesNotMatch(textOf(collapsed), /Zeta/);
+});
+
+test('"Selected only" switches the list content to the selected set', () => {
+  let shown: boolean | undefined;
+  const normal = SelectionList({ ...baseProps, selectedRows: selectedRowsProp, onSelectedOnlyChange: (v: boolean) => { shown = v; } });
+  const toggle = buttons(normal).find((item) => textOf(item) === 'Selected only');
+  assert.ok(toggle, '"Selected only" toggle not rendered');
+  (toggle.props.onClick as () => void)();
+  assert.equal(shown, true);
+
+  const filtered = SelectionList({ ...baseProps, rows: [baseRows[0]], selectedRows: selectedRowsProp, selectedOnly: true }) as unknown;
+  const rendered = textOf(filtered);
+  assert.match(rendered, /Zeta/);
+  assert.match(rendered, /Alpha/);
+  assert.doesNotMatch(rendered, /Beta/);
+  // Content is client-side: no search or pagination while filtered.
+  assert.equal(elements(filtered).some((item) => item.type === 'input'), false);
+  assert.equal(findByLabel(filtered, 'Next page'), undefined);
+  assert.equal(buttons(filtered).find((item) => textOf(item) === 'Show all') !== undefined, true);
+});
+
+test('no tray and no "Selected only" toggle when selectedRows is absent or empty', () => {
+  for (const selectedRows of [undefined, []]) {
+    const tree = SelectionList({ ...baseProps, selectedRows }) as unknown;
+    assert.equal(findByLabel(tree, 'Deselect Alpha'), undefined);
+    assert.equal(buttons(tree).find((item) => textOf(item) === 'Selected only'), undefined);
+    assert.doesNotMatch(textOf(tree), /Selected \(2\)/);
+  }
+});
+
+// --- Single selection mode ---
+
+const singleRows = [
+  { id: 'alpha', title: 'Alpha' },
+  { id: 'beta', title: 'Beta' },
+  { id: 'gamma', title: 'Gamma', subtitle: 'The third one', disabled: true },
+];
+const singleProps = { rows: singleRows, total: 45, page: 2, pageSize: 20, search: '', selectedCount: 1, selectionMode: 'single' };
+
+test('single mode renders no checkboxes and no selection counter', () => {
+  const tree = SelectionList(singleProps) as unknown;
+  assert.equal(elements(tree).some((item) => item.props.role === 'checkbox'), false);
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'selected-count'), false);
+});
+
+test('single mode rows fire the row-select callback on click', () => {
+  let picked: string | undefined;
+  const tree = SelectionList({ ...singleProps, onRowSelect: (id: string) => { picked = id; } }) as unknown;
+  const row = buttons(tree).find((item) => textOf(item).includes('Beta'));
+  assert.ok(row, 'clickable row for Beta not rendered');
+  assert.equal(row.props['aria-pressed'], false);
+  (row.props.onClick as () => void)();
+  assert.equal(picked, 'beta');
+});
+
+test('single mode with a selection shows the focused view and a change affordance', () => {
+  let changed = false;
+  const tree = SelectionList({
+    ...singleProps,
+    rows: [
+      { id: 'beta', title: 'Beta', selected: true, subtitle: 'Chosen one' },
+      { id: 'gamma', title: 'Gamma' },
+    ],
+    onChange: () => { changed = true; },
+  }) as unknown;
+  const rendered = textOf(tree);
+  assert.match(rendered, /Beta/);
+  assert.match(rendered, /Chosen one/);
+  assert.doesNotMatch(rendered, /Gamma/);
+  assert.equal(elements(tree).some((item) => item.type === 'input'), false);
+  const change = buttons(tree).find((item) => textOf(item) === 'Change');
+  assert.ok(change, 'change affordance not rendered');
+  (change.props.onClick as () => void)();
+  assert.equal(changed, true);
+});
+
+test('single mode focused view can draw the selected row from the parent-selected set', () => {
+  const tree = SelectionList({
+    ...singleProps,
+    rows: [{ id: 'delta', title: 'Delta' }],
+    selectedRows: [{ id: 'zeta', title: 'Zeta', selected: true }],
+  }) as unknown;
+  assert.match(textOf(tree), /Zeta/);
+  assert.doesNotMatch(textOf(tree), /Delta/);
+});
+
+test('single mode without a selection renders the full searchable list', () => {
+  const tree = SelectionList(singleProps) as unknown;
+  const rendered = textOf(tree);
+  assert.match(rendered, /Alpha/);
+  assert.match(rendered, /Beta/);
+  assert.match(rendered, /Gamma/);
+  assert.equal(elements(tree).some((item) => item.type === 'input'), true);
+  assert.equal(findByLabel(tree, 'Next page') !== undefined, true);
 });
