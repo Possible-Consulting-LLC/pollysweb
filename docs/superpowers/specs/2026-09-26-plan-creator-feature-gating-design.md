@@ -103,7 +103,7 @@ There are no per-user entitlement override rows. To gift one feature or a set of
 
 ## Data model
 
-The supplied “User-Centric Feature Gating with Plan Limits” ERD is the authoritative relationship model. Prisma names should follow repository conventions, while database mappings may preserve snake_case names. Existing user and Stripe fields remain during migration until all callers use the new resolver.
+The supplied “User-Centric Feature Gating with Plan Limits” ERD is the authoritative relationship model. A copy of the ERD is saved as `2026-09-26-plan-creator-erd.png` in this directory; `2026-09-26-plan-creator-erd-check.md` records the 2026-09-26 cross-check confirming this specification matches the ERD across all shared entities. Prisma names should follow repository conventions, while database mappings may preserve snake_case names. Existing user and Stripe fields remain during migration until all callers use the new resolver.
 
 ### Plan
 
