@@ -114,13 +114,13 @@ The mode is a prop/variant of the SAME component (e.g. `selectionMode: 'multi' |
 **Files:**
 - Modify: `src/app/admin/features/page.tsx`, `src/components/admin/feature-matrix.tsx`, `src/lib/admin/plan-features.ts` (if query shape changes), related tests.
 
-**Requirements:**
-- `/admin/features`: grouped (category) paginated tables via `SelectionList` (groups = categories); release/metadata actions unchanged in behavior.
-- Matrix: grouped paginated selectable table, cross-page selection, always-visible counter; **save reconstructs the complete enabled set for all 34 registry keys** (parent state = full enabled set; toggles update it; pagination is purely visual).
-- Removal warning, orphan-disabled rows, and pricing preview behavior unchanged.
+**Requirements (user-approved, ratified design supersedes the earlier "tables via SelectionList" wording):**
+- `/admin/features` — **accordion + bulk hybrid** (same interaction language as the plans list): grouped (by category, `registryCategories()` order) paginated rows (20/page, server-side pagination + search by name/key; URL-owned `?search=&page=`, single-open `?open=<featureKey>`; pager links drop `open`). Accordion expansion per feature renders detail cards (key, description, category, release state, plan assignments "N of M plans: Free, Basic…") plus actions **Release/Unrelease** and **Edit metadata**; orphaned rows are greyed with inert controls + explanation. **Bulk selection**: checkbox per row (orphaned excluded), cross-page persistent selection, always-visible counter, shared tray with chips; bulk actions **Release selected / Unrelease selected** — each an audited per-feature mutation (`feature.release`, reason `Toggled feature <key> release`) inside `withAdminControl`; NO other bulk actions. ⟳ Sync registry unchanged in behavior.
+- Matrix (in `/admin/plans/[id]/edit`): `SelectionList` multi mode + `selectedRows` (shared tray, "Selected only" toggle, counter). Parent maintains the full enabled set as an id→row map (group included); **save reconstructs the complete enabled set for ALL registry keys** — toggles update the map, pagination/search are purely visual and never touch it. Removal warning + pricing preview (`summarizePlanForPricing`) preserved; `applyFeatureMatrix` semantics unchanged (upsert-no-delete, removal warning, orphan rejection).
+- Cross-cutting: uniform `ui/button` everywhere; both themes correct by construction; keyboard operable; no N+1 — plan assignments via one grouped query per page.
 
-- [ ] **Step 1: Failing tests** — matrix: enable on page 1, paginate, save → page-2 keys' rows exist with prior state; counter reflects full set; catalog: grouped pagination renders.
-- [ ] **Step 2–4: RED → implement → GREEN → full checks →** commit `feat: grouped paginated feature selection in catalog and matrix`.
+- [x] **Step 1: Failing tests** — matrix: enable on page 1, paginate, save → page-2 keys' rows exist with prior state; counter reflects full set; catalog: grouped pagination renders.
+- [x] **Step 2–4: RED → implement → GREEN → full checks →** commit `feat: accordion catalog with bulk actions and selection list matrix` (review fix-up: `test: state-owner coverage and fail-closed bulk cases`).
 
 ### Task 5: Subscriptions user picker rework
 

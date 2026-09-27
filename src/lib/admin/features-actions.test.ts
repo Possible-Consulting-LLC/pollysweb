@@ -216,6 +216,21 @@ test('bulk unrelease flips active features down with the same derived reason', a
   assert.equal(f.audits[0].reason, 'Toggled feature spood.create release');
 });
 
+test('a mixed batch with an orphan key fails closed before any write', async () => {
+  const f = fixture('super_admin');
+  await f.api.syncRegistryAction(new FormData());
+  f.audits.length = 0; f.updates.length = 0; f.revalidated.length = 0; f.mutations.length = 0;
+  const form = new FormData();
+  form.append('key', 'spood.create'); form.append('key', ORPHANED.key);
+  form.set('active', 'true');
+  assert.ok((await f.api.bulkSetFeatureReleaseAction(form)).error);
+  assert.equal(f.updates.length, 0, 'the valid key must not be written when a sibling is orphaned');
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.revalidated.length, 0);
+  assert.equal(f.store.get('spood.create')!.active, false);
+  assert.equal(f.store.get(ORPHANED.key)!.active, true);
+});
+
 test('bulk release is denied for non-super-admins and fails closed on empty or unknown selections', async () => {
   const denied = fixture('admin');
   const form = new FormData();

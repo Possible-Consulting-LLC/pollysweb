@@ -26,6 +26,18 @@ function elementsOf(tree: unknown) {
   };
 }
 
+function textOf(tree: unknown): string {
+  const flat = (node: unknown): string => {
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(flat).filter(Boolean).join(' ');
+    if (!node || typeof node !== 'object' || !('props' in node)) return '';
+    const item = node as Element;
+    if (typeof item.type === 'function') return flat((item.type as (props: unknown) => unknown)(item.props));
+    return flat(item.props.children);
+  };
+  return flat(tree).replace(/\s+/g, ' ').trim();
+}
+
 /** Renders the server page through the repo's transpile-and-run pattern. Row
  * grouping, selection, and accordion behavior live in features-accordion.test.ts. */
 function loadFeaturesPage() {
@@ -34,6 +46,11 @@ function loadFeaturesPage() {
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const helperExports: Record<string, unknown> = {};
   runInNewContext(helperCode, { exports: helperExports });
+  const listSharedCode = ts.transpileModule(
+    readFileSync(new URL('../../components/admin/list-shared.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const listSharedExports: Record<string, unknown> = {};
+  runInNewContext(listSharedCode, { exports: listSharedExports, URLSearchParams });
   const registryCode = ts.transpileModule(
     readFileSync(new URL('../features/registry.ts', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -48,6 +65,7 @@ function loadFeaturesPage() {
     URLSearchParams,
     require: (name: string) => {
       if (name === '@/lib/admin/paginated-list') return helperExports;
+      if (name === '@/components/admin/list-shared') return listSharedExports;
       if (name === '@/lib/features/registry') return registryExports;
       if (name === 'react/jsx-runtime') return jsx;
       assert.ok(name in deps, `unexpected dependency ${name}`);
@@ -165,6 +183,16 @@ test('a page beyond the total clamps back to the last valid page', async () => {
   const paged = featureQueries.filter(query => 'skip' in query);
   assert.equal(paged[paged.length - 1].skip, 20, 're-queried at the last valid page (2 of 25 at 20/page)');
   assert.equal(capturedProps[0].page, 2);
+});
+
+test('the header stat line is honest during a search', async () => {
+  servedRows = DB_ROWS; servedTotal = 25;
+  const filtered = textOf(await render({ search: 'molt' }));
+  assert.equal(filtered.includes('25 matches'), true);
+  assert.equal(filtered.includes('in the database'), true);
+  const plain = textOf(await render({}));
+  assert.equal(plain.includes('matches'), false);
+  assert.equal(plain.includes('in the database'), true);
 });
 
 test('the pager preserves search and drops open, and empty searches skip the where clause', async () => {

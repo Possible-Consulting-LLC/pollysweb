@@ -29,9 +29,14 @@ function textOf(tree: unknown): string {
   return text(tree).replace(/\s+/g, ' ').trim();
 }
 
-/** The hook-free view is exercised; the thin client wrapper (useState) keeps
- * its selection/tray state one level up and delegates everything here. */
-function loadFeaturesAccordionView() {
+/** The hook-free view plus the pure state-owner reducer are exercised; the
+ * client wrapper is a thin useReducer/useActionState shell around them. */
+function loadFeaturesAccordion() {
+  const listSharedCode = ts.transpileModule(
+    readFileSync(new URL('./list-shared.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const listSharedExports: Record<string, unknown> = {};
+  runInNewContext(listSharedCode, { exports: listSharedExports, URLSearchParams });
   const code = ts.transpileModule(
     readFileSync(new URL('./features-accordion.tsx', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -41,15 +46,27 @@ function loadFeaturesAccordionView() {
     URLSearchParams,
     require: (name: string) => {
       if (name === 'react/jsx-runtime') return jsx;
+      if (name === '@/components/admin/list-shared') return listSharedExports;
       assert.ok(name in deps, `unexpected dependency ${name}`);
       return deps[name];
     },
   });
-  return exports.FeaturesAccordionView as (props: Record<string, unknown>) => unknown;
+  return exports as {
+    FeaturesAccordionView: (props: Record<string, unknown>) => unknown;
+    accordionReducer: (state: AccordionState, action: AccordionAction) => AccordionState;
+  };
 }
 
+type AccordionState = { selection: Map<string, { title: string; subtitle: string }>; trayCollapsed: boolean };
+type AccordionAction =
+  | { type: 'toggle'; key: string; title: string; subtitle: string }
+  | { type: 'toggleTrayCollapsed' };
+
 const deps: Record<string, unknown> = {
-  react: { useState: () => [undefined, () => {}] },
+  react: {
+    useState: (initial: unknown) => [initial, () => {}],
+    useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
+  },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
   'lucide-react': { ChevronDown: (props: Record<string, unknown>) => jsx.jsx('svg', props) },
@@ -82,7 +99,7 @@ const deps: Record<string, unknown> = {
     bulkSetFeatureReleaseAction: 'bulk-set-feature-release' },
 };
 
-const FeaturesAccordionView = loadFeaturesAccordionView();
+const { FeaturesAccordionView, accordionReducer } = loadFeaturesAccordion();
 
 type FeatureRowView = { id: string; key: string; name: string; description: string;
   category: string; active: boolean; orphan: boolean; assignedPlans: string[]; totalPlans: number };
@@ -227,4 +244,33 @@ test('bulk buttons and tray toggle use themed controls', () => {
   const release = elements(tree).find(item => item.type === 'button' && text(item) === 'Release selected');
   assert.equal(release?.props['data-variant'], 'soft');
   assert.equal(release?.props['data-size'], 'sm');
+});
+
+test('state owner: selection accumulates across page changes and never shrinks but a re-toggle removes', () => {
+  let state: AccordionState = { selection: new Map(), trayCollapsed: false };
+  // Page 1: two keys toggled on.
+  state = accordionReducer(state, { type: 'toggle', key: 'k1', title: 'A', subtitle: 'k1' });
+  state = accordionReducer(state, { type: 'toggle', key: 'k2', title: 'B', subtitle: 'k2' });
+  assert.equal(state.selection.size, 2);
+  // Page change (props swap; the reducer is never called with a reset): page 2 adds k3.
+  state = accordionReducer(state, { type: 'toggle', key: 'k3', title: 'C', subtitle: 'k3' });
+  assert.deepEqual([...state.selection.keys()].sort(), ['k1', 'k2', 'k3']);
+  assert.deepEqual([...state.selection.values()].map(item => item.subtitle).sort(),
+    ['k1', 'k2', 'k3']);
+  // Toggling an already-selected key removes exactly that one.
+  state = accordionReducer(state, { type: 'toggle', key: 'k2', title: 'B', subtitle: 'k2' });
+  assert.deepEqual([...state.selection.keys()].sort(), ['k1', 'k3']);
+  // The state updates are copy-on-write: the previous map is never mutated.
+  const frozen = new Map(state.selection);
+  state = accordionReducer(state, { type: 'toggle', key: 'k9', title: 'Z', subtitle: 'k9' });
+  assert.deepEqual([...frozen.keys()].sort(), ['k1', 'k3']);
+  assert.equal(state.selection.size, 3);
+});
+
+test('state owner: the tray collapse flag flips via its own action', () => {
+  let state: AccordionState = { selection: new Map(), trayCollapsed: false };
+  state = accordionReducer(state, { type: 'toggleTrayCollapsed' });
+  assert.equal(state.trayCollapsed, true);
+  state = accordionReducer(state, { type: 'toggleTrayCollapsed' });
+  assert.equal(state.trayCollapsed, false);
 });

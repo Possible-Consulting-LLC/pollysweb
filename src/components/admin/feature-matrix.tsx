@@ -1,10 +1,11 @@
 'use client';
-import { useActionState, useState } from 'react';
+import { useActionState, useReducer } from 'react';
 import { FEATURE_REGISTRY, registryCategories } from '@/lib/features/registry';
 import { summarizePlanForPricing } from '@/lib/features/pricing';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionList, type SelectionRow } from '@/components/admin/selection-list';
+import { categoryLabel } from '@/components/admin/list-shared';
 import { Button } from '@/components/ui/button';
 import { saveFeatureMatrixAction } from '@/app/admin/plans/actions';
 
@@ -12,7 +13,6 @@ type SaveResult = { error?: string; success?: boolean; warning?: string };
 
 const PAGE_SIZE = 20;
 const price = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-const categoryLabel = (category: string) => category.charAt(0).toUpperCase() + category.slice(1);
 
 /** The full enabled set: feature key → display triple. This map is the single
  * source of truth — toggles mutate it, pagination/search never touch it, so a
@@ -45,6 +45,53 @@ const seedEntry = (key: string): EnabledEntry => {
   const definition = FEATURE_REGISTRY.find(feature => feature.key === key);
   return { title: definition?.name ?? key, subtitle: key, group: definition?.category ?? '' };
 };
+
+/** The enabled map seeded from the saved matrix (registry keys only — the page
+ * never hands over orphaned keys). */
+export const seedEnabledSet = (keys: string[]): EnabledSet =>
+  new Map(keys.map(key => [key, seedEntry(key)]));
+
+export type MatrixState = {
+  enabled: EnabledSet;
+  page: number;
+  search: string;
+  selectedOnly: boolean;
+  trayCollapsed: boolean;
+};
+
+export const seedMatrixState = (keys: string[]): MatrixState =>
+  ({ enabled: seedEnabledSet(keys), page: 1, search: '', selectedOnly: false, trayCollapsed: false });
+
+export type MatrixAction =
+  | { type: 'toggle'; key: string }
+  | { type: 'page'; page: number }
+  | { type: 'search'; search: string }
+  | { type: 'selectedOnly'; selectedOnly: boolean }
+  | { type: 'trayCollapsed' };
+
+/** Pure state owner of the matrix: the enabled map changes ONLY through
+ * toggles (copy-on-write), so pagination, search, and the selected-only
+ * filter can never prune, alter, or lose a pending change — a save during any
+ * visible page still reconstructs the complete set. Page/search actions reset
+ * each other and the selected-only filter. */
+export function matrixReducer(state: MatrixState, action: MatrixAction): MatrixState {
+  switch (action.type) {
+    case 'toggle': {
+      const enabled = new Map(state.enabled);
+      if (enabled.has(action.key)) enabled.delete(action.key);
+      else enabled.set(action.key, seedEntry(action.key));
+      return { ...state, enabled };
+    }
+    case 'page':
+      return { ...state, page: action.page, selectedOnly: false };
+    case 'search':
+      return { ...state, search: action.search, page: 1, selectedOnly: false };
+    case 'selectedOnly':
+      return { ...state, selectedOnly: action.selectedOnly };
+    case 'trayCollapsed':
+      return { ...state, trayCollapsed: !state.trayCollapsed };
+  }
+}
 
 /** Presentational body of the matrix (hook-free; the default export below owns
  * the enabled set, pagination, and save state). Consumes the shared
@@ -111,9 +158,9 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
   </section>;
 }
 
-/** Client owner of the enabled set and visual pagination: the map grows and
- * shrinks only through toggles, so paging/searching can never drop a pending
- * change and every save covers all registry keys. */
+/** Client shell around the pure matrix state owner: useReducer holds the
+ * enabled set and visual pagination (see matrixReducer), useActionState the
+ * save boundary. Nothing else. */
 export function FeatureMatrix({ planId, planName, options, initialEnabledKeys }: {
   planId: string;
   planName: string;
@@ -121,34 +168,19 @@ export function FeatureMatrix({ planId, planName, options, initialEnabledKeys }:
   /** Registry keys enabled in the saved matrix; everything else starts disabled. */
   initialEnabledKeys: string[];
 }) {
-  const [enabled, setEnabled] = useState<EnabledSet>(() =>
-    new Map(initialEnabledKeys.map(key => [key, seedEntry(key)])));
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [selectedOnly, setSelectedOnly] = useState(false);
-  const [trayCollapsed, setTrayCollapsed] = useState(false);
-  const [saveState, dispatch, saving] = useActionState(
+  const [state, dispatch] = useReducer(matrixReducer, initialEnabledKeys, seedMatrixState);
+  const [saveState, dispatchSave, saving] = useActionState(
     async (_previous: SaveResult | undefined, formData: FormData): Promise<SaveResult> =>
       saveFeatureMatrixAction(formData),
     undefined,
   );
   return <FeatureMatrixView planId={planId} planName={planName} options={options}
-    enabled={enabled} search={search} page={page} selectedOnly={selectedOnly}
-    trayCollapsed={trayCollapsed} saveState={saveState} saving={saving} onSave={dispatch}
-    onToggle={key => setEnabled(previous => {
-      const next = new Map(previous);
-      if (next.has(key)) next.delete(key); else next.set(key, seedEntry(key));
-      return next;
-    })}
-    onPageChange={page_ => {
-      setPage(page_);
-      setSelectedOnly(false);
-    }}
-    onSearchChange={next => {
-      setSearch(next);
-      setPage(1);
-      setSelectedOnly(false);
-    }}
-    onSelectedOnlyChange={setSelectedOnly}
-    onTrayCollapsedToggle={() => setTrayCollapsed(collapsed => !collapsed)} />;
+    enabled={state.enabled} search={state.search} page={state.page}
+    selectedOnly={state.selectedOnly} trayCollapsed={state.trayCollapsed}
+    saveState={saveState} saving={saving} onSave={dispatchSave}
+    onToggle={key => dispatch({ type: 'toggle', key })}
+    onPageChange={page => dispatch({ type: 'page', page })}
+    onSearchChange={search => dispatch({ type: 'search', search })}
+    onSelectedOnlyChange={selectedOnly => dispatch({ type: 'selectedOnly', selectedOnly })}
+    onTrayCollapsedToggle={() => dispatch({ type: 'trayCollapsed' })} />;
 }

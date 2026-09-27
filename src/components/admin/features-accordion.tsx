@@ -1,10 +1,11 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useReducer } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cardClassName } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { listHref, categoryLabel } from '@/components/admin/list-shared';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
@@ -30,9 +31,8 @@ export type FeatureRowView = {
 };
 
 /** Row toggles preserve search/page; pager links drop `open` (paging folds the accordion). */
-const listHref = (search: string, page: number, open?: string) =>
-  `/admin/features?${new URLSearchParams({ ...(search ? { search } : {}), page: String(page),
-    ...(open ? { open } : {}) })}`;
+const listHrefFor = (search: string, page: number, open?: string) =>
+  listHref('/admin/features', search, page, open);
 
 export type FeaturesAccordionViewProps = {
   features: FeatureRowView[];
@@ -56,8 +56,6 @@ function DetailCard({ title, children }: { title: string; children: React.ReactN
     {children}
   </div>;
 }
-
-const categoryLabel = (category: string) => category.charAt(0).toUpperCase() + category.slice(1);
 
 function FeatureDetail({ row }: { row: FeatureRowView }) {
   return <div className="space-y-3 border-t border-[var(--plum)]/10 p-4">
@@ -86,7 +84,7 @@ function FeatureDetail({ row }: { row: FeatureRowView }) {
           <MutationContextInput />
           <input type="hidden" name="key" value={row.key} />
           <input type="hidden" name="active" value={row.active ? 'false' : 'true'} />
-          <Button variant="primary" size="md">{row.active ? 'Retire release' : 'Release feature'}</Button>
+          <Button type="submit" variant="primary" size="md">{row.active ? 'Retire release' : 'Release feature'}</Button>
         </MutationForm>
         <MutationForm action={saveFeatureMetadataAction}
           className="grid gap-3 border-t border-[var(--plum)]/15 pt-3 sm:grid-cols-2">
@@ -135,7 +133,7 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
           {selectedItems.map(item =>
             <input key={item.id} type="hidden" name="key" value={item.id} />)}
           <input type="hidden" name="active" value={setting} />
-          <Button variant="soft" size="sm">
+          <Button type="submit" variant="soft" size="sm">
             {setting === 'true' ? 'Release selected' : 'Unrelease selected'}
           </Button>
         </MutationForm>)}
@@ -154,7 +152,7 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
                 aria-label={`Select ${row.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
               {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
                   single-open state lives in the URL so back/forward and deep links work. */}
-              <Link href={isOpen ? listHref(search, page) : listHref(search, page, row.key)}
+              <Link href={isOpen ? listHrefFor(search, page) : listHrefFor(search, page, row.key)}
                 className="flex flex-1 flex-wrap items-center gap-3" aria-expanded={isOpen}>
                 <ChevronDown aria-hidden="true"
                   className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
@@ -178,23 +176,46 @@ export function FeaturesAccordionView({ features, total, search, page, openKey, 
   </>;
 }
 
-/** Client owner of the selection state: a key→title map that grows as boxes
- * are checked and is never pruned by pagination or search, so selections and
- * the tray survive page changes, new searches, and re-renders. */
+/** Client state owner, expressed as a pure reducer so the persistence
+ * guarantee is directly testable: the selection map changes only through
+ * toggles (copy-on-write) and is never pruned by props — it survives
+ * pagination and accordion navigation (both URL-driven). A fresh search
+ * submit is a GET form navigation that remounts the client island, so
+ * selection resets there by design. */
+export type AccordionState = {
+  selection: Map<string, { title: string; subtitle: string }>;
+  trayCollapsed: boolean;
+};
+
+export type AccordionAction =
+  | { type: 'toggle'; key: string; title: string; subtitle: string }
+  | { type: 'toggleTrayCollapsed' };
+
+export function accordionReducer(state: AccordionState, action: AccordionAction): AccordionState {
+  switch (action.type) {
+    case 'toggle': {
+      const selection = new Map(state.selection);
+      if (selection.has(action.key)) selection.delete(action.key);
+      else selection.set(action.key, { title: action.title, subtitle: action.subtitle });
+      return { ...state, selection };
+    }
+    case 'toggleTrayCollapsed':
+      return { ...state, trayCollapsed: !state.trayCollapsed };
+  }
+}
+
+/** Thin client shell around accordionReducer. */
 export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
   'selectedItems' | 'onToggleSelected' | 'trayCollapsed' | 'onToggleTrayCollapsed'>) {
-  const [selection, setSelection] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
-  const [trayCollapsed, setTrayCollapsed] = useState(false);
+  const [state, dispatch] = useReducer(accordionReducer,
+    { selection: new Map<string, { title: string; subtitle: string }>(), trayCollapsed: false });
   return <FeaturesAccordionView {...props}
-    selectedItems={[...selection].map(([key, item]) =>
+    selectedItems={[...state.selection].map(([key, item]) =>
       ({ id: key, title: item.title, subtitle: item.subtitle }))}
-    onToggleSelected={key => setSelection(previous => {
-      const next = new Map(previous);
-      if (next.has(key)) next.delete(key);
-      else next.set(key, { title: props.features.find(feature => feature.key === key)?.name ?? key,
-        subtitle: key });
-      return next;
-    })}
-    trayCollapsed={trayCollapsed}
-    onToggleTrayCollapsed={() => setTrayCollapsed(collapsed => !collapsed)} />;
+    onToggleSelected={key => {
+      const row = props.features.find(feature => feature.key === key);
+      dispatch({ type: 'toggle', key, title: row?.name ?? key, subtitle: key });
+    }}
+    trayCollapsed={state.trayCollapsed}
+    onToggleTrayCollapsed={() => dispatch({ type: 'toggleTrayCollapsed' })} />;
 }

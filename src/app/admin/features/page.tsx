@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { FEATURE_REGISTRY, isRegisteredFeatureKey } from '@/lib/features/registry';
 import { clampPage, parseListQuery } from '@/lib/admin/paginated-list';
 import { buttonVariants, Button } from '@/components/ui/button';
+import { listHref } from '@/components/admin/list-shared';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { FeaturesAccordion } from '@/components/admin/features-accordion';
@@ -11,8 +12,7 @@ import { syncRegistryAction } from './actions';
 export const dynamic = 'force-dynamic';
 
 /** Row toggles preserve search/page; pager links drop `open` (paging folds the accordion). */
-const listHref = (search: string, page: number) =>
-  `/admin/features?${new URLSearchParams({ ...(search ? { search } : {}), page: String(page) })}`;
+const listHrefFor = (search: string, page: number) => listHref('/admin/features', search, page);
 
 export default async function FeatureCatalogPage({ searchParams }:
   { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -28,13 +28,14 @@ export default async function FeatureCatalogPage({ searchParams }:
         { key: { contains: query.search, mode: 'insensitive' as const } },
       ] }
     : undefined;
-  const [rows, total, totalPlans] = await Promise.all([
+  const [rows, total, totalPlans, allTotal] = await Promise.all([
     prisma.feature.findMany({
       where, orderBy: [{ category: 'asc' }, { key: 'asc' }],
       skip: (query.page - 1) * query.pageSize, take: query.pageSize,
     }),
     prisma.feature.count({ where }),
     prisma.plan.count(),
+    prisma.feature.count(),
   ]);
   // A page beyond the (possibly filtered) total re-queries the last valid page.
   const page = clampPage(query.page, total, query.pageSize);
@@ -74,7 +75,11 @@ export default async function FeatureCatalogPage({ searchParams }:
     <header className="space-y-2">
       <h2 className="text-2xl font-semibold">Feature catalog</h2>
       <p>Every feature key comes from the code registry and starts inactive. Releasing a feature makes it available to plans; removing a key from the code leaves its database row orphaned here for review. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
-      <p>{FEATURE_REGISTRY.length} registry features · {total} in the database · {missing.length} awaiting sync · {orphanedCount} orphaned</p>
+      {/* Honest stat line: during a search `total` is the filtered count, so
+          the unfiltered database count is shown next to it. */}
+      <p>{parsed.search
+        ? <>{total} matches · {allTotal} in the database · {missing.length} awaiting sync · {orphanedCount} orphaned</>
+        : <>{FEATURE_REGISTRY.length} registry features · {total} in the database · {missing.length} awaiting sync · {orphanedCount} orphaned</>}</p>
     </header>
     <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
       <h3 className="font-semibold">Sync registry</h3>
@@ -101,11 +106,11 @@ export default async function FeatureCatalogPage({ searchParams }:
     <nav className="flex items-center gap-3" aria-label="Features pagination">
       {page <= 1
         ? <Button type="button" disabled variant="secondary" size="sm">Previous</Button>
-        : <Link href={listHref(parsed.search, page - 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}
+        : <Link href={listHrefFor(parsed.search, page - 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Previous</Link>}
       <span>Page {page} of {lastPage}</span>
       {page >= lastPage
         ? <Button type="button" disabled variant="secondary" size="sm">Next</Button>
-        : <Link href={listHref(parsed.search, page + 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Next</Link>}
+        : <Link href={listHrefFor(parsed.search, page + 1)} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>Next</Link>}
     </nav>
   </>;
 }

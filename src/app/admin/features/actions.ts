@@ -44,10 +44,17 @@ export async function bulkSetFeatureReleaseAction(form: FormData): Promise<Resul
       if (requested !== 'true' && requested !== 'false') throw Error('Choose release or retire.');
       const active = requested === 'true';
       await withAdminControl(async (tx, actor) => {
+        // Fail closed before any write: every selected key must exist and be
+        // registered, so a mixed batch (valid + orphaned/unknown) writes nothing.
+        const rows = [];
         for (const key of keys) {
           const row = await tx.feature.findUnique({ where: { key } });
           if (!row) throw Error('That feature is not in the catalog. Sync the registry first.');
           if (!isRegisteredFeatureKey(key)) throw Error('Orphaned features are locked until their key returns to the code registry.');
+          rows.push(row);
+        }
+        for (const [index, key] of keys.entries()) {
+          const row = rows[index]!;
           const reason = `Toggled feature ${key} release`;
           if (row.active !== active) {
             await tx.feature.update({ where: { key }, data: { active } });
