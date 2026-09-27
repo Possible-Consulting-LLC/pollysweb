@@ -29,6 +29,10 @@ function textOf(tree: unknown): string {
   return text(tree).replace(/\s+/g, ' ').trim();
 }
 
+/** Values crossing the vm realm carry a foreign prototype; normalize before
+ * structural comparison. */
+const plain = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
 /** The hook-free view is what the tests exercise; the thin client wrapper
  * (useState) keeps its logic one level up and delegates everything here. */
 function loadAccordionView() {
@@ -62,6 +66,9 @@ function loadAccordionView() {
     PlansAccordion: (props: Record<string, unknown>) => unknown;
     formatUpdatedAt: (date: Date, now?: Date) => string;
     priceSummary: (options: Array<{ interval: string; basePriceCents: number; active: boolean }>) => string;
+    narrowingWithRefresh: (narrowing: Record<string, unknown>,
+      refresh: Record<string, unknown> | null) => Record<string, unknown>;
+    narrowedPlanView: (row: Record<string, unknown>) => Record<string, unknown>;
   };
 }
 
@@ -139,10 +146,12 @@ const deps: Record<string, unknown> = {
       jsx.jsx('div', { children }),
     ] }) },
   '@/app/admin/plans/actions': { deletePlanAction: 'delete-plan', duplicatePlanAction: 'duplicate-plan',
-    reorderPlanAction: 'reorder-plan', bulkSetPlanFlagsAction: 'bulk-set-plan-flags' },
+    reorderPlanAction: 'reorder-plan', bulkSetPlanFlagsAction: 'bulk-set-plan-flags',
+    updatePlanAction: 'update-plan' },
 };
 
-const { PlansAccordionView, PlansAccordion, formatUpdatedAt, priceSummary } = loadAccordionView();
+const { PlansAccordionView, PlansAccordion, formatUpdatedAt, priceSummary,
+  narrowingWithRefresh, narrowedPlanView } = loadAccordionView();
 
 type PlanLike = { id: string; name: string; description: string; planType: string;
   maxSpiders: number | null; active: boolean; public: boolean; sortOrder: number;
@@ -164,6 +173,9 @@ const base = { plans: plans(3), total: 3, search: '', page: 1, pageSize: 20, ope
   onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
   trayCollapsed: false, onToggleTrayCollapsed: () => {},
   onSearchSubmit: (_search: string) => {},
+  narrowedOpenId: '', onNarrowedOpenToggle: (_id: string) => {},
+  editingId: '', onStartEdit: (_id: string) => {}, onCancelEdit: () => {},
+  onSaveEdit: 'save-plan-edit' as unknown as (form: FormData) => Promise<{ error?: string }>,
   narrowing: narrowingState as Record<string, unknown> };
 
 const render = (overrides: Partial<typeof base> = {}) => {
@@ -272,11 +284,77 @@ test('accordion expansion, detail cards, and collapse toggle keep working with s
   const body = textOf(tree);
   assert.equal((body.match(/Identity/g) ?? []).length, 1);
   assert.equal(body.includes('0 of 34'), true);
-  const editLink = elementsOf(tree).links.find(link => link.props.href === '/admin/plans/plan-1/edit');
-  assert.ok(editLink, 'edit link missing');
-  assert.equal(String(editLink.props.className).includes('variant-primary'), true);
   const collapse = elementsOf(tree).links.find(link => link.props.href === '/admin/plans?page=1');
   assert.ok(collapse, 'collapse toggle missing');
+});
+
+// --- S13b: Edit lives in the detail card (in-place editor, no navigation) ---
+
+test('S13b: the read-only detail card carries a primary Edit affordance that starts the in-place editor', () => {
+  const started: string[] = [];
+  const tree = render({ openId: 'plan-1', onStartEdit: (id: string) => { started.push(id); } });
+  const edit = elementsOf(tree).buttons.find(button => text(button) === 'Edit');
+  assert.ok(edit, 'the Edit affordance is missing from the detail card');
+  assert.equal(edit!.props['data-variant'], 'primary');
+  assert.equal(edit!.props['data-size'], 'sm', 'mockup btn-sm');
+  (edit!.props.onClick as () => void)();
+  assert.deepEqual(started, ['plan-1']);
+  // The builder page is reached from the EDIT FLOW now, not the read-only card.
+  assert.equal(elementsOf(tree).links.some(link =>
+    String(link.props.href).endsWith('/edit')), false,
+    'the read-only card no longer links straight to the builder');
+});
+
+test('S13b: Edit turns the card into the in-place editor — plan fields, Save/Cancel, no navigation', () => {
+  const cancelled: boolean[] = [];
+  const tree = render({ openId: 'plan-1', editingId: 'plan-1',
+    onCancelEdit: () => { cancelled.push(true); } });
+  const body = textOf(tree);
+  assert.equal(body.includes('Edit plan'), true, 'the editor card is titled Edit plan');
+  assert.equal(body.includes('Identity'), false, 'the read-only cards are replaced in edit mode');
+  assert.equal(body.includes('Billing options'), false);
+  const form = elements(tree).find(item => item.type === 'form' &&
+    item.props.action === 'save-plan-edit');
+  assert.ok(form, 'the editor submits through the wrapped update action');
+  const fields = elements(form!).filter(item =>
+    ['input', 'select', 'textarea'].includes(item.type))
+    .map(item => ({ tag: item.type, name: item.props.name, type: item.props.type,
+      value: item.props.value, defaultValue: item.props.defaultValue,
+      defaultChecked: item.props.defaultChecked }));
+  const byName = (name: string) => fields.find(field => field.name === name);
+  assert.deepEqual(byName('planId'), { tag: 'input', name: 'planId', type: 'hidden',
+    value: 'plan-1', defaultValue: undefined, defaultChecked: undefined });
+  assert.equal(byName('name')!.defaultValue, 'Plan 1');
+  assert.equal(byName('name')!.defaultValue !== undefined, true, 'fields are prefilled');
+  assert.deepEqual(byName('description'), { tag: 'textarea', name: 'description', type: undefined,
+    value: undefined, defaultValue: 'Desc 1', defaultChecked: undefined });
+  assert.equal(byName('planType')!.tag, 'select');
+  assert.equal(byName('maxSpiders')!.type, 'number', 'empty = unlimited via a number field');
+  assert.equal(byName('maxSpiders')!.defaultValue, '', 'unlimited plans prefill empty');
+  assert.equal(byName('active')!.defaultChecked, true);
+  assert.equal(byName('public')!.defaultChecked, true);
+  // The stable identity (planId) is the only hidden field; the plan id is never editable.
+  assert.equal(fields.every(field => field.name !== 'id'), true);
+  const cancel = elementsOf(tree).buttons.find(button => text(button) === 'Cancel');
+  assert.ok(cancel, 'Cancel affordance missing');
+  assert.equal(cancel!.props['data-variant'], 'soft');
+  (cancel!.props.onClick as () => void)();
+  assert.deepEqual(cancelled, [true]);
+  const save = elementsOf(tree).buttons.find(button => text(button) === 'Save changes');
+  assert.ok(save, 'Save affordance missing');
+  assert.equal(save!.props['data-variant'], 'primary');
+});
+
+test('S13b: the edit flow offers the Full editor link to the plan-builder page', () => {
+  const tree = render({ openId: 'plan-1', editingId: 'plan-1' });
+  const fullEditor = elementsOf(tree).links.find(link =>
+    link.props.href === '/admin/plans/plan-1/edit');
+  assert.ok(fullEditor, 'the Full editor link is missing from the edit flow');
+  assert.match(textOf(fullEditor!), /full editor/);
+  assert.match(textOf(tree), /feature matrix, billing options, and pricing preview/,
+    'the mockup rule text stays accessible around the link');
+  // In-place editing does not replace the builder: no in-place matrix editor here.
+  assert.equal(elements(tree).some(item => item.props['data-testid'] === 'feature-matrix'), false);
 });
 
 // --- Task 7: live search toolbar + mockup visual parity ---
@@ -297,11 +375,18 @@ test('the toolbar hosts the mockup search input wired to the plans narrowing end
   assert.doesNotMatch(readSource(), /mode="popup"|role="combobox"|renderSuggestions/);
 });
 
+/** A rich narrowed plan row — the committed PlanSummary shape the narrowing
+ * endpoint serves (S13). */
+const narrowedPlanRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD', name: 'Plan 9', description: 'Desc 9',
+  planType: 'STANDARD', maxSpiders: null, active: true, public: true, sortOrder: 0,
+  updatedAt: new Date(0).toISOString(), billingOptions: [], billingOptionCount: 0,
+  enabledFeatureCount: 0, subscriptionCount: 0, ...over });
+
 test('typing narrows the rendered list in place; a narrowed pick forwards full display data', () => {
   const picked: Array<Record<string, unknown>> = [];
   const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
-    narrowing: liveNarrowing({ rows: [{ id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD' }],
-      total: 12, page: 1 }) });
+    narrowing: liveNarrowing({ rows: [narrowedPlanRow()], total: 12, page: 1 }) });
   const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-plans');
   assert.ok(narrowed, 'narrowed list missing');
   const rows = elements(narrowed).filter(item => item.props['data-row-id']);
@@ -312,8 +397,111 @@ test('typing narrows the rendered list in place; a narrowed pick forwards full d
     item.props['aria-label'] === 'Select Plan 9');
   assert.ok(box, 'narrowed row checkbox missing');
   (box.props.onChange as () => void)();
-  assert.deepEqual(picked, [{ id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD' }],
+  assert.deepEqual(plain(picked), [{ id: 'plan-9', title: 'Plan 9', subtitle: 'STANDARD' }],
     'the full suggestion is forwarded — tray chips never fall back to a raw id');
+});
+
+// --- S13: narrowed rows are full citizens (rich rows, client-side expand) ---
+
+test('S13: narrowed rows render through the committed row renderer — same anatomy, badges, prices', () => {
+  const tree = render({ narrowing: liveNarrowing({ rows: [narrowedPlanRow({
+    billingOptions: [{ interval: 'MONTHLY', basePriceCents: 199, active: true }],
+    enabledFeatureCount: 8, subscriptionCount: 3 })], total: 12 }) });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-plans');
+  const row = elements(narrowed).find(item => item.props['data-row-id'] === 'plan-9');
+  const body = textOf(row);
+  assert.equal(body.includes('Plan 9'), true);
+  assert.equal(body.includes('Desc 9'), true, 'the committed description line');
+  assert.equal(body.includes('$1.99/mo'), true, 'the committed price-summary line');
+  assert.equal(body.includes('Unlimited'), true);
+  assert.equal(body.includes('8 features · 3 subscriber'), true, 'the committed usage line');
+  assert.equal(body.includes('Active'), true, 'committed badge cluster');
+  assert.equal(body.includes('Public'), true);
+  assert.equal(body.includes('Standard'), true, 'type badge (human label)');
+  // Same renderer, same hover anatomy (the tint rides the row's header strip).
+  assert.equal(elements(row!).some(item =>
+    String(item.props.className ?? '').includes('hover:bg-[var(--hover)]')), true);
+});
+
+test('S13: clicking a narrowed row expands it client-side — the URL stays on the committed search', () => {
+  const toggledOpen: string[] = [];
+  const tree = render({ onNarrowedOpenToggle: (id: string) => { toggledOpen.push(id); },
+    narrowing: liveNarrowing({ rows: [narrowedPlanRow()], total: 12 }) });
+  const row = elements(tree).find(item => item.props['data-row-id'] === 'plan-9');
+  const expand = elements(row).find(item => item.type === 'button' &&
+    item.props['aria-expanded'] !== undefined);
+  assert.ok(expand, 'a narrowed row must expand via a client-side toggle');
+  assert.equal(expand!.props['aria-expanded'], false);
+  (expand!.props.onClick as () => void)();
+  assert.deepEqual(toggledOpen, ['plan-9']);
+  // No navigation anywhere in the narrowed view: no open= links at all.
+  assert.equal(elements(tree).filter(item => item.type === 'a' &&
+    String(item.props.href ?? '').includes('open=')).length, 0,
+    'expanding a narrowed row never touches the URL');
+});
+
+test('S13: an expanded narrowed row renders the same detail card as a committed row', () => {
+  const tree = render({ narrowedOpenId: 'plan-9',
+    narrowing: liveNarrowing({ rows: [narrowedPlanRow({
+      billingOptions: [{ interval: 'MONTHLY', basePriceCents: 199, active: true }],
+      subscriptionCount: 4 })], total: 12 }) });
+  const body = textOf(tree);
+  assert.equal((body.match(/Identity/g) ?? []).length, 1, 'the committed detail cards render');
+  assert.equal(body.includes('Effective subscriptions 4'), true);
+  assert.equal(body.includes('$1.99/mo'), true, 'billing options render from the narrowed row');
+  assert.equal(body.includes('Edit'), true, 'the detail is a full citizen — Edit included');
+});
+
+test('S13: an expanded narrowed row opens the same in-place editor (S13b holds while narrowed)', () => {
+  const tree = render({ narrowedOpenId: 'plan-9', editingId: 'plan-9',
+    narrowing: liveNarrowing({ rows: [narrowedPlanRow({ name: 'Plan 9' })], total: 12 }) });
+  const body = textOf(tree);
+  assert.equal(body.includes('Edit plan'), true);
+  const form = elements(tree).find(item => item.type === 'form' &&
+    item.props.action === 'save-plan-edit');
+  assert.ok(form, 'the narrowed editor submits through the same wrapped action');
+  assert.equal(elements(form!).some(item => item.type === 'input' &&
+    item.props.name === 'planId' && item.props.value === 'plan-9'), true);
+});
+
+test('S13: narrowedPlanView maps the wire shape onto the committed PlanSummary (one code path)', () => {
+  const view = narrowedPlanView(narrowedPlanRow({
+    updatedAt: '2026-09-27T10:00:00.000Z',
+    billingOptions: [{ interval: 'ANNUAL', basePriceCents: 1999, active: false }],
+    billingOptionCount: 1, enabledFeatureCount: 5, subscriptionCount: 2,
+    maxSpiders: 7, public: false }) as Record<string, unknown>);
+  assert.equal(view.name, 'Plan 9');
+  assert.equal((view.updatedAt as Date).toISOString(), '2026-09-27T10:00:00.000Z',
+    'updatedAt is re-hydrated into a Date for the renderer');
+  assert.equal(view.maxSpiders, 7);
+  assert.equal(view.public, false);
+  assert.deepEqual(view.billingOptions, [{ interval: 'ANNUAL', basePriceCents: 1999, active: false }]);
+  assert.equal(view.enabledFeatureCount, 5);
+  assert.equal(view.subscriptionCount, 2);
+});
+
+// --- S13 refresh mechanics: fresh narrowed rows after an in-place save ---
+
+test('S13 refresh: a successful save overlays fresh narrowed rows only for the same query+page', () => {
+  const narrowed = { ...narrowingState, narrowed: true, active: true, query: 'term',
+    rows: [narrowedPlanRow()], total: 12, page: 1 };
+  const fresh = { query: 'term', page: 1, rows: [narrowedPlanRow({ title: 'Renamed' })], total: 12 };
+  const merged = narrowingWithRefresh(narrowed as Record<string, unknown>, fresh);
+  assert.equal((merged.rows as Array<{ title: string }>)[0].title, 'Renamed',
+    'the fresh rows replace the cached narrowed rows after a save');
+  assert.equal(merged.total, 12);
+  // Not narrowed (committed view): untouched — revalidatePath refreshes it.
+  assert.equal(narrowingWithRefresh(narrowingState as Record<string, unknown>, fresh),
+    narrowingState);
+  // A different page or query (the user typed/paged since): the overlay is void.
+  const pageTwo = { ...narrowed, page: 2 };
+  assert.equal(narrowingWithRefresh(pageTwo as Record<string, unknown>, fresh), pageTwo,
+    'stale-overlay guard: page moved on');
+  const otherQuery = { ...narrowed, query: 'termx' };
+  assert.equal(narrowingWithRefresh(otherQuery as Record<string, unknown>, fresh), otherQuery,
+    'stale-overlay guard: query moved on');
+  assert.equal(narrowingWithRefresh(narrowed as Record<string, unknown>, null), narrowed,
+    'no refresh yet → the narrowing state passes through');
 });
 
 test('an empty narrowed set echoes the query; clearing restores the committed view', () => {
@@ -450,15 +638,12 @@ test('P2: every extra detail action is kept and restyled into the mockup languag
   const variants: Record<string, { variant: string; size: string }> = {};
   for (const button of buttons) variants[text(button)] =
     { variant: String(button.props['data-variant']), size: String(button.props['data-size']) };
-  // Mockup: Edit plan is the btn-primary btn-sm link; the kept extra actions
-  // sit beside it as soft sm buttons.
-  const editLink = elementsOf(tree).links.find(link =>
-    String(link.props.href).endsWith('/edit'));
-  assert.ok(editLink, 'edit link missing');
-  assert.equal(text(editLink), 'Edit plan');
-  const editClass = String(editLink.props.className);
-  assert.equal(editClass.includes('variant-primary'), true);
-  assert.equal(editClass.includes('size-sm'), true, 'mockup uses btn-sm');
+  // Mockup: Edit is the btn-primary btn-sm in-place affordance; the kept extra
+  // actions sit beside it as soft sm buttons. The builder lives in the edit
+  // flow's Full editor link (S13b).
+  const edit = buttons.find(button => text(button) === 'Edit');
+  assert.ok(edit, 'in-place Edit affordance missing');
+  assert.deepEqual(variants['Edit'], { variant: 'primary', size: 'sm' });
   assert.deepEqual(variants['Duplicate'], { variant: 'soft', size: 'sm' });
   assert.deepEqual(variants['Delete or deactivate'], { variant: 'soft', size: 'sm' },
     'delete/deactivate keeps its function and drops the danger styling');

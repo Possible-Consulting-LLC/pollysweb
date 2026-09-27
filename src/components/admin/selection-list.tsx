@@ -81,6 +81,20 @@ export type SelectionListProps = {
    * (mockup-styled) input. A search slot must narrow the RENDERED LIST
    * headlessly (ruling 1): no dropdown by construction. */
   searchSlot?: ReactNode;
+  /** S13a — what a whole-row click means in multi mode. 'select' (default):
+   * the S8 click-to-toggle (every current consumer). 'expand': the row click
+   * expands/collapses the row's detail (parent-owned via `expandedId` +
+   * `detailFor`, fired through `onExpandToggle`); the checkbox stays the
+   * select affordance and keeps firing `onToggle`. Single mode is untouched —
+   * its rows are pick buttons. */
+  rowClick?: 'select' | 'expand';
+  /** S13a expand mode: which row's detail is open (parent-owned, one at a
+   * time if the host so chooses). */
+  expandedId?: string;
+  /** S13a expand mode: renders the expanded row's detail beneath the row. */
+  detailFor?(row: SelectionRow): ReactNode;
+  /** S13a expand mode: fired by a row click (and never by the checkbox). */
+  onExpandToggle?(id: string): void;
   /** Primary footer action rendered at the footer's right (mockup's "Save
    * matrix", INT:89-96) — the host passes its own form/button. */
   footerAction?: ReactNode;
@@ -120,6 +134,10 @@ export function SelectionList({
   searchSlot,
   footerAction,
   toolbar = true,
+  rowClick = 'select',
+  expandedId,
+  detailFor,
+  onExpandToggle,
 }: SelectionListProps) {
   const single = selectionMode === 'single';
   const selectedRow = rows.find((row) => row.selected) ?? selectedRows?.find((row) => row.selected);
@@ -217,16 +235,22 @@ export function SelectionList({
       </button>
     </li>
   ) : (
-    // Multi-mode rows click-to-toggle (mockup's delegated rows, INT:222-227):
-    // the whole row toggles; the checkbox stays and its own change event is
-    // ignored by the row handler to guard against a double fire.
+    // Multi-mode rows: the click's meaning is the surface's rowClick flag
+    // (S13a). 'select' (default) is the S8 click-to-toggle (mockup's delegated
+    // rows, INT:222-227) — the whole row toggles and a checkbox-originated
+    // click is ignored to guard against a double fire. 'expand' makes the row
+    // click expand/collapse the row's detail instead; the checkbox stays the
+    // select affordance, so both mockup languages share one component.
     <li key={row.id} data-row-id={row.id}
       onClick={single ? undefined : (event) => {
         const target = event.target as HTMLElement;
-        if (row.disabled || target.tagName === 'INPUT') return;
-        onToggle(row.id);
+        if (row.disabled || target.tagName === 'INPUT' ||
+          target.closest?.('[data-row-detail]')) return;
+        if (rowClick === 'expand') onExpandToggle?.(row.id);
+        else onToggle(row.id);
       }}
       className={cn('flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors hover:bg-[var(--hover)]',
+        rowClick === 'expand' && 'flex-wrap',
         !single && !row.disabled && 'cursor-pointer',
         row.disabled && 'cursor-not-allowed opacity-45')}>
       <input
@@ -245,6 +269,9 @@ export function SelectionList({
           : null}
       </span>
       {row.badge ? <RowBadge badge={row.badge} /> : null}
+      {rowClick === 'expand' && expandedId === row.id && detailFor ? (
+        <div data-row-detail className="w-full pt-1">{detailFor(row)}</div>
+      ) : null}
     </li>
   );
   return (

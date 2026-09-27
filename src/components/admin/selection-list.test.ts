@@ -539,3 +539,80 @@ test('disabled single-mode rows never fire the row-select callback', () => {
   (gamma.props.onClick as () => void)();
   assert.equal(picked, undefined, 'a disabled row must be unselectable');
 });
+
+// --- S13a: per-surface row-click behavior flag ---
+
+test("S13a: rowClick defaults to 'select' — the S8 click-to-toggle stays", () => {
+  const toggled: string[] = [];
+  const tree = SelectionList({ ...baseProps,
+    onToggle: (id: string) => { toggled.push(id); } }) as unknown;
+  const row = elements(tree).find((item) => item.props['data-row-id'] === 'beta');
+  (row!.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.deepEqual(toggled, ['beta']);
+});
+
+test("S13a: rowClick='expand' — the row click expands (the checkbox stays the select affordance)", () => {
+  const expanded: string[] = [];
+  const toggled: string[] = [];
+  const tree = SelectionList({ ...baseProps, rowClick: 'expand',
+    onToggle: (id: string) => { toggled.push(id); },
+    onExpandToggle: (id: string) => { expanded.push(id); } }) as unknown;
+  const row = elements(tree).find((item) => item.props['data-row-id'] === 'beta');
+  assert.ok(row, 'row missing');
+  // The row click expands — it never toggles selection.
+  (row.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.deepEqual(expanded, ['beta']);
+  assert.deepEqual(toggled, [], 'a row click must not select in expand mode');
+  // The checkbox keeps firing onToggle (the select affordance).
+  const betaBox = findByLabel(tree, 'Toggle Beta');
+  assert.ok(betaBox, 'checkbox select affordance missing');
+  (betaBox!.props.onChange as () => void)();
+  assert.deepEqual(toggled, ['beta']);
+  assert.deepEqual(expanded, ['beta'], 'the checkbox never triggers the expand toggle');
+});
+
+test("S13a: expand mode guards — disabled rows and detail-area clicks stay inert", () => {
+  const expanded: string[] = [];
+  const tree = SelectionList({ ...baseProps, rowClick: 'expand',
+    onExpandToggle: (id: string) => { expanded.push(id); } }) as unknown;
+  const gamma = elements(tree).find((item) => item.props['data-row-id'] === 'gamma');
+  (gamma!.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.deepEqual(expanded, [], 'disabled rows stay inert');
+  const beta = elements(tree).find((item) => item.props['data-row-id'] === 'beta');
+  // A normal row click expands exactly once…
+  (beta!.props.onClick as (event: unknown) => void)({ target: { tagName: 'SPAN' } });
+  assert.deepEqual(expanded, ['beta'],
+    'the expand toggle fires once for the row itself');
+  // …and a click originating inside the rendered detail never refires it.
+  (beta!.props.onClick as (event: unknown) => void)(
+    { target: { tagName: 'P', closest: () => ({}) } });
+  assert.deepEqual(expanded, ['beta'], 'detail-area clicks do not refire the toggle');
+  (beta!.props.onClick as (event: unknown) => void)({ target: { tagName: 'INPUT' } });
+  assert.deepEqual(expanded, ['beta'], 'checkbox-originated clicks never expand');
+});
+
+test("S13a: expand mode renders the parent-owned detail under the expanded row only", () => {
+  const tree = SelectionList({ ...baseProps, rowClick: 'expand', expandedId: 'beta',
+    detailFor: (row: { title: string }) => jsx.jsx('p', { children: `Detail for ${row.title}` }),
+    onExpandToggle: () => {} }) as unknown;
+  assert.equal(elements(tree).filter((item) => item.props['data-row-detail']).length, 1);
+  assert.match(textOf(tree), /Detail for Beta/);
+  assert.doesNotMatch(textOf(tree), /Detail for Alpha/, 'closed rows stay folded');
+  assert.doesNotMatch(textOf(tree), /Detail for Gamma/);
+  // No expandedId → no detail renders at all.
+  const folded = SelectionList({ ...baseProps, rowClick: 'expand',
+    detailFor: (row: { title: string }) => jsx.jsx('p', { children: `Detail for ${row.title}` }) }) as unknown;
+  assert.equal(elements(folded).filter((item) => item.props['data-row-detail']).length, 0);
+});
+
+test('S13a: single mode ignores the rowClick flag (pick rows keep their own contract)', () => {
+  let picked: string | undefined;
+  const expanded: string[] = [];
+  const tree = SelectionList({ ...singleProps, rowClick: 'expand',
+    onRowSelect: (id: string) => { picked = id; },
+    onExpandToggle: (id: string) => { expanded.push(id); } }) as unknown;
+  const row = buttons(tree).find((item) => textOf(item).includes('Beta'));
+  (row!.props.onClick as () => void)();
+  assert.equal(picked, 'beta');
+  assert.deepEqual(expanded, []);
+});

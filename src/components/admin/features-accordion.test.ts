@@ -29,6 +29,10 @@ function textOf(tree: unknown): string {
   return text(tree).replace(/\s+/g, ' ').trim();
 }
 
+/** Values crossing the vm realm carry a foreign prototype; normalize before
+ * structural comparison. */
+const plain = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
 /** The hook-free view plus the pure state-owner reducer are exercised; the
  * client wrapper is a thin useReducer/useActionState shell around them. */
 function loadFeaturesAccordion() {
@@ -55,6 +59,9 @@ function loadFeaturesAccordion() {
     FeaturesAccordionView: (props: Record<string, unknown>) => unknown;
     FeaturesAccordion: (props: Record<string, unknown>) => unknown;
     accordionReducer: (state: AccordionState, action: AccordionAction) => AccordionState;
+    narrowedFeatureView: (row: Record<string, unknown>) => Record<string, unknown>;
+    narrowingWithRefresh: (narrowing: Record<string, unknown>,
+      refresh: Record<string, unknown> | null) => Record<string, unknown>;
   };
 }
 
@@ -135,7 +142,8 @@ const deps: Record<string, unknown> = {
   },
 };
 
-const { FeaturesAccordionView, FeaturesAccordion, accordionReducer } = loadFeaturesAccordion();
+const { FeaturesAccordionView, FeaturesAccordion, accordionReducer,
+  narrowedFeatureView, narrowingWithRefresh } = loadFeaturesAccordion();
 
 type FeatureRowView = { id: string; key: string; name: string; description: string;
   category: string; active: boolean; orphan: boolean; assignedPlans: string[]; totalPlans: number };
@@ -160,6 +168,10 @@ const base = { features: features(3), total: 34, search: '', page: 1, pageSize: 
   onPick: (_item: { id: string; title: string; subtitle?: string }) => {},
   trayCollapsed: false, onToggleTrayCollapsed: () => {},
   onSearchSubmit: (_search: string) => {},
+  narrowedOpenId: '', onNarrowedOpenToggle: (_key: string) => {},
+  editingKey: '', onStartEdit: (_key: string) => {}, onCancelEdit: () => {},
+  onSaveEdit: 'save-feature-metadata-edit' as unknown as
+    (form: FormData) => Promise<{ error?: string }>,
   narrowing: narrowingState as Record<string, unknown> };
 
 const render = (overrides: Partial<typeof base> = {}) => {
@@ -243,21 +255,69 @@ test('accordion expansion renders detail cards and actions once; single-open via
     String(link.props.href) === '/admin/features?page=1&open=feature.key-2');
   assert.ok(expand, 'other rows must keep their own expand link');
   assert.equal(expand.props['aria-expanded'], false);
-  // Per-feature actions are present in the expanded detail.
+  // Per-feature actions: the release toggle is present in the expanded detail;
+  // the metadata editor is BEHIND the Edit affordance (S13b).
   const release = elements(tree).filter(item => item.type === 'form' &&
     item.props.action === 'set-feature-release');
   assert.equal(release.length, 1);
   assert.deepEqual(elements(release[0]).filter(item => item.type === 'input')
     .map(item => ({ name: item.props.name, value: item.props.value })),
     [{ name: 'key', value: 'feature.key-1' }, { name: 'active', value: 'false' }]);
-  const metadata = elements(tree).find(item => item.type === 'form' &&
-    item.props.action === 'save-feature-metadata');
-  assert.ok(metadata, 'metadata form missing');
-  assert.ok(elements(metadata).some(item => item.type === 'input' && item.props.name === 'name'));
+  assert.equal(elements(tree).some(item => item.type === 'form' &&
+    item.props.action === 'save-feature-metadata-edit'), false,
+    'the metadata editor stays behind the Edit affordance in the read-only view');
+  assert.equal(elements(tree).some(item => item.type === 'input' && item.props.name === 'name'),
+    false, 'no always-visible metadata fields anymore');
 });
 
-test('orphaned feature detail is greyed, explained, and inert', () => {
-  const tree = render({ features: [...features(2), orphanRow], openKey: 'legacy.bulk_import' });
+test('S13b: Edit metadata turns the feature card into the in-place editor — key never editable', () => {
+  const started: string[] = [];
+  const cancelled: boolean[] = [];
+  const tree = render({ openKey: 'feature.key-1',
+    onStartEdit: (key: string) => { started.push(key); },
+    editingKey: 'feature.key-1', onCancelEdit: () => { cancelled.push(true); } });
+  // Read-only: the Edit affordance starts the editor.
+  const readTree = render({ openKey: 'feature.key-1',
+    onStartEdit: (key: string) => { started.push(key); } });
+  const edit = elementsOf(readTree).buttons.find(button => text(button) === 'Edit metadata');
+  assert.ok(edit, 'Edit metadata affordance missing from the detail card');
+  assert.equal(edit!.props['data-variant'], 'soft', 'mockup drow: soft sm');
+  assert.equal(edit!.props['data-size'], 'sm');
+  (edit!.props.onClick as () => void)();
+  assert.deepEqual(started, ['feature.key-1']);
+  // Editor mode: the fields replace the read-only card.
+  const body = textOf(tree);
+  assert.equal(body.includes('Edit metadata'), true, 'the editor card is titled Edit metadata');
+  assert.equal(body.includes('Release state'), false, 'the read-only kv card is replaced');
+  const form = elements(tree).find(item => item.type === 'form' &&
+    item.props.action === 'save-feature-metadata-edit');
+  assert.ok(form, 'the editor submits through the wrapped metadata action');
+  const keyInput = elements(form!).find(item => item.type === 'input' && item.props.name === 'key');
+  assert.equal(keyInput!.props.type, 'hidden', 'the stable key is submitted, never edited');
+  assert.equal(keyInput!.props.value, 'feature.key-1');
+  const editable = elements(form!).filter(item =>
+    (item.type === 'input' && item.props.type !== 'hidden') ||
+    item.type === 'textarea').map(item => item.props.name);
+  assert.deepEqual(editable.sort(), ['category', 'description', 'name'],
+    'name/category/description are the only editable fields');
+  assert.equal(elements(form!).some(item => item.type === 'input' &&
+    item.props.name === 'name' && item.props.defaultValue === 'Feature 1'), true,
+    'fields are prefilled');
+  const cancel = elementsOf(tree).buttons.find(button => text(button) === 'Cancel');
+  assert.ok(cancel, 'Cancel affordance missing');
+  (cancel!.props.onClick as () => void)();
+  assert.deepEqual(cancelled, [true]);
+  const save = elementsOf(tree).buttons.find(button => text(button) === 'Save metadata');
+  assert.ok(save, 'Save affordance missing');
+  assert.equal(save!.props['data-variant'], 'primary');
+  assert.match(textOf(tree), /The stable key \( feature\.key-1 \) cannot be renamed/,
+    'the mockup rule text accompanies the editor');
+});
+
+test('orphaned feature detail is greyed, explained, and inert (including the edit affordance)', () => {
+  const started: string[] = [];
+  const tree = render({ features: [...features(2), orphanRow], openKey: 'legacy.bulk_import',
+    onStartEdit: (key: string) => { started.push(key); } });
   const fieldsets = elements(tree).filter(item => item.type === 'fieldset');
   assert.equal(fieldsets.length, 1);
   assert.equal(fieldsets[0].props.disabled, true);
@@ -267,9 +327,18 @@ test('orphaned feature detail is greyed, explained, and inert', () => {
   const release = elements(fieldsets[0]).filter(item => item.type === 'form' &&
     item.props.action === 'set-feature-release');
   assert.equal(release.length, 1);
-  const metadata = elements(fieldsets[0]).filter(item => item.type === 'form' &&
-    item.props.action === 'save-feature-metadata');
-  assert.equal(metadata.length, 1);
+  // The edit affordance renders inside the same disabled fieldset: an orphaned
+  // feature can never enter in-place editing.
+  const edit = elements(fieldsets[0]).find(item => item.type === 'button' &&
+    text(item) === 'Edit metadata');
+  assert.ok(edit, 'the inert Edit affordance is rendered for orphans');
+  // The inertness guarantee is structural, exactly like the release form's:
+  // the affordance lives inside the disabled fieldset, so no unlocked edit
+  // path exists for an orphan (the harness cannot simulate fieldset blocking).
+  assert.deepEqual(started, [], 'no edit start fired outside the locked path');
+  assert.equal(elements(tree).some(item => item.type === 'form' &&
+    item.props.action === 'save-feature-metadata-edit'), false,
+    'no editor renders for an orphan');
 });
 
 test('the tray carries exactly two bulk actions submitting every selected key', () => {
@@ -363,8 +432,10 @@ test('the shell wires the narrowing search to the features endpoint at the page 
 
 test('typing narrows the rendered list in place: matches replace the committed page with a pager', () => {
   const tree = render({ narrowing: liveNarrowing({
-    rows: [{ id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' },
-      { id: 'feature.key-3', title: 'Feature 3', subtitle: 'feature.key-3' }],
+    rows: [narrowedFeatureRow(),
+      narrowedFeatureRow({ id: 'feature.key-3', title: 'Feature 3', subtitle: 'feature.key-3',
+        featureId: 'feature-3', key: 'feature.key-3', name: 'Feature 3',
+        description: 'Desc 3', category: 'spoods' })],
     total: 41, page: 2 }) });
   const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-features');
   assert.ok(narrowed, 'narrowed list missing');
@@ -381,14 +452,12 @@ test('typing narrows the rendered list in place: matches replace the committed p
 test('a narrowed pick forwards the full suggestion {id, title, subtitle} — never a bare key', () => {
   const picked: Array<Record<string, unknown>> = [];
   const tree = render({ onPick: (item: Record<string, unknown>) => { picked.push(item); },
-    narrowing: liveNarrowing({
-      rows: [{ id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' }],
-      total: 1, page: 1 }) });
+    narrowing: liveNarrowing({ rows: [narrowedFeatureRow()], total: 1, page: 1 }) });
   const box = elements(tree).find(item => item.type === 'input' &&
     item.props['aria-label'] === 'Select Feature 2');
   assert.ok(box, 'narrowed row checkbox missing');
   (box.props.onChange as () => void)();
-  assert.deepEqual(picked, [{ id: 'feature.key-2', title: 'Feature 2',
+  assert.deepEqual(plain(picked), [{ id: 'feature.key-2', title: 'Feature 2',
     subtitle: 'feature.key-2' }]);
 });
 
@@ -492,10 +561,21 @@ test('the committed footer carries the mockup note: Grouped by category · sorte
 
 // --- Fix round 1b: the orphan lock holds in the narrowed features view ---
 
+/** Rich narrowed feature rows (S13): the committed FeatureRowView shape the
+ * narrowing endpoint serves, carried on the suggestion row (id IS the key). */
+const narrowedFeatureRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2',
+  featureId: 'feature-2', key: 'feature.key-2', name: 'Feature 2',
+  description: 'Desc 2', category: 'care', active: true, orphan: false,
+  assignedPlans: ['Free'], totalPlans: 3, ...over });
+
 const narrowedRows = (over: Record<string, unknown> = {}): Record<string, unknown> =>
   liveNarrowing({ rows: [
-    { id: 'legacy.bulk_import', title: 'Old import', subtitle: 'legacy.bulk_import' },
-    { id: 'feature.key-2', title: 'Feature 2', subtitle: 'feature.key-2' },
+    narrowedFeatureRow({ id: 'legacy.bulk_import', title: 'Old import',
+      subtitle: 'legacy.bulk_import', featureId: 'feature-9', key: 'legacy.bulk_import',
+      name: 'Old import', description: 'Legacy description', category: 'legacy',
+      active: true, orphan: true, assignedPlans: [] }),
+    narrowedFeatureRow(),
   ], total: 2, ...over });
 
 test('a narrowed orphan row renders greyed, inert, and marked — picking it is a no-op', () => {
@@ -519,7 +599,7 @@ test('a narrowed orphan row renders greyed, inert, and marked — picking it is 
     'even a forced pick on an orphaned narrowed row never reaches the selection map');
   assert.ok(!boxes[1].props.disabled, 'registered rows stay selectable');
   (boxes[1].props.onChange as () => void)();
-  assert.deepEqual(picked, [{ id: 'feature.key-2', title: 'Feature 2',
+  assert.deepEqual(plain(picked), [{ id: 'feature.key-2', title: 'Feature 2',
     subtitle: 'feature.key-2' }]);
   assert.equal(textOf(narrowed).includes('legacy.bulk_import — orphaned'), true,
     'the orphan marker is a key-line suffix in the narrowed view too (round 1b badge replaced)');
@@ -573,4 +653,115 @@ test('committed-empty and narrowed-empty each render exactly one message', () =>
   const narrowedEmpty = textOf(render({ narrowing: liveNarrowing({ rows: [], total: 0 }) }));
   assert.equal((narrowedEmpty.match(/Nothing matches/g) ?? []).length, 1,
     'exactly one narrowed empty message');
+});
+
+// --- S13: narrowed rows are full citizens (rich rows, client-side expand) ---
+
+test('S13: narrowed rows render through the committed row renderer — key line, badges, assignments', () => {
+  const tree = render({ narrowing: narrowedRows() });
+  const narrowed = elements(tree).find(item => item.props['data-testid'] === 'narrowed-features');
+  const row = elements(narrowed).find(item => item.props['data-row-id'] === 'feature.key-2');
+  const body = textOf(row);
+  assert.equal(body.includes('Feature 2'), true);
+  assert.equal(body.includes('feature.key-2'), true, 'the committed mono key line');
+  assert.equal(body.includes('Care'), true, 'the committed category badge');
+  assert.equal(body.includes('Released'), true, 'the committed release badge');
+  // Same renderer, same hover anatomy (the tint rides the row's header strip).
+  assert.equal(elements(row!).some(item =>
+    String(item.props.className ?? '').includes('hover:bg-[var(--hover)]')), true);
+});
+
+test('S13: clicking a narrowed row expands it client-side — the URL stays on the committed search', () => {
+  const toggledOpen: string[] = [];
+  const tree = render({ onNarrowedOpenToggle: (key: string) => { toggledOpen.push(key); },
+    narrowing: narrowedRows() });
+  const row = elements(tree).find(item => item.props['data-row-id'] === 'feature.key-2');
+  const expand = elements(row).find(item => item.type === 'button' &&
+    item.props['aria-expanded'] !== undefined);
+  assert.ok(expand, 'a narrowed row must expand via a client-side toggle');
+  assert.equal(expand!.props['aria-expanded'], false);
+  (expand!.props.onClick as () => void)();
+  assert.deepEqual(toggledOpen, ['feature.key-2']);
+  // No navigation anywhere in the narrowed view: no open= links at all.
+  assert.equal(elements(tree).filter(item => item.type === 'a' &&
+    String(item.props.href ?? '').includes('open=')).length, 0,
+    'expanding a narrowed row never touches the URL');
+});
+
+test('S13: an expanded narrowed row renders the same Detail card as a committed row', () => {
+  const tree = render({ narrowedOpenId: 'feature.key-2', narrowing: narrowedRows() });
+  const body = textOf(tree);
+  assert.equal((body.match(/Detail/g) ?? []).length, 1, 'the single committed Detail card');
+  assert.equal(body.includes('Plan assignments'), true);
+  assert.equal(body.includes('1 of 3 plans'), true, 'assignment counts ride the narrowed row');
+  assert.equal(body.includes('Free'), true, 'assigned plan names render');
+  assert.equal(body.includes('Released (available to plans)'), true,
+    'the release-state row speaks the committed wording');
+  assert.equal(body.includes('Edit metadata'), true, 'the detail is a full citizen — Edit included');
+});
+
+test('S13: a narrowed orphan expands to the same locked card — inert fieldset, no editor', () => {
+  const tree = render({ narrowedOpenId: 'legacy.bulk_import', narrowing: narrowedRows() });
+  const fieldsets = elements(tree).filter(item => item.type === 'fieldset');
+  assert.equal(fieldsets.length, 1);
+  assert.equal(fieldsets[0].props.disabled, true, 'the orphan lock holds in the narrowed detail');
+  assert.equal(elements(tree).some(item => item.type === 'form' &&
+    item.props.action === 'save-feature-metadata-edit'), false,
+    'no editor renders for an orphaned narrowed row');
+  assert.match(textOf(tree), /no longer in the code registry/,
+    'the orphan explanation rides the narrowed detail too');
+});
+
+test('S13: an expanded narrowed row opens the same in-place metadata editor', () => {
+  const tree = render({ narrowedOpenId: 'feature.key-2', editingKey: 'feature.key-2',
+    narrowing: narrowedRows() });
+  const form = elements(tree).find(item => item.type === 'form' &&
+    item.props.action === 'save-feature-metadata-edit');
+  assert.ok(form, 'the narrowed editor submits through the same wrapped action');
+  const keyInput = elements(form!).find(item => item.type === 'input' && item.props.name === 'key');
+  assert.equal(keyInput!.props.value, 'feature.key-2');
+  assert.equal(elements(form!).some(item => item.type === 'input' &&
+    item.props.name === 'name' && item.props.defaultValue === 'Feature 2'), true,
+    'the editor prefills from the narrowed row');
+});
+
+test('S13: narrowedFeatureView maps the wire shape onto the committed FeatureRowView', () => {
+  const view = narrowedFeatureView(narrowedFeatureRow({
+    orphan: true, assignedPlans: ['Basic', 'Free'], totalPlans: 9 }) as Record<string, unknown>);
+  assert.equal(view.id, 'feature-2', 'the mapped id is the database feature id');
+  assert.equal(view.key, 'feature.key-2');
+  assert.equal(view.name, 'Feature 2');
+  assert.equal(view.description, 'Desc 2');
+  assert.equal(view.category, 'care');
+  assert.equal(view.active, true);
+  // The orphan lock stays a RENDER-TIME registry check (3163399): the client's
+  // own code decides, the service's flag is informational only.
+  assert.equal(view.orphan, false, 'the render-time registry check wins');
+  assert.deepEqual(view.assignedPlans, ['Basic', 'Free']);
+  assert.equal(view.totalPlans, 9);
+});
+
+// --- S13 refresh mechanics: fresh narrowed rows after an in-place save ---
+
+test('S13 refresh: a successful save overlays fresh narrowed rows only for the same query+page', () => {
+  const narrowed = { ...narrowingState, narrowed: true, active: true, query: 'feed',
+    rows: [narrowedFeatureRow()], total: 2, page: 1 };
+  const fresh = { query: 'feed', page: 1,
+    rows: [narrowedFeatureRow({ title: 'Renamed' })], total: 2 };
+  const merged = narrowingWithRefresh(narrowed as Record<string, unknown>, fresh);
+  assert.equal((merged.rows as Array<{ title: string }>)[0].title, 'Renamed',
+    'the fresh rows replace the cached narrowed rows after a save');
+  assert.equal(merged.total, 2);
+  // Not narrowed (committed view): untouched — revalidatePath refreshes it.
+  assert.equal(narrowingWithRefresh(narrowingState as Record<string, unknown>, fresh),
+    narrowingState);
+  // A different page or query (the user typed/paged since): the overlay is void.
+  const pageTwo = { ...narrowed, page: 2 };
+  assert.equal(narrowingWithRefresh(pageTwo as Record<string, unknown>, fresh), pageTwo,
+    'stale-overlay guard: page moved on');
+  const otherQuery = { ...narrowed, query: 'feedx' };
+  assert.equal(narrowingWithRefresh(otherQuery as Record<string, unknown>, fresh), otherQuery,
+    'stale-overlay guard: query moved on');
+  assert.equal(narrowingWithRefresh(narrowed as Record<string, unknown>, null), narrowed,
+    'no refresh yet → the narrowing state passes through');
 });

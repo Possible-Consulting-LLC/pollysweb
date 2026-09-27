@@ -4,17 +4,20 @@ import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { PlanSummary } from '@/lib/admin/plans';
+import type { NarrowPlanRow } from '@/lib/admin/suggest';
 import { FEATURE_REGISTRY } from '@/lib/features/registry';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { counterChipClass, badgeTintClass, badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
-  type Narrowing } from '@/components/admin/live-search';
+  type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
 import { bulkSetPlanFlagsAction, deletePlanAction, duplicatePlanAction,
-  reorderPlanAction } from '@/app/admin/plans/actions';
+  reorderPlanAction, updatePlanAction } from '@/app/admin/plans/actions';
+
+type MutationResult = { error?: string; success?: boolean };
 
 const typeLabel: Record<string, string> = { STANDARD: 'Standard', CUSTOM: 'Custom', INTERNAL: 'Internal' };
 
@@ -55,6 +58,42 @@ const listHref = (search: string, page: number, open?: string) =>
   `/admin/plans?${new URLSearchParams({ ...(search ? { search } : {}), page: String(page),
     ...(open ? { open } : {}) })}`;
 
+// --- S13: narrowed rows are full citizens ---------------------------------
+
+/** S13 refresh mechanics: narrowed rows are client-cached between the
+ * debounced fetches, so a successful in-place save re-fetches the CURRENT
+ * narrowed page and overlays the fresh rows onto the narrowing state — only
+ * while it still answers the same query+page (typing or paging invalidates the
+ * overlay naturally, so a stale fetch can never bleed into a new query). The
+ * committed view needs no overlay: the action's revalidatePath refreshes it. */
+export type NarrowRefresh = { query: string; page: number; rows: Suggestion[]; total: number };
+
+export function narrowingWithRefresh(narrowing: Narrowing,
+  refresh: NarrowRefresh | null): Narrowing {
+  if (!refresh || !narrowing.narrowed || refresh.query !== narrowing.query ||
+    refresh.page !== narrowing.page) return narrowing;
+  return { ...narrowing, rows: refresh.rows, total: refresh.total };
+}
+
+const refreshNarrowedRows = (source: (query: string, page: number,
+  signal?: AbortSignal) => Promise<NarrowingResult>, query: string, page: number,
+  apply: (refresh: NarrowRefresh) => void) => {
+  source(query, page)
+    .then(result => apply({ query, page, rows: result.rows, total: result.total }))
+    .catch(() => {});
+};
+
+/** S13: narrowed plans arrive detail-rich (the committed row shape); map the
+ * wire shape onto PlanSummary so narrowed rows flow through the SAME row
+ * renderer and detail card as committed rows — one code path. */
+export function narrowedPlanView(row: NarrowPlanRow): PlanSummary {
+  return { id: row.id, name: row.name, description: row.description,
+    planType: row.planType, maxSpiders: row.maxSpiders, active: row.active,
+    public: row.public, sortOrder: row.sortOrder, updatedAt: new Date(row.updatedAt),
+    billingOptionCount: row.billingOptionCount, enabledFeatureCount: row.enabledFeatureCount,
+    subscriptionCount: row.subscriptionCount, billingOptions: row.billingOptions };
+}
+
 export type PlansAccordionViewProps = {
   plans: PlanSummary[];
   total: number;
@@ -78,6 +117,20 @@ export type PlansAccordionViewProps = {
   /** Headless narrowing state (no dropdown anywhere): while matches for the
    * typed text are in, they REPLACE the committed page. */
   narrowing: Narrowing;
+  /** S13: client-owned single-open state for the NARROWED view — expanding a
+   * narrowed row never navigates; the URL still reflects the committed search
+   * until Enter (rowClick: 'expand' semantics, checkbox stays the selector). */
+  narrowedOpenId: string;
+  onNarrowedOpenToggle(id: string): void;
+  /** S13b: which plan is in in-place edit mode (client-owned; editing never
+   * navigates). */
+  editingId: string;
+  onStartEdit(id: string): void;
+  onCancelEdit(): void;
+  /** The wrapped updatePlanAction: on success it closes the editor and
+   * refreshes the narrowed rows (the committed rows refresh via the action's
+   * revalidatePath — the MutationForm success pattern). */
+  onSaveEdit(form: FormData): Promise<MutationResult>;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -91,7 +144,59 @@ function DetailCard({ title, rows }: { title: string; rows: Array<{ label: strin
   </div>;
 }
 
-function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
+const editorFieldClass = 'rounded-xl border p-2';
+
+/** S13b: the in-place plan editor — read-only detail's Edit turns the card
+ * into these fields (mockup editHTML), Save/Cancel, no navigation. The
+ * feature matrix, billing options, and pricing preview stay in the full
+ * editor (the plan-builder page), reached from the link below the form. */
+function PlanEditor({ plan, onCancelEdit, onSaveEdit }: {
+  plan: PlanSummary;
+  onCancelEdit(): void;
+  onSaveEdit(form: FormData): Promise<MutationResult>;
+}) {
+  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
+    <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
+      <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">Edit plan</h3>
+      <MutationForm action={onSaveEdit} className="grid gap-3"><MutationContextInput />
+        <input type="hidden" name="planId" value={plan.id} />
+        <label className="grid gap-1">Name
+          <input name="name" defaultValue={plan.name} required maxLength={80}
+            className={editorFieldClass} /></label>
+        <label className="grid gap-1">Description
+          <textarea name="description" defaultValue={plan.description} maxLength={500} rows={2}
+            className={editorFieldClass} /></label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1">Plan type
+            <select name="planType" defaultValue={plan.planType} className={editorFieldClass}>
+              <option value="STANDARD">Standard</option>
+              <option value="CUSTOM">Custom</option>
+              <option value="INTERNAL">Internal</option>
+            </select></label>
+          <label className="grid gap-1">Maximum spoods (empty = unlimited)
+            <input name="maxSpiders" type="number" min={1} step={1}
+              defaultValue={plan.maxSpiders ?? ''} className={editorFieldClass} /></label>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="active" defaultChecked={plan.active}
+            className="h-4 w-4 accent-[var(--plum)]" /> Active</label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="public" defaultChecked={plan.public}
+            className="h-4 w-4 accent-[var(--plum)]" /> Public (shown on pricing)</label>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="button" variant="soft" size="sm" onClick={onCancelEdit}>Cancel</Button>
+          <Button type="submit" variant="primary" size="sm">Save changes</Button>
+        </div>
+      </MutationForm>
+      <p className="pt-2 text-[12.5px] opacity-70">The feature matrix, billing options, and
+        {' '}pricing preview live in the <Link href={`/admin/plans/${plan.id}/edit`}
+          className="underline">full editor</Link> — the approved plan-builder page.</p>
+    </div>
+  </div>;
+}
+
+function PlanDetail({ plan, index, onStartEdit }: {
+  plan: PlanSummary; index: number; onStartEdit(): void }) {
   return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
     <DetailCard title="Identity" rows={[
       { label: 'Type', value: typeLabel[plan.planType] ?? plan.planType },
@@ -111,11 +216,10 @@ function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
       { label: 'Effective subscriptions', value: plan.subscriptionCount },
       { label: 'Last updated', value: formatUpdatedAt(plan.updatedAt) },
     ]} />
-    {/* Mockup drow: soft sm actions beside the sm primary edit (P2 ruling —
-        keep every extra action, adopt the mockup's visual language). */}
+    {/* Mockup drow: Edit opens the in-place editor (S13b); the kept extra
+        actions (P2 ruling) sit beside it as soft sm buttons. */}
     <div className="flex flex-wrap gap-2 pt-1">
-      <Link href={`/admin/plans/${plan.id}/edit`}
-        className={cn(buttonVariants({ variant: 'primary', size: 'sm' }))}>Edit plan</Link>
+      <Button type="button" variant="primary" size="sm" onClick={onStartEdit}>Edit</Button>
       <MutationForm action={duplicatePlanAction} className="flex flex-wrap items-end gap-2"><MutationContextInput />
         <input type="hidden" name="planId" value={plan.id} />
         <Button variant="soft" size="sm">Duplicate</Button>
@@ -133,16 +237,90 @@ function PlanDetail({ plan, index }: { plan: PlanSummary; index: number }) {
   </div>;
 }
 
+/** The shared row anatomy (S13): committed and narrowed rows both flow through
+ * this — one code path for badges, meta, detail card, and edit affordance. */
+function PlanRowContent({ plan, expanded }: { plan: PlanSummary; expanded: boolean }) {
+  return <>
+    <ChevronDown aria-hidden="true"
+      className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', expanded && 'rotate-180')} />
+    <span className="min-w-0">
+      <span className="block text-[15px] font-bold">{plan.name}</span>
+      {plan.description ? <span className="block text-xs opacity-60">{plan.description}</span> : null}
+    </span>
+    <span className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
+      <span className={badgeTintClass}>{typeLabel[plan.planType] ?? plan.planType}</span>
+      <span className="flex gap-1.5">
+        {plan.active
+          ? <span className={badgeOnClass}>Active</span>
+          : <span className={badgeOffClass}>Inactive</span>}
+        {plan.public
+          ? <span className={badgeOnClass}>Public</span>
+          : <span className={badgeOffClass}>Private</span>}
+      </span>
+    </span>
+    <span className="w-full text-[11.5px] leading-relaxed opacity-70 md:w-auto md:text-right">
+      {plan.maxSpiders === null ? 'Unlimited' : `${plan.maxSpiders} spoods`} ·
+      {' '}{priceSummary(plan.billingOptions)}
+      <br />
+      {plan.enabledFeatureCount} features · {plan.subscriptionCount} subscriber{plan.subscriptionCount === 1 ? '' : 's'} ·
+      {' '}updated {formatUpdatedAt(plan.updatedAt)}
+    </span>
+  </>;
+}
+
+/** One accordion row: the SAME renderer for committed and narrowed plans.
+ * The row body expands the plan (rowClick: 'expand' semantics — the checkbox
+ * stays the select affordance); committed rows expand through their URL link,
+ * narrowed rows through a client-side toggle that never navigates. */
+function PlanRow({ plan, index, checked, onToggle, href, expanded, onToggleExpand,
+  editing, onStartEdit, onCancelEdit, onSaveEdit }: {
+    plan: PlanSummary;
+    index: number;
+    checked: boolean;
+    onToggle(): void;
+    /** Committed rows: the URL expand/collapse toggle. Narrowed rows omit it
+     * and expand client-side via onToggleExpand. */
+    href?: string;
+    expanded: boolean;
+    onToggleExpand?(): void;
+    editing: boolean;
+    onStartEdit(): void;
+    onCancelEdit(): void;
+    onSaveEdit(form: FormData): Promise<MutationResult>;
+  }) {
+  const rowBody = <PlanRowContent plan={plan} expanded={expanded} />;
+  return <div data-row-id={plan.id}
+    className={cn('rounded-2xl border', expanded
+      ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+      : 'border-transparent')}>
+    <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
+      !expanded && 'hover:bg-[var(--hover)]')}>
+      <input type="checkbox" checked={checked} onChange={onToggle}
+        aria-label={`Select ${plan.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
+      {href !== undefined
+        ? <Link href={href} className="flex flex-1 flex-wrap items-center gap-3"
+            aria-expanded={expanded}>{rowBody}</Link>
+        : <button type="button" onClick={onToggleExpand} aria-expanded={expanded}
+            className="flex flex-1 flex-wrap items-center gap-3 text-left">{rowBody}</button>}
+    </div>
+    {expanded ? (editing
+      ? <PlanEditor plan={plan} onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />
+      : <PlanDetail plan={plan} index={index} onStartEdit={onStartEdit} />)
+      : null}
+  </div>;
+}
+
 const FEATURE_COUNT = FEATURE_REGISTRY.length;
 
 /** Presentational body of the plans accordion. Typing narrows the RENDERED
  * LIST in real time (headless narrowing — matches span all rows, server-fed);
  * the counter stays in the mockup's "N of M selected" format, truthful during
- * narrowing. The toolbar pairs the live search with the gold counter chip,
- * mockup-exact. */
+ * narrowing. Narrowed rows are full citizens (S13): detail-rich rows rendered
+ * through the same PlanRow renderer, expanding client-side, editing in place. */
 export function PlansAccordionView({ plans, total, search, page, pageSize, openId,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
-  onSearchSubmit, narrowing }: PlansAccordionViewProps) {
+  onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingId,
+  onStartEdit, onCancelEdit, onSaveEdit }: PlansAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -180,65 +358,32 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
         ? <p className="py-3 text-sm text-[var(--midnight)]/70">
             {narrowing.loading ? 'Searching…' : <>Nothing matches “{narrowing.query}”.</>}
           </p>
-        : narrowing.rows.map(row =>
-          <div key={row.id} data-row-id={row.id}
-            className="flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors hover:bg-[var(--hover)]">
-            <input type="checkbox" checked={selected.has(row.id)}
-              onChange={() => onPick(row)}
-              aria-label={`Select ${row.title}`}
-              className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{row.title}</span>
-              {row.subtitle
-                ? <span className="block truncate text-[11.5px] opacity-55">{row.subtitle}</span>
-                : null}
-            </span>
-          </div>)}
+        : narrowing.rows.map((row, index) => {
+            // The plans endpoint serves detail-rich rows (the committed row
+            // shape, S13); live-search's lean Suggestion is the transport
+            // contract, so the view re-types them at this one boundary.
+            const plan = narrowedPlanView(row as NarrowPlanRow);
+            return <PlanRow key={plan.id} plan={plan} index={index}
+              checked={selected.has(plan.id)}
+              onToggle={() => onPick({ id: row.id, title: row.title, subtitle: row.subtitle })}
+              expanded={narrowedOpenId === plan.id}
+              onToggleExpand={() => onNarrowedOpenToggle(plan.id)}
+              editing={editingId === plan.id}
+              onStartEdit={() => onStartEdit(plan.id)}
+              onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
+          })}
       <NarrowPager page={narrowing.page} total={narrowing.total} pageSize={pageSize}
         onPageChange={narrowing.onPageChange} label="narrowed plans" />
     </div> : <>
       {plans.map((plan, index) => {
         const isOpen = plan.id === openId;
-        return <div key={plan.id} data-row-id={plan.id}
-          className={cn('rounded-2xl border', isOpen
-            ? 'border-[var(--plum)]/20 bg-[var(--card)]'
-            : 'border-transparent')}>
-          <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
-            !isOpen && 'hover:bg-[var(--hover)]')}>
-            <input type="checkbox" checked={selected.has(plan.id)} onChange={() => onToggleSelected(plan.id)}
-              aria-label={`Select ${plan.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
-            {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
-                single-open state lives in the URL so back/forward and deep links work. */}
-            <Link href={isOpen ? listHref(search, page) : listHref(search, page, plan.id)}
-              className="flex flex-1 flex-wrap items-center gap-3" aria-expanded={isOpen}>
-              <ChevronDown aria-hidden="true"
-                className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
-              <span className="min-w-0">
-                <span className="block text-[15px] font-bold">{plan.name}</span>
-                {plan.description ? <span className="block text-xs opacity-60">{plan.description}</span> : null}
-              </span>
-              <span className="ml-auto flex shrink-0 flex-col items-end gap-1.5">
-                <span className={badgeTintClass}>{typeLabel[plan.planType] ?? plan.planType}</span>
-                <span className="flex gap-1.5">
-                  {plan.active
-                    ? <span className={badgeOnClass}>Active</span>
-                    : <span className={badgeOffClass}>Inactive</span>}
-                  {plan.public
-                    ? <span className={badgeOnClass}>Public</span>
-                    : <span className={badgeOffClass}>Private</span>}
-                </span>
-              </span>
-              <span className="w-full text-[11.5px] leading-relaxed opacity-70 md:w-auto md:text-right">
-                {plan.maxSpiders === null ? 'Unlimited' : `${plan.maxSpiders} spoods`} ·
-                {' '}{priceSummary(plan.billingOptions)}
-                <br />
-                {plan.enabledFeatureCount} features · {plan.subscriptionCount} subscriber{plan.subscriptionCount === 1 ? '' : 's'} ·
-                {' '}updated {formatUpdatedAt(plan.updatedAt)}
-              </span>
-            </Link>
-          </div>
-          {isOpen ? <PlanDetail plan={plan} index={index} /> : null}
-        </div>;
+        return <PlanRow key={plan.id} plan={plan} index={index}
+          checked={selected.has(plan.id)} onToggle={() => onToggleSelected(plan.id)}
+          href={isOpen ? listHref(search, page) : listHref(search, page, plan.id)}
+          expanded={isOpen}
+          editing={editingId === plan.id}
+          onStartEdit={() => onStartEdit(plan.id)}
+          onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
       })}
       {plans.length === 0
         ? <p className="text-sm text-[var(--midnight)]/70">
@@ -264,17 +409,40 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
  * as boxes are checked and is never pruned by pagination or search, so
  * selections and the tray survive page changes, new searches, and re-renders.
  * Plain typing in the live search never navigates; the explicit fallback
- * (Enter with the typed filter) is the sole navigation. */
+ * (Enter with the typed filter) is the sole navigation. Also owns the S13
+ * client-side state: the narrowed view's open row and the in-place editor. */
 export function PlansAccordion(props: Omit<PlansAccordionViewProps,
   'selectedItems' | 'onToggleSelected' | 'onPick' | 'trayCollapsed' |
-  'onToggleTrayCollapsed' | 'onSearchSubmit' | 'narrowing'>) {
+  'onToggleTrayCollapsed' | 'onSearchSubmit' | 'narrowing' | 'narrowedOpenId' |
+  'onNarrowedOpenToggle' | 'editingId' | 'onStartEdit' | 'onCancelEdit' | 'onSaveEdit'>) {
   const router = useRouter();
   const [selection, setSelection] = useState<Map<string, { title: string; subtitle: string }>>(new Map());
   const [trayCollapsed, setTrayCollapsed] = useState(false);
-  const narrowing = useNarrowing({ value: props.search,
-    source: narrowViaEndpoint('plans', props.pageSize) });
+  const [narrowedOpenId, setNarrowedOpenId] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [narrowRefresh, setNarrowRefresh] = useState<NarrowRefresh | null>(null);
+  const source = narrowViaEndpoint('plans', props.pageSize);
+  const narrowing = useNarrowing({ value: props.search, source });
+  // Any user-driven narrowing move (type / page / escape) voids the fresh-rows
+  // overlay a previous save produced — handled by wrapping the narrowing
+  // handlers, so no state-sync effect is needed.
+  const voidRefresh = { onType: (text: string) => { setNarrowRefresh(null); narrowing.onType(text); },
+    onPageChange: (page: number) => { setNarrowRefresh(null); narrowing.onPageChange(page); },
+    onEscape: () => { setNarrowRefresh(null); narrowing.onEscape(); } };
+  const viewNarrowing: Narrowing =
+    { ...narrowingWithRefresh(narrowing, narrowRefresh), ...voidRefresh };
+  const saveEdit = (form: FormData) => updatePlanAction(form).then(result => {
+    if (!result.error) {
+      setEditingId('');
+      // The committed rows refresh via the action's revalidatePath; the
+      // narrowed view's cached rows are re-fetched for the current query+page.
+      if (narrowing.narrowed)
+        refreshNarrowedRows(source, narrowing.query, narrowing.page, setNarrowRefresh);
+    }
+    return result;
+  });
   const rowOf = (id: string) => props.plans.find(plan => plan.id === id);
-  return <PlansAccordionView {...props} narrowing={narrowing}
+  return <PlansAccordionView {...props} narrowing={viewNarrowing}
     selectedItems={[...selection].map(([id, item]) => ({ id, title: item.title, subtitle: item.subtitle }))}
     onToggleSelected={id => setSelection(previous => {
       const next = new Map(previous);
@@ -290,5 +458,11 @@ export function PlansAccordion(props: Omit<PlansAccordionViewProps,
     })}
     trayCollapsed={trayCollapsed}
     onToggleTrayCollapsed={() => setTrayCollapsed(collapsed => !collapsed)}
+    narrowedOpenId={narrowedOpenId}
+    onNarrowedOpenToggle={id => setNarrowedOpenId(current => (current === id ? '' : id))}
+    editingId={editingId}
+    onStartEdit={id => setEditingId(id)}
+    onCancelEdit={() => setEditingId('')}
+    onSaveEdit={saveEdit}
     onSearchSubmit={search => router.push(listHref(search, 1))} />;
 }

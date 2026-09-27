@@ -1,20 +1,23 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useReducer, type ReactNode } from 'react';
+import { useReducer, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { listHref, categoryLabel, counterChipClass, badgeOnClass, badgeOffClass,
   badgeTintClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
-  type Narrowing } from '@/components/admin/live-search';
+  type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
 import { SelectionTray, type SelectionTrayItem } from '@/components/admin/selection-tray';
 import { isRegisteredFeatureKey } from '@/lib/features/registry';
+import type { NarrowFeatureRow } from '@/lib/admin/suggest';
 import { bulkSetFeatureReleaseAction, saveFeatureMetadataAction,
   setFeatureReleaseAction } from '@/app/admin/features/actions';
+
+type MutationResult = { error?: string; success?: boolean };
 
 /** One catalog row with everything the detail cards need, resolved server-side
  * (assignments come from a single grouped query, never per-row). */
@@ -33,6 +36,43 @@ export type FeatureRowView = {
   /** Total plan count for the "N of M plans" line. */
   totalPlans: number;
 };
+
+// --- S13: narrowed rows are full citizens ---------------------------------
+
+/** S13 refresh mechanics: narrowed rows are client-cached between the
+ * debounced fetches, so a successful in-place save re-fetches the CURRENT
+ * narrowed page and overlays the fresh rows onto the narrowing state — only
+ * while it still answers the same query+page (typing or paging invalidates the
+ * overlay naturally, so a stale fetch can never bleed into a new query). The
+ * committed view needs no overlay: the action's revalidatePath refreshes it. */
+export type NarrowRefresh = { query: string; page: number; rows: Suggestion[]; total: number };
+
+export function narrowingWithRefresh(narrowing: Narrowing,
+  refresh: NarrowRefresh | null): Narrowing {
+  if (!refresh || !narrowing.narrowed || refresh.query !== narrowing.query ||
+    refresh.page !== narrowing.page) return narrowing;
+  return { ...narrowing, rows: refresh.rows, total: refresh.total };
+}
+
+const refreshNarrowedRows = (source: (query: string, page: number,
+  signal?: AbortSignal) => Promise<NarrowingResult>, query: string, page: number,
+  apply: (refresh: NarrowRefresh) => void) => {
+  source(query, page)
+    .then(result => apply({ query, page, rows: result.rows, total: result.total }))
+    .catch(() => {});
+};
+
+/** S13: narrowed features arrive detail-rich (the committed row shape); map
+ * the wire shape onto FeatureRowView so narrowed rows flow through the SAME
+ * row renderer and detail card as committed rows — one code path. The orphan
+ * lock stays a RENDER-TIME registry check (commit 3163399): the registry is
+ * code-owned, so the client's own bundle decides greying/locking; the
+ * service's orphan field agrees by construction. */
+export function narrowedFeatureView(row: NarrowFeatureRow): FeatureRowView {
+  return { id: row.featureId, key: row.key, name: row.name, description: row.description,
+    category: row.category, active: row.active, orphan: !isRegisteredFeatureKey(row.id),
+    assignedPlans: row.assignedPlans, totalPlans: row.totalPlans };
+}
 
 /** Row toggles preserve search/page; pager links drop `open` (paging folds the accordion). */
 const listHrefFor = (search: string, page: number, open?: string) =>
@@ -63,6 +103,20 @@ export type FeaturesAccordionViewProps = {
   /** Headless narrowing state (no dropdown anywhere): while matches for the
    * typed text are in, they REPLACE the committed page. */
   narrowing: Narrowing;
+  /** S13: client-owned single-open state for the NARROWED view — expanding a
+   * narrowed row never navigates; the URL still reflects the committed search
+   * until Enter (rowClick: 'expand' semantics, checkbox stays the selector). */
+  narrowedOpenId: string;
+  onNarrowedOpenToggle(key: string): void;
+  /** S13b: which feature is in in-place metadata edit mode (client-owned;
+   * editing never navigates; orphaned features can never enter edit mode). */
+  editingKey: string;
+  onStartEdit(key: string): void;
+  onCancelEdit(): void;
+  /** The wrapped saveFeatureMetadataAction: on success it closes the editor
+   * and refreshes the narrowed rows (the committed rows refresh via the
+   * action's revalidatePath — the MutationForm success pattern). */
+  onSaveEdit(form: FormData): Promise<MutationResult>;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -81,58 +135,152 @@ const releaseStateText = (row: FeatureRowView) => row.orphan
   ? 'Orphaned — controls locked until the code/config mismatch is resolved'
   : row.active ? 'Released (available to plans)' : 'Coming soon (globally inactive)';
 
-function FeatureDetail({ row }: { row: FeatureRowView }) {
-  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
-    <DetailCard rows={[
-      { label: 'Key', value: <code className="text-xs">{row.key}</code> },
-      { label: 'Description', value: row.description },
-      { label: 'Category', value: categoryLabel(row.category) },
-      { label: 'Release state', value: releaseStateText(row) },
-      { label: 'Plan assignments', value: `${row.assignedPlans.length} of ${row.totalPlans} plans` },
-      { label: 'Plans', value: row.assignedPlans.length
-        ? row.assignedPlans.join(', ')
-        : 'No plans use this feature yet.' },
-    ]} />
-    {/* A disabled fieldset makes every control inert for orphaned features. */}
-    <fieldset disabled={row.orphan} className="grid gap-3">
-      <div className="flex flex-wrap gap-3">
-        <MutationForm action={setFeatureReleaseAction} className="flex flex-wrap items-end gap-2">
-          <MutationContextInput />
-          <input type="hidden" name="key" value={row.key} />
-          <input type="hidden" name="active" value={row.active ? 'false' : 'true'} />
-          <Button type="submit" variant="primary" size="md">{row.active ? 'Retire release' : 'Release feature'}</Button>
-        </MutationForm>
-        <MutationForm action={saveFeatureMetadataAction}
-          className="grid gap-3 border-t border-[var(--plum)]/15 pt-3 sm:grid-cols-2">
-          <MutationContextInput />
-          <input type="hidden" name="key" value={row.key} />
-          <label className="grid gap-1">Name
-            <input name="name" defaultValue={row.name} required maxLength={120} className="rounded-xl border p-2" />
-          </label>
-          <label className="grid gap-1">Category
-            <input name="category" defaultValue={row.category} required maxLength={40} className="rounded-xl border p-2" />
-          </label>
-          <label className="grid gap-1 sm:col-span-2">Description
-            <textarea name="description" defaultValue={row.description} required maxLength={500} rows={2}
-              className="rounded-xl border p-2" />
-          </label>
-          <Button variant="secondary" size="md" type="submit" className="sm:col-span-2">Save metadata</Button>
-        </MutationForm>
+const editorFieldClass = 'rounded-xl border p-2';
+
+/** S13b: the in-place metadata editor — read-only detail's Edit metadata turns
+ * the card into these fields (mockup editHTML), Save/Cancel, no navigation.
+ * The stable feature key is submitted hidden and is never editable. */
+function FeatureMetadataEditor({ row, onCancelEdit, onSaveEdit }: {
+  row: FeatureRowView;
+  onCancelEdit(): void;
+  onSaveEdit(form: FormData): Promise<MutationResult>;
+}) {
+  return <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
+    <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">Edit metadata</h3>
+    <MutationForm action={onSaveEdit} className="grid gap-3"><MutationContextInput />
+      <input type="hidden" name="key" value={row.key} />
+      <label className="grid gap-1">Name
+        <input name="name" defaultValue={row.name} required maxLength={120}
+          className={editorFieldClass} /></label>
+      <label className="grid gap-1">Category
+        <input name="category" defaultValue={row.category} required maxLength={40}
+          className={editorFieldClass} /></label>
+      <label className="grid gap-1">Description
+        <textarea name="description" defaultValue={row.description} required maxLength={500} rows={2}
+          className={editorFieldClass} /></label>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button type="button" variant="soft" size="sm" onClick={onCancelEdit}>Cancel</Button>
+        <Button type="submit" variant="primary" size="md">Save metadata</Button>
       </div>
+    </MutationForm>
+    <p className="pt-2 text-[12.5px] opacity-70">The stable key
+      (<code className="text-xs">{row.key}</code>) cannot be renamed.</p>
+  </div>;
+}
+
+function FeatureDetail({ row, editing, onStartEdit, onCancelEdit, onSaveEdit }: {
+  row: FeatureRowView;
+  editing: boolean;
+  onStartEdit(): void;
+  onCancelEdit(): void;
+  onSaveEdit(form: FormData): Promise<MutationResult>;
+}) {
+  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
+    {/* A disabled fieldset makes every control inert for orphaned features —
+        the Edit affordance included (S13b: orphaned entities never edit). */}
+    <fieldset disabled={row.orphan} className="grid gap-3">
+      {editing && !row.orphan ? <FeatureMetadataEditor row={row} onCancelEdit={onCancelEdit}
+        onSaveEdit={onSaveEdit} /> : <>
+        <DetailCard rows={[
+          { label: 'Key', value: <code className="text-xs">{row.key}</code> },
+          { label: 'Description', value: row.description },
+          { label: 'Category', value: categoryLabel(row.category) },
+          { label: 'Release state', value: releaseStateText(row) },
+          { label: 'Plan assignments', value: `${row.assignedPlans.length} of ${row.totalPlans} plans` },
+          { label: 'Plans', value: row.assignedPlans.length
+            ? row.assignedPlans.join(', ')
+            : 'No plans use this feature yet.' },
+        ]} />
+        <div className="flex flex-wrap gap-2 pt-1">
+          <MutationForm action={setFeatureReleaseAction} className="flex flex-wrap items-end gap-2">
+            <MutationContextInput />
+            <input type="hidden" name="key" value={row.key} />
+            <input type="hidden" name="active" value={row.active ? 'false' : 'true'} />
+            <Button type="submit" variant="primary" size="md">{row.active ? 'Retire release' : 'Release feature'}</Button>
+          </MutationForm>
+          {/* S13b: Edit opens the in-place metadata editor right here. */}
+          <Button type="button" variant="soft" size="sm" onClick={onStartEdit}>Edit metadata</Button>
+        </div>
+      </>}
     </fieldset>
     {row.orphan ? <p className="text-sm">This key is no longer in the code registry. Its record is kept for review: registry sync never modifies it, and its controls stay locked here until the key returns to the registry or the row is removed by a migration.</p> : null}
   </div>;
 }
 
+/** The shared row anatomy (S13): committed and narrowed rows both flow through
+ * this — one code path for the key line, badges, detail card, and edit
+ * affordance. */
+function FeatureRowContent({ row, expanded }: { row: FeatureRowView; expanded: boolean }) {
+  return <>
+    <ChevronDown aria-hidden="true"
+      className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', expanded && 'rotate-180')} />
+    <span className="min-w-0">
+      <span className="block text-sm font-semibold">{row.name}</span>
+      <span className="block truncate font-mono text-[11px] opacity-55">
+        {row.key}{row.orphan ? ' — orphaned' : ''}
+      </span>
+    </span>
+    <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+      <span className={badgeTintClass}>{categoryLabel(row.category)}</span>
+      {row.active
+        ? <span className={badgeOnClass}>Released</span>
+        : <span className={badgeOffClass}>Coming soon</span>}
+    </span>
+  </>;
+}
+
+/** One accordion row: the SAME renderer for committed and narrowed features.
+ * The row body expands the feature (rowClick: 'expand' semantics — the
+ * checkbox stays the select affordance); committed rows expand through their
+ * URL link, narrowed rows through a client-side toggle that never navigates. */
+function FeatureRow({ row, checked, onToggle, href, expanded, onToggleExpand,
+  editing, onStartEdit, onCancelEdit, onSaveEdit }: {
+    row: FeatureRowView;
+    checked: boolean;
+    onToggle(): void;
+    /** Committed rows: the URL expand/collapse toggle. Narrowed rows omit it
+     * and expand client-side via onToggleExpand. */
+    href?: string;
+    expanded: boolean;
+    onToggleExpand?(): void;
+    editing: boolean;
+    onStartEdit(): void;
+    onCancelEdit(): void;
+    onSaveEdit(form: FormData): Promise<MutationResult>;
+  }) {
+  const rowBody = <FeatureRowContent row={row} expanded={expanded} />;
+  return <div data-row-id={row.key}
+    className={cn('rounded-2xl border', row.orphan && 'opacity-70', expanded
+      ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+      : 'border-transparent')}>
+    <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
+      !expanded && 'hover:bg-[var(--hover)]')}>
+      {/* Orphaned features are excluded from bulk selection; the guard inside
+          onChange keeps even a forced change event a no-op. */}
+      <input type="checkbox" checked={checked} disabled={row.orphan}
+        onChange={() => { if (!row.orphan) onToggle(); }}
+        aria-label={`Select ${row.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
+      {href !== undefined
+        ? <Link href={href} className="flex flex-1 flex-wrap items-center gap-3"
+            aria-expanded={expanded}>{rowBody}</Link>
+        : <button type="button" onClick={onToggleExpand} aria-expanded={expanded}
+            className="flex flex-1 flex-wrap items-center gap-3 text-left">{rowBody}</button>}
+    </div>
+    {expanded ? <FeatureDetail row={row} editing={editing} onStartEdit={onStartEdit}
+      onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} /> : null}
+  </div>;
+}
+
 /** Presentational body of the features accordion. Typing narrows the RENDERED
  * LIST in real time (headless narrowing — matches span all rows, server-fed):
- * while narrowed matches are in, they replace the committed page as simple
- * selectable rows with their own pager; clearing the query restores the
- * committed view. The counter stays in the mockup's "N of M selected" format,
- * truthful during narrowing. */
+ * while narrowed matches are in, they replace the committed page with rows
+ * rendered through the SAME FeatureRow renderer (S13 — full citizens with
+ * client-side expand and in-place edit). The counter stays in the mockup's
+ * "N of M selected" format, truthful during narrowing. */
 export function FeaturesAccordionView({ features, total, search, page, pageSize, openKey,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
-  onSearchSubmit, narrowing }: FeaturesAccordionViewProps) {
+  onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingKey,
+  onStartEdit, onCancelEdit, onSaveEdit }: FeaturesAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -168,27 +316,18 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
             {narrowing.loading ? 'Searching…' : <>Nothing matches “{narrowing.query}”.</>}
           </p>
         : narrowing.rows.map(row => {
-            // The orphan lock holds while narrowing: a key absent from the code
-            // registry renders exactly like a committed orphan row — visible,
-            // greyed, inert — and its pick is a no-op, so it can never enter
-            // the selection map behind the bulk Release/Unrelease forms.
-            const orphan = !isRegisteredFeatureKey(row.id);
-            return <div key={row.id} data-row-id={row.id}
-              className={cn('flex items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 transition-colors',
-                !orphan && 'hover:bg-[var(--hover)]', orphan && 'opacity-70')}>
-              <input type="checkbox" checked={selected.has(row.id)} disabled={orphan}
-                onChange={() => { if (!orphan) onPick(row); }}
-                aria-label={`Select ${row.title}`}
-                className="h-4 w-4 shrink-0 accent-[var(--plum)]" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold">{row.title}</span>
-                {row.subtitle
-                  ? <span className="block truncate font-mono text-[11px] opacity-55">
-                      {row.subtitle}{orphan ? ' — orphaned' : ''}
-                    </span>
-                  : null}
-              </span>
-            </div>;
+            // The features endpoint serves detail-rich rows (the committed row
+            // shape, S13); live-search's lean Suggestion is the transport
+            // contract, so the view re-types them at this one boundary.
+            const view = narrowedFeatureView(row as NarrowFeatureRow);
+            return <FeatureRow key={view.key} row={view}
+              checked={selected.has(row.id)}
+              onToggle={() => onPick({ id: row.id, title: row.title, subtitle: row.subtitle })}
+              expanded={narrowedOpenId === view.key}
+              onToggleExpand={() => onNarrowedOpenToggle(view.key)}
+              editing={editingKey === view.key}
+              onStartEdit={() => onStartEdit(view.key)}
+              onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
           })}
       <NarrowPager page={narrowing.page} total={narrowing.total} pageSize={pageSize}
         onPageChange={narrowing.onPageChange} label="narrowed features" />
@@ -199,38 +338,13 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
             data-group-header={category}>{categoryLabel(category)}</h3>
           {features.filter(feature => feature.category === category).map(row => {
             const isOpen = row.key === openKey;
-            return <div key={row.id} data-row-id={row.key}
-              className={cn('rounded-2xl border', row.orphan && 'opacity-70', isOpen
-                ? 'border-[var(--plum)]/20 bg-[var(--card)]'
-                : 'border-transparent')}>
-              <div className={cn('flex items-start gap-3 rounded-2xl px-3.5 py-3',
-                !isOpen && 'hover:bg-[var(--hover)]')}>
-                {/* Orphaned features are excluded from bulk selection. */}
-                <input type="checkbox" checked={selected.has(row.key)} disabled={row.orphan}
-                  onChange={() => onToggleSelected(row.key)}
-                  aria-label={`Select ${row.name}`} className="mt-1 h-4 w-4 shrink-0 accent-[var(--plum)]" />
-                {/* Row toggle: a real link keeps Tab/Enter keyboard operability, and the
-                    single-open state lives in the URL so back/forward and deep links work. */}
-                <Link href={isOpen ? listHrefFor(search, page) : listHrefFor(search, page, row.key)}
-                  className="flex flex-1 flex-wrap items-center gap-3" aria-expanded={isOpen}>
-                  <ChevronDown aria-hidden="true"
-                    className={cn('h-5 w-5 shrink-0 text-[var(--plum)] transition-transform', isOpen && 'rotate-180')} />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold">{row.name}</span>
-                    <span className="block truncate font-mono text-[11px] opacity-55">
-                      {row.key}{row.orphan ? ' — orphaned' : ''}
-                    </span>
-                  </span>
-                  <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
-                    <span className={badgeTintClass}>{categoryLabel(row.category)}</span>
-                    {row.active
-                      ? <span className={badgeOnClass}>Released</span>
-                      : <span className={badgeOffClass}>Coming soon</span>}
-                  </span>
-                </Link>
-              </div>
-              {isOpen ? <FeatureDetail row={row} /> : null}
-            </div>;
+            return <FeatureRow key={row.id} row={row}
+              checked={selected.has(row.key)} onToggle={() => onToggleSelected(row.key)}
+              href={isOpen ? listHrefFor(search, page) : listHrefFor(search, page, row.key)}
+              expanded={isOpen}
+              editing={editingKey === row.key}
+              onStartEdit={() => onStartEdit(row.key)}
+              onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
           })}
         </section>)}
       {features.length === 0
@@ -259,7 +373,8 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
  * pagination and accordion navigation (both URL-driven). Plain typing in the
  * live search never navigates; the Enter fallback is a soft router.push, so
  * this client island (and its selection map) survives the full-page filtered
- * view — only a hard reload starts a fresh selection. */
+ * view — only a hard reload starts a fresh selection. Also owns the S13
+ * client-side state: the narrowed view's open row and the in-place editor. */
 export type AccordionState = {
   selection: Map<string, { title: string; subtitle: string }>;
   trayCollapsed: boolean;
@@ -283,18 +398,41 @@ export function accordionReducer(state: AccordionState, action: AccordionAction)
 }
 
 /** Thin client shell around accordionReducer; owns the headless narrowing
- * search. Narrowed feature rows carry the feature KEY as their id (the
- * surface's selection identity), so a narrowed pick lands in the same
- * selection map with full display data. */
+ * search plus the S13 client-side state. Narrowed feature rows carry the
+ * feature KEY as their id (the surface's selection identity), so a narrowed
+ * pick lands in the same selection map with full display data. */
 export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
   'selectedItems' | 'onToggleSelected' | 'onPick' | 'trayCollapsed' |
-  'onToggleTrayCollapsed' | 'onSearchSubmit' | 'narrowing'>) {
+  'onToggleTrayCollapsed' | 'onSearchSubmit' | 'narrowing' | 'narrowedOpenId' |
+  'onNarrowedOpenToggle' | 'editingKey' | 'onStartEdit' | 'onCancelEdit' | 'onSaveEdit'>) {
   const router = useRouter();
   const [state, dispatch] = useReducer(accordionReducer,
     { selection: new Map<string, { title: string; subtitle: string }>(), trayCollapsed: false });
-  const narrowing = useNarrowing({ value: props.search,
-    source: narrowViaEndpoint('features', props.pageSize) });
-  return <FeaturesAccordionView {...props} narrowing={narrowing}
+  const [narrowedOpenId, setNarrowedOpenId] = useState('');
+  const [editingKey, setEditingKey] = useState('');
+  const [narrowRefresh, setNarrowRefresh] = useState<NarrowRefresh | null>(null);
+  const source = narrowViaEndpoint('features', props.pageSize);
+  const narrowing = useNarrowing({ value: props.search, source });
+  // Any user-driven narrowing move (type / page / escape) voids the fresh-rows
+  // overlay a previous save produced — handled by wrapping the narrowing
+  // handlers, so no state-sync effect is needed.
+  const voidRefresh = { onType: (text: string) => { setNarrowRefresh(null); narrowing.onType(text); },
+    onPageChange: (page: number) => { setNarrowRefresh(null); narrowing.onPageChange(page); },
+    onEscape: () => { setNarrowRefresh(null); narrowing.onEscape(); } };
+  const viewNarrowing: Narrowing =
+    { ...narrowingWithRefresh(narrowing, narrowRefresh), ...voidRefresh };
+  /** S13b save wrapper: on success the editor closes, the committed rows
+   * refresh via the action's revalidatePath, and the narrowed view's cached
+   * rows are re-fetched for the current query+page. */
+  const saveEdit = (form: FormData) => saveFeatureMetadataAction(form).then(result => {
+    if (!result.error) {
+      setEditingKey('');
+      if (narrowing.narrowed)
+        refreshNarrowedRows(source, narrowing.query, narrowing.page, setNarrowRefresh);
+    }
+    return result;
+  });
+  return <FeaturesAccordionView {...props} narrowing={viewNarrowing}
     selectedItems={[...state.selection].map(([key, item]) =>
       ({ id: key, title: item.title, subtitle: item.subtitle }))}
     onToggleSelected={key => {
@@ -305,5 +443,11 @@ export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
       subtitle: item.subtitle ?? item.id })}
     trayCollapsed={state.trayCollapsed}
     onToggleTrayCollapsed={() => dispatch({ type: 'toggleTrayCollapsed' })}
+    narrowedOpenId={narrowedOpenId}
+    onNarrowedOpenToggle={key => setNarrowedOpenId(current => (current === key ? '' : key))}
+    editingKey={editingKey}
+    onStartEdit={key => setEditingKey(key)}
+    onCancelEdit={() => setEditingKey('')}
+    onSaveEdit={saveEdit}
     onSearchSubmit={search => router.push(listHrefFor(search, 1))} />;
 }
