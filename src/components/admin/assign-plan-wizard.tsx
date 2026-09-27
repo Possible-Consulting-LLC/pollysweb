@@ -312,7 +312,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
           <p><span className="font-semibold">Execution:</span> one audited, row-locked transaction; the keeper&apos;s prior effective subscription is end-dated first.</p>
         </div>
         {assignResult?.error
-          ? <p role="alert" className="text-sm text-rose-700">{assignResult.error}</p> : null}
+          ? <p role="alert" className="text-sm text-[var(--rose)]">{assignResult.error}</p> : null}
         <div className="flex items-center justify-between gap-2">
           <Link href={wizardHref(list, { step: 2, user: userId, plan: planId })}
             className={buttonVariants({ variant: 'soft', size: 'md' })}>Back to plan</Link>
