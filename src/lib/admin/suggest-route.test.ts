@@ -5,9 +5,10 @@ import test from 'node:test';
 import ts from 'typescript';
 import * as jsx from 'react/jsx-runtime';
 
-/** Route-level contract for the live-search suggestion endpoint
+/** Route-level contract for the live-search narrowing endpoint
  * (`/admin/suggest/[entity]`): super_admin-gated (403), fail-closed on unknown
- * entities (404), never cached, and a plain `{ suggestions }` body. */
+ * entities (404), never cached, and a plain `{ rows, total }` body — matches
+ * span all rows with a truthful total and paging over the matches. */
 
 /** Values crossing the vm realm carry a foreign prototype; normalize before
  * structural comparison. */
@@ -35,8 +36,8 @@ function loadRoute() {
 }
 
 let actorError: Error | null = null;
-let servedSuggestions: unknown[] = [];
-let called: Array<{ entity: string; q: string }> = [];
+let servedResult: { rows: unknown[]; total: number } = { rows: [], total: 0 };
+let called: Array<{ entity: string; q: string; page?: string; pageSize?: string }> = [];
 
 const deps: Record<string, unknown> = {
   // ts.transpileModule applies no esModuleInterop; NextResponse is stubbed to
@@ -49,34 +50,42 @@ const deps: Record<string, unknown> = {
     return { id: 'actor-1', role: 'super_admin' };
   } },
   '@/lib/db': { prisma: { tagged: 'prisma' } },
-  '@/lib/admin/suggest': { SUGGEST_ENTITIES: ['plans', 'features', 'users', 'assignable-plans'],
-    suggestionsFor: async (tx: unknown, entity: string, q: string) => {
+  '@/lib/admin/suggest': { NARROW_ENTITIES: ['plans', 'features', 'users', 'assignable-plans', 'subscriptions'],
+    narrowRows: async (tx: unknown, entity: string, q: string, page: number, pageSize: number) => {
     assert.equal(tx, (deps['@/lib/db'] as { prisma: unknown }).prisma,
       'the route queries through the app prisma');
-    called.push({ entity, q });
-    return servedSuggestions;
+    called.push({ entity, q, page: String(page), pageSize: String(pageSize) });
+    return servedResult;
   } },
 };
 
 const GET = loadRoute();
 
-const call = (entity: string, q = 'bas') =>
-  GET({ url: `http://localhost/admin/suggest/${entity}?q=${encodeURIComponent(q)}` },
+const call = (entity: string, qs = 'q=bas') =>
+  GET({ url: `http://localhost/admin/suggest/${entity}?${qs}` },
     { params: Promise.resolve({ entity }) });
 
-test('a super_admin gets the happy path: { suggestions } with no-store caching', async () => {
-  actorError = null; servedSuggestions = [{ id: 'p-1', title: 'Basic', subtitle: 'STANDARD' }];
+test('a super_admin gets the happy path: { rows, total } with no-store caching', async () => {
+  actorError = null;
+  servedResult = { rows: [{ id: 'p-1', title: 'Basic', subtitle: 'STANDARD' }], total: 42 };
   called = [];
-  const response = await call('plans', 'ba sic');
+  const response = await call('plans', 'q=ba%20sic&page=2&pageSize=20');
   assert.equal(response.status, 200);
-  assert.deepEqual(plain(response.body as { suggestions: unknown }),
-    { suggestions: [{ id: 'p-1', title: 'Basic', subtitle: 'STANDARD' }] });
+  assert.deepEqual(plain(response.body as { rows: unknown[]; total: number }), {
+    rows: [{ id: 'p-1', title: 'Basic', subtitle: 'STANDARD' }], total: 42 });
   assert.equal(response.headers['Cache-Control'], 'no-store');
-  assert.deepEqual(called, [{ entity: 'plans', q: 'ba sic' }]);
+  assert.deepEqual(called,
+    [{ entity: 'plans', q: 'ba sic', page: '2', pageSize: '20' }]);
 });
 
-test('a non-super-admin is denied with 403 and no suggestions query runs', async () => {
-  actorError = new Error('Administrator access denied.'); servedSuggestions = [];
+test('missing page/pageSize fall back to the first page of the default page size', async () => {
+  actorError = null; servedResult = { rows: [], total: 0 }; called = [];
+  await call('features', '');
+  assert.deepEqual(called, [{ entity: 'features', q: '', page: '1', pageSize: '10' }]);
+});
+
+test('a non-super-admin is denied with 403 and no narrowing query runs', async () => {
+  actorError = new Error('Administrator access denied.');
   called = [];
   const response = await call('plans');
   assert.equal(response.status, 403);
@@ -93,9 +102,9 @@ test('an unknown entity fails closed with 404', async () => {
 });
 
 test('a missing q is passed through as an empty query (the service returns nothing)', async () => {
-  actorError = null; servedSuggestions = []; called = [];
+  actorError = null; servedResult = { rows: [], total: 0 }; called = [];
   const response = await GET({ url: 'http://localhost/admin/suggest/features' },
     { params: Promise.resolve({ entity: 'features' }) });
   assert.equal(response.status, 200);
-  assert.deepEqual(called, [{ entity: 'features', q: '' }]);
+  assert.deepEqual(called, [{ entity: 'features', q: '', page: '1', pageSize: '10' }]);
 });

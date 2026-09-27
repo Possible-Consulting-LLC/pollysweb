@@ -4,10 +4,13 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
 
-/** Live-search suggestion services: ONE lightweight, indexed `contains` query
- * per debounced typing pause, spanning ALL rows — no pagination math, no count
- * aggregation, no joins, for EVERY entity (plans, features, users,
- * assignable-plans) — and capped at SUGGESTION_LIMIT results. */
+/** Live-search narrowing services (UX Task 8 fix round 1, ruling 1+3): typing
+ * must narrow the RENDERED LIST to matches spanning ALL rows with a TRUTHFUL
+ * total and paging over the matches. Each service therefore runs exactly TWO
+ * lightweight indexed queries per debounced typing pause — one count (the
+ * truthful display total) and one capped page select; no joins beyond the
+ * subscription display columns, never per-keystroke waste beyond what the
+ * truthful counter requires. */
 
 /** Values crossing the vm realm carry a foreign prototype; normalize before
  * structural comparison. */
@@ -26,10 +29,10 @@ function loadSuggest() {
     },
   });
   return exports as {
-    SUGGESTION_LIMIT: number;
-    suggestPlans: (tx: unknown, search: string) => Promise<unknown[]>;
-    suggestFeatures: (tx: unknown, search: string) => Promise<unknown[]>;
-    suggestionsFor: (tx: unknown, entity: string, search: string) => Promise<unknown[]>;
+    NARROW_DEFAULT_PAGE_SIZE: number;
+    NARROW_MAX_PAGE_SIZE: number;
+    narrowRows: (tx: unknown, entity: string, search: string, page: number,
+      pageSize: number) => Promise<{ rows: unknown[]; total: number }>;
   };
 }
 
@@ -37,9 +40,12 @@ type Captured = Record<string, unknown>;
 let planCalls: Captured[] = [];
 let featureCalls: Captured[] = [];
 let userCalls: Captured[] = [];
+let subCalls: Captured[] = [];
+let counts: Record<string, number> = {};
 
 const reset = () => {
-  planCalls = []; featureCalls = []; userCalls = [];
+  planCalls = []; featureCalls = []; userCalls = []; subCalls = [];
+  counts = { plan: 42, feature: 34, user: 7, userSubscription: 12 };
 };
 
 const stubs: Record<string, unknown> = {};
@@ -50,14 +56,14 @@ const prisma = {
       planCalls.push(args);
       return [{ id: 'plan-1', name: 'Basic', planType: 'STANDARD' }];
     },
-    count: async () => { throw new Error('suggestions must never run a count aggregation'); },
+    count: async () => counts.plan,
   },
   feature: {
     findMany: async (args: Captured) => {
       featureCalls.push(args);
       return [{ id: 'feature-1', key: 'care.feed.log', name: 'Log feeding' }];
     },
-    count: async () => { throw new Error('suggestions must never run a count aggregation'); },
+    count: async () => counts.feature,
   },
   user: {
     findMany: async (args: Captured) => {
@@ -67,28 +73,37 @@ const prisma = {
         { id: 'u-2', name: null, email: 'ada2@example.com' },
       ];
     },
-    count: async () => { throw new Error('suggestions must never run a count aggregation'); },
+    count: async () => counts.user,
+  },
+  userSubscription: {
+    findMany: async (args: Captured) => {
+      subCalls.push(args);
+      return [{ id: 'sub-1', user: { name: 'Ada Keeper', email: 'ada@example.com' },
+        plan: { name: 'Basic' }, billingOption: { interval: 'MONTHLY' }, status: 'ACTIVE' }];
+    },
+    count: async () => counts.userSubscription,
   },
 };
 
 const suggest = loadSuggest();
 
-test('suggestPlans runs one indexed name-contains query capped at the suggestion limit', async () => {
+test('narrowRows(plans) runs one count + one page query and reports the truthful total', async () => {
   reset();
-  const suggestions = await suggest.suggestPlans(prisma, 'bas');
-  assert.equal(planCalls.length, 1, 'exactly one findMany — no counts, no joins');
-  const query = planCalls[0] as { where: unknown; take: number;
-    select: Record<string, unknown>; orderBy: unknown };
+  const result = await suggest.narrowRows(prisma, 'plans', 'bas', 2, 20);
+  assert.equal(planCalls.length, 1, 'one page select — no joins');
+  const query = planCalls[0] as { where: unknown; take: number; skip: number;
+    select: Record<string, unknown> };
   assert.deepEqual(plain(query.where), { name: { contains: 'bas', mode: 'insensitive' } });
-  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
-  // Selecting only suggestion columns keeps the payload light (no joins).
+  assert.equal(query.take, 20, 'page select honors the requested page size');
+  assert.equal(query.skip, 20, 'page select offsets by the requested page');
   assert.deepEqual(Object.keys(query.select).sort(), ['id', 'name', 'planType']);
-  assert.deepEqual(plain(suggestions), [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }]);
+  assert.deepEqual(plain(result), {
+    rows: [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }], total: 42 });
 });
 
-test('suggestFeatures matches name OR key, case-insensitive, capped, ordered by key', async () => {
+test('narrowRows(features) matches name OR key and keys the rows by feature key', async () => {
   reset();
-  const suggestions = await suggest.suggestFeatures(prisma, 'feed');
+  const result = await suggest.narrowRows(prisma, 'features', 'feed', 1, 10);
   assert.equal(featureCalls.length, 1);
   const query = featureCalls[0] as { where: unknown; take: number;
     select: Record<string, unknown>; orderBy: unknown };
@@ -96,54 +111,74 @@ test('suggestFeatures matches name OR key, case-insensitive, capped, ordered by 
     { name: { contains: 'feed', mode: 'insensitive' } },
     { key: { contains: 'feed', mode: 'insensitive' } },
   ] });
-  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
+  assert.deepEqual(plain(query.orderBy), { key: 'asc' });
   assert.deepEqual(Object.keys(query.select).sort(), ['id', 'key', 'name']);
-  assert.deepEqual(plain(suggestions), [{ id: 'feature-1', title: 'Log feeding', subtitle: 'care.feed.log' }]);
+  // The features surface selects by feature KEY, so the narrowed row id IS the
+  // key — picks carry display data and feed the same selection map.
+  assert.deepEqual(plain(result), {
+    rows: [{ id: 'care.feed.log', title: 'Log feeding', subtitle: 'care.feed.log' }],
+    total: 34 });
 });
 
-test('suggestionsFor users runs one count-free query over non-deleting users (name or email)', async () => {
+test('narrowRows(users) runs the keeper-validity rule over non-deleting users', async () => {
   reset();
-  const suggestions = await suggest.suggestionsFor(prisma, 'users', 'ada');
+  const result = await suggest.narrowRows(prisma, 'users', 'ada', 1, 10);
   assert.equal(userCalls.length, 1);
   const query = userCalls[0] as { where: unknown; take: number;
     select: Record<string, unknown>; orderBy: unknown };
-  // Same keeper-validity rule as searchUsers, minus the discarded count.
   assert.deepEqual(plain(query.where), { deletingAt: null, OR: [
     { name: { contains: 'ada', mode: 'insensitive' } },
     { email: { contains: 'ada', mode: 'insensitive' } },
   ] });
-  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
-  assert.deepEqual(Object.keys(query.select).sort(), ['email', 'id', 'name']);
   assert.deepEqual(plain(query.orderBy), [{ name: 'asc' }, { id: 'asc' }]);
-  // Title falls back to the email when the name is missing (searchUsers parity).
-  assert.deepEqual(plain(suggestions), [
-    { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' },
-    { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com' },
-  ]);
+  assert.deepEqual(Object.keys(query.select).sort(), ['email', 'id', 'name']);
+  assert.deepEqual(plain(result), {
+    rows: [
+      { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' },
+      { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com' },
+    ], total: 7 });
 });
 
-test('suggestionsFor assignable-plans runs one count-free query over active plans', async () => {
+test('narrowRows(assignable-plans) narrows over active plans only', async () => {
   reset();
-  const suggestions = await suggest.suggestionsFor(prisma, 'assignable-plans', 'bas');
-  assert.equal(planCalls.length, 1);
-  const query = planCalls[0] as { where: unknown; take: number };
+  const result = await suggest.narrowRows(prisma, 'assignable-plans', 'bas', 1, 10);
+  const query = planCalls[0] as { where: unknown };
   assert.deepEqual(plain(query.where), { active: true,
     name: { contains: 'bas', mode: 'insensitive' } });
-  assert.equal(query.take, suggest.SUGGESTION_LIMIT);
-  assert.deepEqual(plain(suggestions), [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }]);
+  assert.deepEqual(plain(result), {
+    rows: [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }], total: 42 });
 });
 
-test('a blank query suggests nothing and queries nothing', async () => {
+test('narrowRows(subscriptions) narrows effective rows over keeper, plan, and status', async () => {
   reset();
-  for (const entity of ['plans', 'features', 'users', 'assignable-plans'])
-    assert.deepEqual(plain(await suggest.suggestionsFor(prisma, entity, '   ')), []);
-  assert.equal(planCalls.length + featureCalls.length + userCalls.length, 0);
+  const result = await suggest.narrowRows(prisma, 'subscriptions', 'ada', 1, 20);
+  assert.equal(subCalls.length, 1);
+  const query = subCalls[0] as { where: unknown; select: Record<string, unknown> };
+  assert.ok(query.where, 'the query narrows over the subscription join');
+  assert.deepEqual(Object.keys(query.select).sort(),
+    ['billingOption', 'id', 'plan', 'status', 'user']);
+  assert.deepEqual(plain(result), {
+    rows: [{ id: 'sub-1', title: 'Ada Keeper', subtitle: 'Basic · MONTHLY' }], total: 12 });
+});
+
+test('a blank query narrows to nothing and queries nothing (committed view stays)', async () => {
+  reset();
+  for (const entity of ['plans', 'features', 'users', 'assignable-plans', 'subscriptions'])
+    assert.deepEqual(plain(await suggest.narrowRows(prisma, entity, '   ', 1, 10)),
+      { rows: [], total: 0 });
+  assert.equal(planCalls.length + featureCalls.length + userCalls.length + subCalls.length, 0);
+});
+
+test('page and pageSize are clamped to sane bounds', async () => {
+  reset();
+  await suggest.narrowRows(prisma, 'plans', 'bas', -3, 0);
+  assert.equal((planCalls[0] as { skip: number; take: number }).skip, 0);
+  assert.equal((planCalls[0] as { skip: number; take: number }).take,
+    suggest.NARROW_DEFAULT_PAGE_SIZE);
+  await suggest.narrowRows(prisma, 'plans', 'bas', 2, 10_000);
+  assert.equal((planCalls[1] as { take: number }).take, suggest.NARROW_MAX_PAGE_SIZE);
 });
 
 test('an unknown entity is rejected (fail closed)', async () => {
-  await assert.rejects(() => suggest.suggestionsFor(prisma, 'accounts', 'x'));
-});
-
-test('the suggestion cap matches the ratified 8–10 band', () => {
-  assert.equal(suggest.SUGGESTION_LIMIT, 10);
+  await assert.rejects(() => suggest.narrowRows(prisma, 'accounts', 'x', 1, 10));
 });
