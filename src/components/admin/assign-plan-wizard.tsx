@@ -2,7 +2,7 @@
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { SelectionList } from '@/components/admin/selection-list';
+import { SelectionList, type SelectionRow } from '@/components/admin/selection-list';
 import { counterChipClass } from '@/components/admin/list-shared';
 import { LiveSearchInput, useNarrowing, narrowViaEndpoint, type Narrowing } from '@/components/admin/live-search';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -16,8 +16,10 @@ export type WizardOption = { id: string; interval: string; basePriceCents: numbe
   active: boolean };
 export type WizardPlan = { id: string; name: string; planType: string;
   billingOptions: WizardOption[] };
-export type PickerData = { rows: Array<{ id: string; title: string; subtitle?: string }>;
-  total: number; page: number; pageSize: number; search: string };
+export type PickerRow = { id: string; title: string; subtitle?: string;
+  leading?: string; disabled?: boolean; badgeLabel?: string };
+export type PickerData = { rows: PickerRow[]; total: number; page: number;
+  pageSize: number; search: string };
 export type AssignResult = { error?: string; success?: boolean };
 
 /** The wizard's full state is URL-owned (`?wizard=open&step=…&user=…&plan=…&option=…`
@@ -68,6 +70,28 @@ export function initialsOf(name: string): string {
 }
 
 const STEPS = [{ n: 1, label: 'User' }, { n: 2, label: 'Plan' }, { n: 3, label: 'Options' }];
+
+/** Keeper row anatomy (user-picker mockup ~44,49-52,194-196): a circular
+ * lavender initials chip up front and a trailing meta badge — "Valid" on
+ * selectable accounts, the deleting status on greyed, unselectable ones. */
+function userRowToSelection(row: PickerRow): SelectionRow {
+  return {
+    id: row.id, title: row.title, subtitle: row.subtitle,
+    leading: row.leading ?? initialsOf(row.title),
+    disabled: row.disabled,
+    badge: row.disabled
+      ? { label: row.badgeLabel ?? 'deleting', tone: 'muted' }
+      : { label: 'Valid', tone: 'ok' },
+  };
+}
+
+/** Today as a `YYYY-MM-DD` date string — the effective date's mockup prefill. */
+export function todayISO(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
 
 /** SelectionList's type keeps `onToggle`/`onPageChange`/`onSearchChange`
  * required (multi mode's callbacks); single mode's focused view fires none of
@@ -168,7 +192,9 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
         ? <SelectionList selectionMode="single" rows={[]} total={1} page={1} pageSize={1}
             search="" selectedCount={1} {...inertListCallbacks}
             selectedRows={[{ id: selectedUser.id, title: selectedUser.name,
-              subtitle: selectedUser.email, selected: true }]}
+              subtitle: selectedUser.email, selected: true,
+              leading: initialsOf(selectedUser.name || selectedUser.email),
+              badge: { label: 'Selected', tone: 'selected' } }]}
             onChange={() => navigate(wizardHref(list, { step: 1,
               usearch: userPicker.search, upage: userPicker.page }))} />
         : <section className="space-y-3">
@@ -186,7 +212,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               </span>
             </div>
             <SelectionList selectionMode="single" toolbar={false}
-              rows={userLive ? userNarrowing.rows : userPicker.rows}
+              rows={(userLive ? userNarrowing.rows : userPicker.rows).map(userRowToSelection)}
               total={userLive ? userNarrowing.total : userPicker.total}
               page={userLive ? userNarrowing.page : userPicker.page}
               pageSize={userPicker.pageSize}
@@ -194,13 +220,16 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               emptyLabel={userLive
                 ? `Nothing matches “${userNarrowing.query}”.`
                 : 'No keepers match this search.'}
-              onRowSelect={id => navigate(wizardHref(list, { step: 1, user: id,
+              onRowSelect={id => navigate(wizardHref(list, { step: 2, user: id,
                 usearch: userPicker.search, upage: userPicker.page }))}
               onPageChange={page => userLive
                 ? userNarrowing.onPageChange(page)
                 : navigate(wizardHref(list, { step: 1,
                     usearch: userPicker.search, upage: page }))} />
           </section>}
+      {/* The Continue buttons are only the reconsideration path: a pick
+       * auto-advances (owner ruling U6), so they matter when navigating back
+       * to a step with its selection already held. */}
       <div className="flex items-center justify-end gap-2">
         {selectedUser
           ? <Link href={wizardHref(list, { step: 2, user: selectedUser.id })}
@@ -215,7 +244,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
             selectedRows={[{ id: selectedPlan.id, title: selectedPlan.name,
               subtitle: `${typeLabel[selectedPlan.planType] ?? selectedPlan.planType} · ${
                 selectedPlan.billingOptions.filter(option => option.active).length} active billing option(s)`,
-              selected: true }]}
+              selected: true, badge: { label: 'Selected', tone: 'selected' } }]}
             onChange={() => navigate(wizardHref(list, { step: 2, user: userId,
               psearch: planPicker.search, ppage: planPicker.page }))} />
         : <section className="space-y-3">
@@ -240,7 +269,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               emptyLabel={planLive
                 ? `Nothing matches “${planNarrowing.query}”.`
                 : 'No active plans match this search.'}
-              onRowSelect={id => navigate(wizardHref(list, { step: 2, user: userId, plan: id,
+              onRowSelect={id => navigate(wizardHref(list, { step: 3, user: userId, plan: id,
                 psearch: planPicker.search, ppage: planPicker.page }))}
               onPageChange={page => planLive
                 ? planNarrowing.onPageChange(page)
@@ -270,16 +299,16 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
         <input type="hidden" name="userQuery" value={userId} />
         <input type="hidden" name="planId" value={planId} />
         <input type="hidden" name="planBillingOptionId" value={selectedOptionId} />
-        <label className="grid max-w-xs gap-1 text-sm">Effective date (defaults to now when left empty)
-          <input name="effectiveAt" type="datetime-local" value={effectiveAt}
+        <label className="grid max-w-xs gap-1 text-sm">Effective date
+          <input name="effectiveAt" type="date" value={effectiveAt} suppressHydrationWarning
             onChange={event => onEffectiveAtChange(event.target.value)}
-            className="rounded-xl border border-[var(--plum)]/25 p-2" />
+            className="rounded-xl border border-[var(--lavender-deep)] bg-[var(--input)] p-2" />
         </label>
         <div data-testid="wizard-summary"
           className="space-y-1 rounded-2xl border border-[var(--hover)] bg-[var(--card)] p-3.5 text-sm">
           <p><span className="font-semibold">Assigning:</span> {selectedPlan?.name ?? '—'}{selectedOption ? ` (${selectedOption.title})` : ''}</p>
           <p><span className="font-semibold">To:</span> {selectedUser ? `${selectedUser.name} (${selectedUser.email})` : '—'}</p>
-          <p><span className="font-semibold">Effective:</span> {effectiveAt ? effectiveAt.replace('T', ' ') : 'now — leave the field empty to assign immediately'}</p>
+          <p><span className="font-semibold">Effective:</span> {effectiveAt ? effectiveAt.replace('T', ' ') : 'today'}</p>
           <p><span className="font-semibold">Execution:</span> one audited, row-locked transaction; the keeper&apos;s prior effective subscription is end-dated first.</p>
         </div>
         {assignResult?.error
@@ -303,7 +332,10 @@ export function AssignPlanWizard(props: Omit<AssignPlanWizardViewProps, 'navigat
   'navigateSearch' | 'userNarrowing' | 'planNarrowing' | 'effectiveAt' |
   'onEffectiveAtChange' | 'assignDispatch' | 'assignResult' | 'assignPending'>) {
   const router = useRouter();
-  const [effectiveAt, setEffectiveAt] = useState('');
+  // The effective date is prefilled with today (mockup parity, U5): the field
+  // is a date input carrying today unless the admin overrides it. Lazy init
+  // keeps today's date current when the wizard mounts.
+  const [effectiveAt, setEffectiveAt] = useState(() => todayISO());
   // One narrowing search per picker; only the mounted step's input ever types,
   // so at most one fetch pipeline is ever in flight.
   const userNarrowing = useNarrowing({ value: props.userPicker.search,

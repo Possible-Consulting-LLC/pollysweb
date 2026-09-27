@@ -15,9 +15,31 @@ export type SelectionRow = {
   /** Optional leading glyph (e.g. the keeper avatar's initials) — mockup row
    * anatomy for single-mode pickers. */
   leading?: string;
+  /** Optional trailing meta badge (mockup row anatomy: "Valid", "deleting",
+   * "Selected"). */
+  badge?: { label: string; tone?: 'ok' | 'muted' | 'selected' };
 };
 
 export type SelectionMode = 'multi' | 'single';
+
+/** Mockup meta badge (user-picker row anatomy ~49-52): "Valid" is the plum
+ * outline chip, "deleting" the dashed muted chip, "Selected" the gold chip. */
+const badgeToneClass: Record<'ok' | 'muted' | 'selected', string> = {
+  ok: 'border border-[var(--plum)]/30 bg-[var(--hover)] text-[var(--plum)]',
+  muted: 'border border-dashed border-[var(--lavender-deep)] bg-transparent text-[var(--foreground)] opacity-50',
+  selected: 'bg-[var(--gold)] text-[var(--panel)]',
+};
+
+function RowBadge({ badge, className }: { badge: NonNullable<SelectionRow['badge']>;
+  className?: string }) {
+  return (
+    <span data-row-badge={badge.label}
+      className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-bold',
+        className, badgeToneClass[badge.tone ?? 'ok'])}>
+      {badge.label}
+    </span>
+  );
+}
 
 export type SelectionListProps = {
   rows: SelectionRow[];
@@ -109,12 +131,21 @@ export function SelectionList({
         className="space-y-2 rounded-2xl border border-[var(--plum)]/20 bg-[var(--card)] px-3 py-2.5">
         <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--plum)]">Selected</p>
         <div className="flex items-center gap-2.5">
+          {/* U1: the focused view keeps the full row anatomy — the leading
+           * avatar glyph comes with the selection instead of being dropped. */}
+          {selectedRow.leading
+            ? <span aria-hidden="true" data-row-avatar={selectedRow.leading}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-[13px] font-bold text-[var(--midnight)]">
+                {selectedRow.leading}
+              </span>
+            : null}
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold text-[var(--plum)]">{selectedRow.title}</span>
             {selectedRow.subtitle
               ? <span className="block truncate text-[11.5px] opacity-55">{selectedRow.subtitle}</span>
               : null}
           </span>
+          {selectedRow.badge ? <RowBadge badge={selectedRow.badge} /> : null}
           <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onChange?.()}>Change</Button>
         </div>
       </section>
@@ -162,7 +193,7 @@ export function SelectionList({
         aria-pressed={Boolean(row.selected)}
         aria-label={`Select ${row.title}`}
         disabled={row.disabled}
-        onClick={() => onRowSelect?.(row.id)}
+        onClick={() => { if (!row.disabled) onRowSelect?.(row.id); }}
         className={cn(
           'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors',
           'hover:bg-[var(--hover)]',
@@ -182,6 +213,7 @@ export function SelectionList({
             ? <span className="block truncate text-[11.5px] opacity-55">{row.subtitle}</span>
             : null}
         </span>
+        {row.badge ? <RowBadge badge={row.badge} className="ml-auto" /> : null}
       </button>
     </li>
   ) : (
@@ -212,6 +244,7 @@ export function SelectionList({
           ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
           : null}
       </span>
+      {row.badge ? <RowBadge badge={row.badge} /> : null}
     </li>
   );
   return (

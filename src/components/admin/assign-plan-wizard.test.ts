@@ -216,14 +216,62 @@ test('step 1 lists keepers through the single-mode SelectionList', () => {
   assert.ok(buttons().find((item) => textOf(item) === 'Continue to plan'), 'continue affordance missing');
 });
 
-test('clicking a keeper navigates with the selection and keeps the picker view', () => {
+test('picker rows carry the leading initials avatar (mockup row anatomy)', () => {
+  const { tree } = render();
+  const marta = elements(tree).find((item) => item.props['aria-label'] === 'Select Marta Keeper');
+  const avatar = elements(marta!).find((item) => item.props['data-row-avatar']);
+  assert.ok(avatar, 'committed picker rows lack the initials avatar');
+  assert.equal(avatar?.props['data-row-avatar'], 'MK');
+  assert.equal(String(avatar.props.className).includes('bg-[var(--lavender)]'), true);
+  // Narrowed (live) rows derive their initials locally — the suggest endpoint
+  // does not carry a leading glyph.
+  const live = render({ ...base, userNarrowing: userNarrowingState({
+    narrowed: true, active: true, query: 'nova',
+    rows: [{ id: 'u-9', title: 'Nova Q. Keeper', subtitle: 'nova@example.com' }],
+    total: 1, page: 1 }) });
+  const nova = elements(live.tree).find((item) => item.props['aria-label'] === 'Select Nova Q. Keeper');
+  const liveAvatar = elements(nova!).find((item) => item.props['data-row-avatar']);
+  assert.equal(liveAvatar?.props['data-row-avatar'], 'NQ', 'narrowed rows lack the initials avatar');
+});
+
+test('picker rows render the meta badge slot: Valid on keepers, Selected in the focused view', () => {
+  const { tree } = render();
+  const badges = elements(tree).filter((item) => item.props['data-row-badge']);
+  assert.deepEqual(badges.map((item) => item.props['data-row-badge']), ['Valid', 'Valid'],
+    'every selectable keeper row carries the Valid badge');
+  // The focused view (selection held) shows the gold Selected badge.
+  const focused = render({ selectedUser });
+  const selected = elements(focused.tree)
+    .find((item) => item.props['data-row-badge'] === 'Selected');
+  assert.ok(selected, 'focused view missing the Selected badge');
+  assert.equal(String(selected.props.className).includes('bg-[var(--gold)]'), true);
+});
+
+test('deleting keepers are greyed and unselectable (mockup disabled rows)', () => {
+  const { nav, tree } = render({ userPicker: { ...baseUserPicker, rows: [
+    { id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com' },
+    { id: 'u-9', title: 'Old Acct', subtitle: 'deleting@example.com',
+      disabled: true, badgeLabel: 'deleting' },
+  ] } });
+  const old = elements(tree).find((item) => item.props['aria-label'] === 'Select Old Acct');
+  assert.ok(old, 'deleting row missing');
+  assert.equal(old?.props.disabled, true, 'deleting rows must be unselectable');
+  assert.equal(String(old?.props.className).includes('cursor-not-allowed'), true,
+    'deleting rows are greyed out');
+  const badge = elements(old!).find((item) => item.props['data-row-badge'] === 'deleting');
+  assert.ok(badge, 'deleting rows carry their status badge');
+  (old!.props.onClick as () => void)();
+  assert.deepEqual(nav, [], 'a disabled row must never navigate');
+});
+
+test('picking a keeper auto-advances straight to step 2 (no confirmation click)', () => {
   const { nav, byLabel } = render();
   (byLabel('Select Marta Keeper')!.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&user=u-1']);
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&user=u-1']);
   const paged = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
   (paged.byLabel('Select Marta Keeper')!.props.onClick as () => void)();
   assert.deepEqual(paged.nav,
-    ['/admin/subscriptions?wizard=open&step=1&user=u-1&usearch=ma&upage=2']);
+    ['/admin/subscriptions?wizard=open&step=2&user=u-1&usearch=ma&upage=2']);
 });
 
 test('keeper search resets to page 1 and pagination preserves the search', () => {
@@ -280,13 +328,16 @@ test('step 2 shows the keeper context bar and the active plan list', () => {
   (change.props.onClick as () => void)();
   assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
   (byLabel('Select Pro')!.props.onClick as () => void)();
-  assert.deepEqual(nav.slice(1), ['/admin/subscriptions?wizard=open&step=2&user=u-1&plan=p-1']);
+  assert.deepEqual(nav.slice(1),
+    ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1'],
+    'picking a plan advances straight to the options step');
 });
 
-test('picking a plan clears a stale option and resets the plan search to page 1', () => {
+test('picking a plan clears a stale option and lands on step 3', () => {
   const { nav, byLabel } = render({ step: 2, selectedUser, selectedOptionId: 'o-monthly' });
   (byLabel('Select Pro')!.props.onClick as () => void)();
   const href = nav[0];
+  assert.ok(href.includes('step=3'), href);
   assert.ok(href.includes('plan=p-1'), href);
   assert.equal(href.includes('option='), false, 'stale option must be cleared');
   const { navSearch } = render({ step: 2, selectedUser });
@@ -334,7 +385,7 @@ test('picking an option folds the option list and updates the live summary', () 
   assert.doesNotMatch(rendered, /Annual — \$49\.99/);
   assert.match(rendered, /Assigning: Pro \(Monthly — \$4\.99\)/);
   assert.match(rendered, /To: Marta Keeper \(marta@example\.com\)/);
-  assert.match(rendered, /Effective: now/);
+  assert.match(rendered, /Effective: today/);
   assert.match(rendered, /row-locked/);
   const change = elements(selected.tree).find((item) => item.type === 'button' &&
     textOf(item) === 'Change' && !item.props['aria-label']);
@@ -371,16 +422,32 @@ test('the assign form carries the selection as hidden inputs and gates the submi
     [{ name: 'planBillingOptionId', value: 'o-monthly' }]);
 });
 
-test('the effective date is a controlled field and feeds the summary', () => {
+test('the effective date is a controlled date field and feeds the summary', () => {
   let changed = '';
   const { inputs } = render({ ...step3,
     onEffectiveAtChange: (value: string) => { changed = value; } });
   const field = inputs().find((item) => item.props.name === 'effectiveAt');
   assert.ok(field, 'effective date field missing');
-  (field.props.onChange as (event: unknown) => void)({ target: { value: '2026-10-01T10:00' } });
-  assert.equal(changed, '2026-10-01T10:00');
-  const withDate = render({ ...step3, selectedOptionId: 'o-monthly', effectiveAt: '2026-10-01T10:00' });
-  assert.match(textOf(withDate.tree), /Effective: 2026-10-01 10:00/);
+  assert.equal(field?.props.type, 'date', 'the mockup uses a type="date" field');
+  (field.props.onChange as (event: unknown) => void)({ target: { value: '2026-10-01' } });
+  assert.equal(changed, '2026-10-01');
+  const withDate = render({ ...step3, selectedOptionId: 'o-monthly', effectiveAt: '2026-10-01' });
+  assert.match(textOf(withDate.tree), /Effective: 2026-10-01/);
+});
+
+test('the client wrapper prefills the effective date with today (mockup parity)', () => {
+  lastLiveSearch = [];
+  const { effectiveAt: _e, onEffectiveAtChange: _o, navigate: _n, navigateSearch: _s,
+    assignDispatch: _d, assignResult: _r, assignPending: _p, ...wrapperProps } = {
+    ...base, step: 3, selectedUser, selectedPlan: planWithTwoOptions,
+    selectedOptionId: 'o-monthly' } as AssignPlanWizardViewProps;
+  const tree = (wizardModule.AssignPlanWizard as (props: Record<string, unknown>) => unknown)
+    (wrapperProps) as unknown;
+  elements(tree);
+  const field = elements(tree).find((item) => item.props.name === 'effectiveAt');
+  assert.ok(field, 'wrapper-rendered effective date field missing');
+  assert.match(String(field?.props.value), /^\d{4}-\d{2}-\d{2}$/,
+    'the effective date is prefilled with today');
 });
 
 test('step 3 navigates back to the plan step and cancel folds the wizard', () => {
@@ -455,8 +522,8 @@ test('typing live-renders matched keepers in place with a truthful live count', 
   assert.equal(textOf(chip!), '1 keeper', 'the counter reflects the live match count');
   assert.match(textOf(live.tree), /Nova Keeper/, 'matches render in place');
   (rows[0].props.onClick as () => void)();
-  assert.deepEqual(live.nav, ['/admin/subscriptions?wizard=open&step=1&user=u-9'],
-    'picking selects the keeper (click-based), nothing else navigates');
+  assert.deepEqual(live.nav, ['/admin/subscriptions?wizard=open&step=2&user=u-9'],
+    'picking a narrowed keeper auto-advances to the plan step, nothing else navigates');
   assert.deepEqual(navSearch, [], 'browsing never navigates');
   void nav;
 });
@@ -492,5 +559,6 @@ test('step 2 plan search narrows in place and picking selects the plan', () => {
   const row = elements(tree).find((item) => item.props['aria-label'] === 'Select Pro');
   assert.ok(row, 'matched plan row missing');
   (row.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&plan=p-9']);
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=3&plan=p-9'],
+    'picking a narrowed plan advances straight to the options step');
 });

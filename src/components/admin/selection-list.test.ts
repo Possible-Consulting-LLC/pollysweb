@@ -391,6 +391,26 @@ test('single mode with a selection shows the focused view and a change affordanc
   assert.equal(changed, true);
 });
 
+test('single mode focused view keeps the row anatomy: leading avatar glyph and meta badge', () => {
+  const tree = SelectionList({
+    ...singleProps,
+    rows: [
+      { id: 'beta', title: 'Beta', selected: true, subtitle: 'Chosen one',
+        leading: 'BE', badge: { label: 'Selected', tone: 'selected' } },
+      { id: 'gamma', title: 'Gamma' },
+    ],
+  }) as unknown;
+  // U1: the focused view renders the same leading glyph as the list row.
+  const avatar = elements(tree).find((item) => item.props['data-row-avatar']);
+  assert.ok(avatar, 'focused view dropped the leading avatar glyph');
+  assert.equal(avatar.props['data-row-avatar'], 'BE');
+  assert.equal(String(avatar.props.className).includes('rounded-full'), true);
+  // U3: the focused row carries the mockup's gold "Selected" badge.
+  const badge = elements(tree).find((item) => item.props['data-row-badge'] === 'Selected');
+  assert.ok(badge, 'focused view missing the Selected badge');
+  assert.equal(String(badge.props.className).includes('bg-[var(--gold)]'), true);
+});
+
 test('single mode focused view can draw the selected row from the parent-selected set', () => {
   const tree = SelectionList({
     ...singleProps,
@@ -473,4 +493,49 @@ test('single-mode rows are freestanding pickers with optional avatars', () => {
   assert.ok(avatar, 'leading avatar missing');
   const beta = findByLabel(tree, 'Select Beta');
   assert.equal(beta?.props['aria-pressed'], false);
+});
+
+// --- Task 8 fix round 2: row meta badge slot (mockup Valid / deleting / Selected) ---
+
+test('single-mode rows render the trailing meta badge in all three mockup tones', () => {
+  const tree = SelectionList({ ...singleProps, rows: [
+    { id: 'alpha', title: 'Alpha', badge: { label: 'Valid', tone: 'ok' } },
+    { id: 'beta', title: 'Beta', badge: { label: 'deleting', tone: 'muted' } },
+    { id: 'gamma', title: 'Gamma', badge: { label: 'Selected', tone: 'selected' } },
+  ] }) as unknown;
+  const valid = findByLabel(tree, 'Select Alpha');
+  const validBadge = elements(valid!).find((item) => item.props['data-row-badge'] === 'Valid');
+  assert.ok(validBadge, 'ok-tone badge missing');
+  assert.equal(String(validBadge.props.className).includes('text-[var(--plum)]'), true);
+  const deleting = findByLabel(tree, 'Select Beta');
+  const xBadge = elements(deleting!).find((item) => item.props['data-row-badge'] === 'deleting');
+  assert.ok(xBadge, 'muted-tone badge missing');
+  assert.equal(String(xBadge.props.className).includes('border-dashed'), true,
+    'the deleting badge is the dashed outline chip');
+  const selected = findByLabel(tree, 'Select Gamma');
+  const selBadge = elements(selected!).find((item) => item.props['data-row-badge'] === 'Selected');
+  assert.ok(selBadge, 'selected-tone badge missing');
+  assert.equal(String(selBadge.props.className).includes('bg-[var(--gold)]'), true);
+});
+
+test('multi-mode rows render the meta badge too (shared row anatomy)', () => {
+  const tree = SelectionList({ ...baseProps, rows: [
+    { id: 'alpha', title: 'Alpha', badge: { label: 'Valid' } },
+    { id: 'beta', title: 'Beta' },
+  ] }) as unknown;
+  const row = elements(tree).find((item) => item.props['data-row-id'] === 'alpha');
+  const badge = elements(row!).find((item) => item.props['data-row-badge'] === 'Valid');
+  assert.ok(badge, 'multi-mode rows lack the badge slot');
+  assert.equal(elements(tree).filter((item) => item.props['data-row-badge']).length, 1,
+    'rows without a badge render no badge slot');
+});
+
+test('disabled single-mode rows never fire the row-select callback', () => {
+  let picked: string | undefined;
+  const tree = SelectionList({ ...singleProps, onRowSelect: (id: string) => { picked = id; } }) as unknown;
+  const gamma = findByLabel(tree, 'Select Gamma');
+  assert.ok(gamma, 'disabled row missing');
+  assert.equal(gamma.props.disabled, true);
+  (gamma.props.onClick as () => void)();
+  assert.equal(picked, undefined, 'a disabled row must be unselectable');
 });
