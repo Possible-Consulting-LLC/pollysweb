@@ -8,7 +8,8 @@ import type { NarrowPlanRow } from '@/lib/admin/suggest';
 import { FEATURE_REGISTRY } from '@/lib/features/registry';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { counterChipClass, badgeTintClass, badgeOnClass, badgeOffClass } from '@/components/admin/list-shared';
+import { counterChipClass, badgeTintClass, badgeOnClass, badgeOffClass,
+  searchHiddenFor } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
   fetchSelectableRows, type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
@@ -333,10 +334,13 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
   const lastPage = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
   return <>
     <div data-testid="plans-toolbar" className="flex flex-wrap items-center gap-2">
-      <LiveSearchInput id="plans-search" label="Search plans by name"
+      {/* S13d: the committed catalog holds less than a page (the real catalog
+          is ~4 plans) → no search input; the pair and the counter stay. The
+          count is the committed total, never the narrowed match count. */}
+      {!searchHiddenFor(total, pageSize) ? <LiveSearchInput id="plans-search" label="Search plans by name"
         placeholder="Search plans by name…" value={narrowing.text}
         onType={narrowing.onType} onEscape={narrowing.onEscape}
-        onEnter={onSearchSubmit} className="min-w-0 flex-1" />
+        onEnter={onSearchSubmit} className="min-w-0 flex-1" /> : null}
       {/* S13c: the mockup #7 pair between the search input and the gold
           counter — compact soft buttons. */}
       {onSelectAll

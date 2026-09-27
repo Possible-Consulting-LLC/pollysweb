@@ -69,7 +69,8 @@ const selectionList = loadModule('./selection-list.tsx', {
   'react/jsx-runtime': jsx,
   '@/lib/utils': { cn },
   '@/components/ui/card': { cardClassName: 'card' },
-  '@/components/admin/list-shared': { counterChipClass: 'goldchip' },
+  '@/components/admin/list-shared': { counterChipClass: 'goldchip',
+    searchHiddenFor: listSharedExports.searchHiddenFor },
   '@/components/ui/button': buttonStub,
   '@/components/admin/selection-tray': selectionTray,
 });
@@ -275,7 +276,9 @@ test('picking a keeper auto-advances straight to step 2 (no confirmation click)'
 });
 
 test('keeper search resets to page 1 and pagination preserves the search', () => {
-  const { navSearch, nav, tree } = render();
+  // S13d: the input contract is pinned on an above-page picker (a smaller
+  // picker hides the input entirely — see the S13d test).
+  const { navSearch, nav, tree } = render({ userPicker: { ...baseUserPicker, total: 45 } });
   // The picker's search input is the narrowing input; its explicit fallback
   // (Enter) is the URL-param search — typed text and a reset to page 1.
   assert.ok(live(), 'keeper search missing');
@@ -340,7 +343,8 @@ test('picking a plan clears a stale option and lands on step 3', () => {
   assert.ok(href.includes('step=3'), href);
   assert.ok(href.includes('plan=p-1'), href);
   assert.equal(href.includes('option='), false, 'stale option must be cleared');
-  const { navSearch } = render({ step: 2, selectedUser });
+  const { navSearch } = render({ step: 2, selectedUser,
+    planPicker: { ...basePlanPicker, total: 45 } });
   assert.ok(live(), 'plan search missing');
   (live()!.onEnter as (text: string) => void)('pro');
   assert.deepEqual(navSearch,
@@ -495,7 +499,8 @@ type InputProps = Record<string, unknown> & {
 const live = (): InputProps => lastLiveSearch.at(-1) as InputProps;
 
 test('step 1 search is a plain narrowing input wired to the users endpoint', () => {
-  render(base);
+  // S13d: pinned on an above-page picker (a smaller picker hides the input).
+  render({ userPicker: { ...baseUserPicker, total: 45 } });
   const props = live();
   assert.ok(props, 'live search missing');
   assert.equal(props.id, 'wizard-user-search');
@@ -535,7 +540,7 @@ test('a narrowed set with no matches echoes the query', () => {
 });
 
 test('Enter falls back to the URL-param search (debounced); plain typing never navigates', () => {
-  const { navSearch, nav } = render(base);
+  const { navSearch, nav } = render({ userPicker: { ...baseUserPicker, total: 45 } });
   const props = live();
   (props.onEnter as (text: string) => void)('nova');
   assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=nova']);
@@ -548,6 +553,27 @@ test('the picker toolbar carries the gold count chip beside the search input', (
   assert.ok(chip, 'toolbar counter chip missing');
   assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
   assert.equal(textOf(chip), '2 keepers', 'the chip shows the committed total when idle');
+});
+
+test('S13d: the picker search input hides when the picker holds less than a page; the counter stays', () => {
+  // The base pickers hold 2 rows against a pageSize of 20 — the real wizard
+  // shape (~4 plans, ~12 keepers): no search box on either step.
+  const step1 = render(base);
+  assert.equal(lastLiveSearch.length, 0, 'no keeper search input below one page');
+  assert.ok(elements(step1.tree).some((item) => item.props['data-testid'] === 'picker-count'),
+    'the count chip stays');
+  const step2 = render({ ...base, step: 2 });
+  assert.equal(lastLiveSearch.length, 0, 'no plan search input below one page');
+  assert.ok(elements(step2.tree).some((item) => item.props['data-testid'] === 'picker-count'),
+    'the count chip stays');
+  // Step 3's billing options are a couple of rows at most: the same rule
+  // keeps the options list search-free (the whole toolbar folds away in
+  // single mode).
+  const step3 = render({ ...base, step: 3, selectedUser,
+    selectedPlan: planWithTwoOptions });
+  assert.equal(lastLiveSearch.length, 0);
+  assert.equal(elements(step3.tree).some((item) => item.props['data-testid'] === 'list-toolbar'), false,
+    'no search toolbar on the options step');
 });
 
 test('step 2 plan search narrows in place and picking selects the plan', () => {

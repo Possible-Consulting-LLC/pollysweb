@@ -435,6 +435,16 @@ test('the toolbar hosts the mockup search input wired to the features narrowing 
   assert.doesNotMatch(readSource(), /mode="popup"|role="combobox"|renderSuggestions/);
 });
 
+test('S13d: the search input hides when the catalog holds less than a page; counter and select pair stay', () => {
+  render({ total: 5 });
+  assert.equal(lastLiveSearch, null, 'no search input below one page of features');
+  const tree = render({ total: 5, onSelectAll: () => {}, onSelectNone: () => {} });
+  assert.ok(elements(tree).some((item) => item.props['data-testid'] === 'selected-count'),
+    'the counter stays');
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'select-all'), true,
+    'the S13c pair stays visible');
+});
+
 test('the shell wires the narrowing search to the features endpoint at the page size', () => {
   lastNarrowSource = null;
   const tree = FeaturesAccordion({ features: features(2), total: 34, search: '', page: 1,

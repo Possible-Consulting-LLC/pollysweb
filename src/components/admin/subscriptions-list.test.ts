@@ -168,6 +168,21 @@ test('the toolbar pairs the search input with a truthful effective-count chip', 
   assert.equal(textOf(liveChip!), '41 effective', 'narrowing: the live match count');
 });
 
+test('S13d: the search input hides when the list holds less than a page; the chip and a committed search\'s Clear stay', () => {
+  const tree = render();
+  elements(tree); // resolve the stubs — the live-search stub records on render
+  assert.equal(lastInput, null, 'no search input below one page of rows');
+  assert.ok(elements(tree).find(item => item.props['data-testid'] === 'effective-count'),
+    'the effective-count chip stays');
+  // Hiding only stops rendering: a committed URL search keeps its Clear
+  // affordance (the search itself is never cleared by the rule).
+  const searched = render({ search: 'ada' });
+  elements(searched);
+  assert.equal(lastInput, null);
+  assert.ok(elements(searched).some(item => item.type === 'a' && textOf(item) === 'Clear'),
+    'the committed search keeps its Clear affordance');
+});
+
 test('typing narrows the rendered list in place: matches replace the committed rows', () => {
   Object.assign(narrowingState, { narrowed: true, active: true, query: 'ada',
     rows: [{ id: 'sub-9', title: 'Ada N.', subtitle: 'Pro · MONTHLY' }], total: 41, page: 1 });
@@ -193,7 +208,8 @@ test('an empty narrowed set echoes the query; clearing restores the committed vi
 });
 
 test('Enter is the explicit fallback: a soft push of the URL-param search', () => {
-  const tree = render();
+  // S13d: pinned on an above-page list (a smaller list hides the input).
+  const tree = render({ total: 45 });
   elements(tree); // resolve the stubs
   assert.ok(lastInput, 'search input missing');
   (lastInput!.onEnter as (text: string) => void)('nova');

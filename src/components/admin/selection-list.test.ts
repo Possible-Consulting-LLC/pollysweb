@@ -336,11 +336,13 @@ test('the pager footer hides when totalPages ≤ 1; the action still renders', (
 });
 
 test('the default search input carries the mockup placeholder and the empty state echoes the query', () => {
-  const tree = SelectionList({ ...baseProps, rows: [], total: 0, page: 1, search: 'molt' }) as unknown;
+  // S13d: the empty state is exercised on an above-page list — an empty list
+  // itself renders no search input (less than a page worth of rows).
+  const tree = SelectionList({ ...baseProps, rows: [], total: 45, page: 1, search: 'molt' }) as unknown;
   const input = elements(tree).find((item) => item.type === 'input' && item.props.type !== 'checkbox');
   assert.equal(input?.props.placeholder, 'Search features…');
   assert.match(textOf(tree), /Nothing matches “\s*molt\s*”\./);
-  const idle = SelectionList({ ...baseProps, rows: [], total: 0, page: 1, search: '',
+  const idle = SelectionList({ ...baseProps, rows: [], total: 45, page: 1, search: '',
     emptyLabel: 'No rows match.' }) as unknown;
   assert.match(textOf(idle), /No rows match\./);
 });
@@ -656,4 +658,35 @@ test('S13c: without handlers no select buttons render, and single mode never ren
     onSelectAll: () => {}, onSelectNone: () => {} }) as unknown;
   assert.equal(buttons(single).some((item) => textOf(item) === 'Select all'), false,
     'single-mode pickers are excluded by the owner rule');
+});
+
+// --- S13d: no search box when the list holds less than one page -------------
+
+test('S13d: no search input — default or slot — renders when total < pageSize; the toolbar pair and counter stay', () => {
+  const slot = jsx.jsx('div', { 'data-slot-marker': 'live' });
+  const tree = SelectionList({ ...baseProps, total: 3, page: 1, searchSlot: slot,
+    onSelectAll: () => {}, onSelectNone: () => {} }) as unknown;
+  assert.equal(elements(tree).filter((item) => item.type === 'input' &&
+    item.props.type !== 'checkbox').length, 0,
+    'the default search input hides below one page of rows');
+  assert.equal(elements(tree).some((item) => item.props['data-slot-marker'] === 'live'), false,
+    'the host searchSlot hides under the same rule');
+  assert.ok(elements(tree).some((item) => item.props['data-testid'] === 'list-toolbar'),
+    'the toolbar row itself stays');
+  assert.equal(buttons(tree).some((item) => textOf(item) === 'Select all'), true,
+    'S13c select pair stays visible regardless of list size');
+  assert.equal(buttons(tree).some((item) => textOf(item) === 'Select none'), true);
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'selected-count'), true,
+    'the counter stays');
+});
+
+test('S13d: a full page keeps the search, and the committed listSize rules — not the narrowed total', () => {
+  const exact = SelectionList({ ...baseProps, total: 20, page: 1 }) as unknown;
+  assert.equal(elements(exact).some((item) => item.type === 'input' &&
+    item.props.type !== 'checkbox'), true, 'exactly one page of rows keeps the search input');
+  // A search that narrows the view below a page must not hide the input (it
+  // would strand the query): the host passes the committed list size.
+  const narrowed = SelectionList({ ...baseProps, total: 3, page: 1, listSize: 45 }) as unknown;
+  assert.equal(elements(narrowed).some((item) => item.type === 'input' &&
+    item.props.type !== 'checkbox'), true, 'listSize (committed size) rules the visibility');
 });

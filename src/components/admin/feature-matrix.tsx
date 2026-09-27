@@ -174,6 +174,7 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
         })}
     </div>
     <SelectionList rows={rows} total={shownTotal} page={page} pageSize={PAGE_SIZE}
+      listSize={FEATURE_REGISTRY.length}
       search={search} selectedCount={enabled.size} groups={registryCategories()}
       emptyLabel="No features match this search."
       selectedRows={selectedRows} selectedOnly={selectedOnly}

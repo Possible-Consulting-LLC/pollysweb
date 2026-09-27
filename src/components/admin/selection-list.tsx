@@ -1,7 +1,7 @@
 'use client';
 import type { ReactNode } from 'react';
 import { SelectionTray } from '@/components/admin/selection-tray';
-import { counterChipClass } from '@/components/admin/list-shared';
+import { counterChipClass, searchHiddenFor } from '@/components/admin/list-shared';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -105,6 +105,11 @@ export type SelectionListProps = {
   /** Primary footer action rendered at the footer's right (mockup's "Save
    * matrix", INT:89-96) — the host passes its own form/button. */
   footerAction?: ReactNode;
+  /** S13d: the COMMITTED list size the search-visibility rule keys on — for
+   * hosts whose `total` narrows with the live query (the feature matrix's
+   * client-side filter) so a live query can never hide its own input.
+   * Absent → `total` rules (the URL-owned surfaces' committed count). */
+  listSize?: number;
   /** When false the host renders the toolbar itself (picker surfaces whose
    * live search owns the toolbar row). Rows, tray, and pager still render. */
   toolbar?: boolean;
@@ -147,8 +152,13 @@ export function SelectionList({
   onExpandToggle,
   onSelectAll,
   onSelectNone,
+  listSize,
 }: SelectionListProps) {
   const single = selectionMode === 'single';
+  // S13d: less than one page of rows → no search input (default input and a
+  // host-provided searchSlot alike — the rule is the toolbar's, not the
+  // input's). The count is the COMMITTED size, never the narrowed total.
+  const searchHidden = searchHiddenFor(listSize ?? total, pageSize);
   const selectedRow = rows.find((row) => row.selected) ?? selectedRows?.find((row) => row.selected);
   // Single-mode focused view: when a row is selected the rest folds out of
   // sight; a change affordance lets the parent unfold the list again.
@@ -285,9 +295,12 @@ export function SelectionList({
   );
   return (
     <section className="space-y-3">
-      {toolbar ? (
+      {/* S13d: in single mode the search IS the toolbar — with the input
+          hidden the whole row folds away. Multi mode keeps the row for the
+          S13c pair and the counter. */}
+      {toolbar && !(single && searchHidden) ? (
         <div className="flex flex-wrap items-center gap-2" data-testid="list-toolbar">
-          {searchSlot ?? (
+          {!searchHidden ? (searchSlot ?? (
             <input
               value={search}
               placeholder="Search features…"
@@ -295,7 +308,7 @@ export function SelectionList({
               onChange={(event) => onSearchChange(event.target.value)}
               className="h-11 min-w-0 flex-1 rounded-2xl border border-[var(--lavender-deep)] bg-[var(--input)] px-3.5 text-sm"
             />
-          )}
+          )) : null}
           {/* S13c: the mockup #7 pair between search and counter — the compact
               .btn-soft mini equivalent. Handlers optional; absent → no render. */}
           {!single && onSelectAll

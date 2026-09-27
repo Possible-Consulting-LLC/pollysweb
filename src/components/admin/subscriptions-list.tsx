@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint } from '@/components/admin/live-search';
-import { badgeOnClass, badgeOffClass, counterChipClass } from '@/components/admin/list-shared';
+import { badgeOnClass, badgeOffClass, counterChipClass, searchHiddenFor } from '@/components/admin/list-shared';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { MutationForm } from '@/components/mutation-form';
 import { MutationContextInput } from '@/components/mutation-context';
@@ -66,11 +66,14 @@ export function SubscriptionsList({ rows, total, search, page, pageSize, lastPag
   return <section className="space-y-3" aria-label="Current subscriptions">
     <h3 className="font-semibold">Current subscriptions</h3>
     <div className="flex flex-wrap items-center gap-2" data-testid="subscriptions-toolbar">
-      <LiveSearchInput id="subscriptions-search" label="Search by keeper, plan, or status"
+      {/* S13d: the committed list holds less than a page → no search input;
+          the count chip and a committed search's Clear stay (hiding only stops
+          rendering — it never clears a committed search). */}
+      {!searchHiddenFor(total, pageSize) ? <LiveSearchInput id="subscriptions-search" label="Search by keeper, plan, or status"
         placeholder="Search by keeper, plan, or status…" value={narrowing.text}
         onType={narrowing.onType} onEscape={narrowing.onEscape}
         onEnter={text => router.push(subscriptionsHref(text, 1, wizardParams))}
-        className="min-w-0 flex-1" />
+        className="min-w-0 flex-1" /> : null}
       <span className={counterChipClass} data-testid="effective-count">
         {`${live ? narrowing.total : total} effective`}
       </span>

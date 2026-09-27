@@ -7,6 +7,16 @@ export const listHref = (basePath: string, search: string, page: number, open?: 
   `${basePath}?${new URLSearchParams({ ...(search ? { search } : {}), page: String(page),
     ...(open ? { open } : {}) })}`;
 
+/** S13d: a list holding less than one page of rows renders NO search input
+ * (owner ruling: "we also shouldn't show a search box when there's only a few
+ * options — less than a page worth"). The pager hides under the same condition
+ * (S12); the S13c select pair and the counter stay regardless of list size.
+ * `total` is the COMMITTED list size — never the narrowed match count, so a
+ * live query can never hide its own input (a hidden input simply never fires
+ * onType; the narrowing machinery keeps working). */
+export const searchHiddenFor = (total: number, pageSize: number): boolean =>
+  total < Math.max(1, pageSize);
+
 /** 'spoods' → 'Spoods'. */
 export const categoryLabel = (category: string) =>
   category.charAt(0).toUpperCase() + category.slice(1);

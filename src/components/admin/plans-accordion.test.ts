@@ -376,7 +376,9 @@ function readSource(): string {
 }
 
 test('the toolbar hosts the mockup search input wired to the plans narrowing endpoint', () => {
-  render({ selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
+  // S13d: the input contract is pinned on an above-page catalog (a smaller
+  // catalog hides the input entirely — see the S13d test).
+  render({ total: 24, selectedItems: [{ id: 'plan-1', title: 'Plan 1' }] });
   assert.ok(lastLiveSearch, 'search input missing from the toolbar');
   assert.equal(lastLiveSearch!.id, 'plans-search');
   assert.equal(lastLiveSearch!.value, '', 'the input shows the live narrowing text');
@@ -385,6 +387,16 @@ test('the toolbar hosts the mockup search input wired to the plans narrowing end
     'Enter is the explicit full-page fallback');
   // No suggestion dropdown machinery exists by construction.
   assert.doesNotMatch(readSource(), /mode="popup"|role="combobox"|renderSuggestions/);
+});
+
+test('S13d: the plans search input hides when the catalog holds less than a page (real catalog ~4 < 20)', () => {
+  render();
+  assert.equal(lastLiveSearch, null, 'no search input below one page of plans');
+  const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
+  assert.ok(elements(tree).some((item) => item.props['data-testid'] === 'selected-count'),
+    'the counter stays');
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'select-all'), true,
+    'the S13c pair stays visible');
 });
 
 /** A rich narrowed plan row — the committed PlanSummary shape the narrowing
@@ -540,7 +552,7 @@ test('committed-empty and narrowed-empty each render exactly one message', () =>
 test('the shell wires the narrowing endpoint; the fallback submit navigates the URL search', () => {
   pushed = [];
   lastNarrowSource = null;
-  const tree = PlansAccordion({ plans: plans(2), total: 2, search: '', page: 1,
+  const tree = PlansAccordion({ plans: plans(2), total: 24, search: '', page: 1,
     pageSize: 20, openId: '' });
   elements(tree);
   assert.equal(lastNarrowSource, 'endpoint:plans:20');
@@ -698,7 +710,9 @@ test('P5: formatUpdatedAt is relative within a week, a short date beyond', () =>
 // --- S13c: select all / select none -----------------------------------------
 
 test('S13c: the toolbar hosts Select all / Select none between the search input and the gold counter', () => {
-  const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
+  // S13d: pinned on an above-page catalog (a smaller one hides the input —
+  // the pair itself stays, which the S13d test pins).
+  const tree = render({ total: 24, onSelectAll: () => {}, onSelectNone: () => {} });
   const toolbar = elements(tree).find(item => item.props['data-testid'] === 'plans-toolbar');
   assert.ok(toolbar, 'plans toolbar missing');
   const kids = (Array.isArray(toolbar!.props.children)

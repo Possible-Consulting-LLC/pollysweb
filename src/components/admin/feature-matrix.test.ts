@@ -73,6 +73,7 @@ const selectionList = loadModule('./selection-list.tsx', {
   '@/components/admin/selection-tray': tray,
   '@/components/admin/list-shared': {
     counterChipClass: 'goldchip', categoryLabel: (category: string) => category,
+    searchHiddenFor: (total: number, pageSize: number) => total < Math.max(1, pageSize),
   },
   '@/components/ui/button': {
     Button: ({ variant, size, ...props }: Record<string, unknown>) =>

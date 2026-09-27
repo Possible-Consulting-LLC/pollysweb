@@ -3,7 +3,7 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { SelectionList, type SelectionRow } from '@/components/admin/selection-list';
-import { counterChipClass } from '@/components/admin/list-shared';
+import { counterChipClass, searchHiddenFor } from '@/components/admin/list-shared';
 import { LiveSearchInput, useNarrowing, narrowViaEndpoint, type Narrowing } from '@/components/admin/live-search';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { MutationForm } from '@/components/mutation-form';
@@ -98,6 +98,10 @@ export function todayISO(): string {
  * them, so focused views pass this stable inert set. */
 const inertListCallbacks = { onToggle: () => {}, onPageChange: () => {},
   onSearchChange: () => {} };
+
+/** The pickers' page size (S13d): the options list shares it so the same
+ * less-than-a-page rule keeps a couple of billing options search-free. */
+const PICKER_PAGE_SIZE = 20;
 
 export type AssignPlanWizardViewProps = {
   /** Effective step (the server clamps it to what the URL state supports). */
@@ -199,13 +203,18 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               usearch: userPicker.search, upage: userPicker.page }))} />
         : <section className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <LiveSearchInput id="wizard-user-search"
+              {/* S13d: the committed picker holds less than a page (~12 keepers
+                  real) → no search input; the count chip stays. The count is
+                  the committed total, never the narrowed match count. */}
+              {!searchHiddenFor(userPicker.total, userPicker.pageSize)
+                ? <LiveSearchInput id="wizard-user-search"
                 label="Search keepers by name or email"
                 placeholder="Search keepers by name or email…" value={userNarrowing.text}
                 onType={userNarrowing.onType} onEscape={userNarrowing.onEscape}
                 onEnter={text => navigateSearch(wizardHref(list, { step: 1, usearch: text,
                   upage: 1 }))}
                 className="min-w-0 flex-1" />
+                : null}
               <span className={counterChipClass} data-testid="picker-count">
                 {`${userLive ? userNarrowing.total : userPicker.total} keeper${
                   (userLive ? userNarrowing.total : userPicker.total) === 1 ? '' : 's'}`}
@@ -249,12 +258,17 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
               psearch: planPicker.search, ppage: planPicker.page }))} />
         : <section className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <LiveSearchInput id="wizard-plan-search" label="Search plans by name"
+              {/* S13d: the committed picker holds less than a page (~4 plans
+                  real) → no search input; the count chip stays. The count is
+                  the committed total, never the narrowed match count. */}
+              {!searchHiddenFor(planPicker.total, planPicker.pageSize)
+                ? <LiveSearchInput id="wizard-plan-search" label="Search plans by name"
                 placeholder="Search plans by name…" value={planNarrowing.text}
                 onType={planNarrowing.onType} onEscape={planNarrowing.onEscape}
                 onEnter={text => navigateSearch(wizardHref(list, { step: 2, user: userId,
                   psearch: text, ppage: 1 }))}
                 className="min-w-0 flex-1" />
+                : null}
               <span className={counterChipClass} data-testid="picker-count">
                 {`${planLive ? planNarrowing.total : planPicker.total} plan${
                   (planLive ? planNarrowing.total : planPicker.total) === 1 ? '' : 's'}`}
@@ -289,7 +303,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedUser,
       {optionRows.length === 0
         ? <p className="text-sm text-[var(--midnight)]/70">This plan has no active billing options yet.</p>
         : <SelectionList selectionMode="single" rows={optionRows} total={optionRows.length}
-            page={1} pageSize={Math.max(1, optionRows.length)} search=""
+            page={1} pageSize={PICKER_PAGE_SIZE} search=""
             selectedCount={0} {...inertListCallbacks}
             emptyLabel="No active billing options."
             onRowSelect={id => navigate(wizardHref(list, { step: 3, user: userId, plan: planId,

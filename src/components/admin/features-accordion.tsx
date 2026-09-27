@@ -6,7 +6,7 @@ import { ChevronDown } from 'lucide-react';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { listHref, categoryLabel, counterChipClass, badgeOnClass, badgeOffClass,
-  badgeTintClass } from '@/components/admin/list-shared';
+  badgeTintClass, searchHiddenFor } from '@/components/admin/list-shared';
 import { LiveSearchInput, NarrowPager, useNarrowing, narrowViaEndpoint,
   fetchSelectableRows, type Narrowing, type NarrowingResult, type Suggestion } from '@/components/admin/live-search';
 import { MutationForm } from '@/components/mutation-form';
@@ -294,10 +294,13 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
   const categories = [...new Set(features.map(feature => feature.category))].sort();
   return <>
     <div data-testid="features-toolbar" className="flex flex-wrap items-center gap-2">
-      <LiveSearchInput id="features-search" label="Search features by name or key"
+      {/* S13d: the committed catalog holds less than a page → no search input
+          (the pair and the counter stay). The count is the committed total,
+          never the narrowed match count, so a live query can't hide its input. */}
+      {!searchHiddenFor(total, pageSize) ? <LiveSearchInput id="features-search" label="Search features by name or key"
         placeholder="Search features…" value={narrowing.text}
         onType={narrowing.onType} onEscape={narrowing.onEscape}
-        onEnter={onSearchSubmit} className="min-w-0 flex-1" />
+        onEnter={onSearchSubmit} className="min-w-0 flex-1" /> : null}
       {/* S13c: the mockup #7 pair between the search input and the gold
           counter — compact soft buttons. */}
       {onSelectAll
