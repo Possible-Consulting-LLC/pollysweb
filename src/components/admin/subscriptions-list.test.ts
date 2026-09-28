@@ -67,6 +67,8 @@ const deps: Record<string, unknown> = {
     useReducer: (reducer: unknown, initial: unknown) => [initial, () => {}],
   },
   'react/jsx-runtime': jsx,
+  'lucide-react': { ChevronDown: (props: Record<string, unknown>) =>
+    jsx.jsx('span', { 'data-chevron': true, ...props }) },
   'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
@@ -86,7 +88,10 @@ const deps: Record<string, unknown> = {
   '@/components/mutation-form': { MutationForm: ({ children, ...props }: Record<string, unknown>) =>
     jsx.jsx('form', { ...props, children }) },
   '@/components/mutation-context': { MutationContextInput: () => null },
-  '@/app/admin/subscriptions/actions': { endSubscriptionAction: 'end-action' },
+  '@/app/admin/subscriptions/actions': {
+    endSubscriptionAction: 'end-action',
+    editSubscriptionAction: 'edit-action',
+  },
 };
 
 /** The canned narrowing state; tests flip `narrowed` and swap rows/total. */
@@ -98,17 +103,33 @@ const narrowingState: Record<string, unknown> = {
 
 const listModule = loadModule('./subscriptions-list.tsx', deps);
 const SubscriptionsList = listModule.SubscriptionsList as (props: Record<string, unknown>) => unknown;
+const SubscriptionsListView = listModule.SubscriptionsListView as (props: Record<string, unknown>) => unknown;
 
 type ListRow = { id: string; userId: string; planId: string; planBillingOptionId: string;
   status: string; startedAt: string; renewsAt: string | null; expiresAt: string | null;
   userName: string | null; userEmail: string | null; planName: string | null;
-  optionInterval: string | null; optionPriceCents: number | null };
+  optionInterval: string | null; optionPriceCents: number | null;
+  source: 'subscription' | 'tier'; tierKey: string | null;
+  planOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }> };
 
 const row = (overrides: Partial<ListRow> = {}): ListRow => ({
   id: 'sub-1', userId: 'u-1', planId: 'p-1', planBillingOptionId: 'o-1', status: 'ACTIVE',
   startedAt: '2026-08-01T00:00:00.000Z', renewsAt: '2026-09-01T00:00:00.000Z', expiresAt: null,
   userName: 'Marta Keeper', userEmail: 'marta@example.com', planName: 'Pro',
-  optionInterval: 'MONTHLY', optionPriceCents: 499, ...overrides });
+  optionInterval: 'MONTHLY', optionPriceCents: 499,
+  source: 'subscription', tierKey: null,
+  planOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
+    { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true }],
+  ...overrides });
+
+/** A resolver-derived tier row (Task 11): display-only, no stored fields. */
+const tierRow = (overrides: Partial<ListRow> = {}): ListRow => ({
+  ...row({ id: 'tier:u-9', userId: 'u-9', planId: 'p-legacy', planBillingOptionId: '',
+    status: 'LEGACY', startedAt: '1970-01-01T00:00:00.000Z', renewsAt: null, expiresAt: null,
+    userName: 'Free Fiona', userEmail: 'fiona@example.com', planName: 'Free – Legacy',
+    optionInterval: null, optionPriceCents: null, source: 'tier', tierKey: 'free',
+    planOptions: [] }),
+  ...overrides });
 
 const base = {
   rows: [row(), { ...row(), id: 'sub-2', status: 'PAST_DUE', userName: 'Dan O.',
@@ -119,6 +140,12 @@ const base = {
   wizardParams: {} as Record<string, string>,
 };
 
+const viewBase = {
+  ...base,
+  expandedId: '', onToggleExpand: (_id: string) => {},
+  editingId: '', onStartEdit: (_id: string) => {}, onCancelEdit: () => {},
+};
+
 const render = (overrides: Partial<typeof base> = {}) => {
   lastInput = null;
   Object.assign(narrowingState, { text: '', query: '', active: false, narrowed: false,
@@ -126,17 +153,25 @@ const render = (overrides: Partial<typeof base> = {}) => {
   return SubscriptionsList({ ...base, ...overrides }) as unknown;
 };
 
+const renderView = (overrides: Partial<typeof viewBase> = {}) => {
+  lastInput = null;
+  Object.assign(narrowingState, { text: '', query: '', active: false, narrowed: false,
+    rows: [], total: 0, page: 1, loading: false });
+  return SubscriptionsListView({ ...viewBase, ...overrides }) as unknown;
+};
+
 function elementsOf(tree: unknown) {
   const all = elements(tree);
   return {
     rows: all.filter(item => item.props['data-subscription-row']),
     links: all.filter(item => item.type === 'a'),
+    buttons: all.filter(item => item.type === 'button'),
     forms: all.filter(item => item.type === 'form'),
   };
 }
 
-test('the committed view renders full rows: keeper, plan, badge, dates, Reassign, and End', () => {
-  const tree = render();
+test('the committed view renders collapsed rows: keeper, plan, badge, dates — no actions yet', () => {
+  const tree = renderView();
   const rendered = textOf(tree);
   assert.match(rendered, /Marta Keeper/);
   assert.match(rendered, /marta@example\.com/);
@@ -146,6 +181,20 @@ test('the committed view renders full rows: keeper, plan, badge, dates, Reassign
   assert.match(rendered, /Past due/);
   assert.match(rendered, /since 2026-08-01 · renews 2026-09-01/);
   assert.match(rendered, /since 2026-07-30 · ends 2026-09-28/);
+  // Collapsed rows carry no actions: everything lives behind the expand.
+  assert.equal(elementsOf(tree).links.find(link => textOf(link) === 'Reassign'), undefined);
+  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'end-action'), undefined);
+  // Each row is a labeled expand toggle.
+  const toggles = elementsOf(tree).buttons.filter(item => item.props['aria-expanded'] !== undefined);
+  assert.deepEqual(toggles.map(item => item.props['aria-expanded']), [false, false]);
+  assert.match(String(toggles[0].props.className), /hover:bg-\[var\(--hover\)\]/,
+    'the mockup hover tint rides the expand toggle');
+});
+
+test('expanding a row reveals the detail card with Edit, Reassign, and End', () => {
+  const tree = renderView({ expandedId: 'sub-1' });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Marta Keeper/, 'the expanded row keeps its summary');
   const reassign = elementsOf(tree).links.find(link => textOf(link) === 'Reassign');
   assert.equal(reassign?.props.href, '/admin/subscriptions?wizard=open&step=2&user=u-1');
   const endForm = elementsOf(tree).forms.find(form => form.props.action === 'end-action');
@@ -153,7 +202,64 @@ test('the committed view renders full rows: keeper, plan, badge, dates, Reassign
   const hidden = elements(endForm).find(item => item.type === 'input' &&
     item.props.name === 'subscriptionId');
   assert.equal(hidden?.props.value, 'sub-1');
-  assert.match(textOf(tree), /End/);
+  const edit = elementsOf(tree).buttons.find(item => textOf(item) === 'Edit');
+  assert.ok(edit, 'the Edit affordance is on the detail card');
+  // Collapsed rows stay actionless.
+  const collapsed = elementsOf(renderView()).forms;
+  assert.equal(collapsed.find(form => form.props.action === 'end-action'), undefined);
+});
+
+test('Edit opens the in-place form: billing option + effective date, supersede on save', () => {
+  const tree = renderView({ expandedId: 'sub-1', editingId: 'sub-1' });
+  const editForm = elementsOf(tree).forms.find(form => form.props.action === 'edit-action');
+  assert.ok(editForm, 'in-place edit form missing');
+  const hidden = elements(editForm).find(item => item.type === 'input' &&
+    item.props.name === 'subscriptionId');
+  assert.equal(hidden?.props.value, 'sub-1');
+  const select = elements(editForm).find(item => item.type === 'select');
+  assert.ok(select, 'billing option select missing');
+  const options = elements(select).filter(item => item.type === 'option');
+  assert.deepEqual(options.map(option => option.props.value), ['o-1', 'o-2'],
+    'the row\'s plan\'s active options are the choices');
+  assert.equal(select.props.defaultValue, 'o-1', 'the current option is preselected');
+  const date = elements(editForm).find(item => item.type === 'input' &&
+    item.props.name === 'effectiveAt');
+  assert.equal(date?.props.type, 'date', 'the effective date input matches the wizard\'s');
+  assert.match(textOf(tree), /supersedes/i, 'the supersede semantics are stated');
+  // Cancel affordance.
+  assert.ok(elementsOf(tree).buttons.find(item => textOf(item) === 'Cancel'));
+});
+
+test('a plan without active options offers no Edit (nothing to switch to)', () => {
+  const tree = renderView({ expandedId: 'sub-2', rows: [row(), { ...row(), id: 'sub-2',
+    planOptions: [] }] });
+  assert.equal(elementsOf(tree).buttons.find(item => textOf(item) === 'Edit'), undefined);
+  const expanded = textOf(tree);
+  assert.match(expanded, /no active billing options/i);
+});
+
+test('tier-derived rows render the gold-dashed Legacy — derived badge and carry no actions or expansion', () => {
+  const tree = renderView({ rows: [tierRow()] });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Free Fiona/);
+  assert.match(rendered, /Free – Legacy/);
+  assert.match(rendered, /Legacy — derived/);
+  const rows = elementsOf(tree).rows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].props['data-legacy-derived'], 'true', 'the virtual row is marked');
+  // No expand toggle, no Reassign/End/Edit — derived rows are display-only.
+  assert.equal(elementsOf(tree).buttons.filter(item =>
+    item.props['aria-expanded'] !== undefined).length, 0);
+  assert.equal(elementsOf(tree).links.find(link => textOf(link) === 'Reassign'), undefined);
+  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'end-action'), undefined);
+  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'edit-action'), undefined);
+  // The badge is gold-dashed via theme tokens.
+  const badge = elements(tree).find(item => item.type === 'span' &&
+    String(item.props.className ?? '').includes('border-[var(--gold)]'));
+  assert.ok(badge, 'the badge grounds on the gold token');
+  assert.match(String(badge!.props.className), /border-dashed/);
+  // No dates line for a derived row (epoch sentinel never renders).
+  assert.doesNotMatch(rendered, /since 1970/);
 });
 
 test('the toolbar pairs the search input with a truthful effective-count chip', () => {
@@ -216,16 +322,16 @@ test('Enter is the explicit fallback: a soft push of the URL-param search', () =
   assert.deepEqual(pushed, ['/admin/subscriptions?search=nova']);
 });
 
-test('rows are freestanding hover-tinted elements and badges are theme-token driven', () => {
-  const tree = render();
+test('rows are freestanding elements and badges are theme-token driven', () => {
+  const tree = renderView();
   const rows = elements(tree).filter(item => item.props['data-subscription-row']);
   assert.equal(rows.length, 2);
   for (const rowEl of rows) {
     const cls = String(rowEl.props.className);
     assert.equal(cls.split(' ').includes('card'), false, 'rows are freestanding, not card-enclosed');
-    assert.equal(cls.includes('hover:bg-[var(--hover)]'), true, 'mockup hover tint');
   }
   const source = readFileSync(new URL('./subscriptions-list.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /(?:emerald|sky|amber|teal|indigo)-\d00/,
     'status badges must come from theme tokens');
+  assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b/, 'no raw hex colors either');
 });

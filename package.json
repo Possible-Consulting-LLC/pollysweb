@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "prisma migrate deploy",
-    "db:legacy-sync": "tsx --conditions=react-server scripts/staging-legacy-subscriptions.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "test": "tsx --test src/lib/*.test.ts src/lib/**/*.test.ts src/components/*.test.ts src/components/**/*.test.ts",

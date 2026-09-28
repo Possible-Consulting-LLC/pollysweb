@@ -3,13 +3,13 @@
  *
  * ── CONTRACT (gating-phase design) ──────────────────────────────────────────
  * This module is PURE DATA RESOLUTION. It never writes, never enforces, and
- * no product flow calls it yet: gating-phase flows adopt it later. Nothing in
- * the app may treat its output as authorization until that phase lands.
+ * no product flow treats its output as authorization by itself.
  *
  * - The legacy `User.plan` tier ('free' | 'pro') maps onto exactly one legacy
- *   plan name each ('Free – Legacy' / 'Pro – Legacy'). The backfill script
- *   (scripts/staging-legacy-subscriptions.ts) imports this mapping — there is
- *   no second copy anywhere.
+ *   plan name each ('Free – Legacy' / 'Pro – Legacy'), exported both as the
+ *   per-tier specs and as LEGACY_PLAN_NAMES — the single source every consumer
+ *   reads (the wizard's assignable-plans exclusion; the subscriptions page's
+ *   tier-derived virtual rows).
  * - `resolveEffectiveEntitlements` resolves a user's effective feature keys:
  *   1. If the user holds an effective subscription (TRIALING/ACTIVE/PAST_DUE
  *      and not expired — the same semantics as the plan-assignment service),
@@ -17,7 +17,7 @@
  *   2. Otherwise they derive from the user's tier via the mapping above,
  *      using the mapped legacy plan's ENABLED feature translations as loaded
  *      from the database (never the compile-time designation, so admin edits
- *      after backfill are honored).
+ *      are honored).
  * - Unknown/missing tiers and unloaded legacy plans FAIL LOUDLY (throw) —
  *   resolution never silently degrades to an empty (permission-less) set.
  *
@@ -37,8 +37,8 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 /** The legacy tiers map onto exactly these plan names. `featureKeys` is the
- * backfill DESIGNATION (what the backfill script assigns to a freshly created
- * legacy plan); read-time resolution always uses the database's current
+ * original designation of each tier's feature set (kept as documentation and
+ * pinned by tests); read-time resolution always uses the database's current
  * FeaturePlanTranslation rows instead of this list. */
 export const LEGACY_PLAN_SPECS = {
   free: {
@@ -65,6 +65,12 @@ export const LEGACY_PLAN_SPECS = {
   name: string; description: string; maxSpiders: number | null; featureKeys: readonly string[];
 }>;
 export type LegacyTier = keyof typeof LEGACY_PLAN_SPECS;
+
+/** The two legacy plan names, derived from the mapping above — the single
+ * source the wizard's assignable-plans exclusion (and every "is this a legacy
+ * plan?" check) reads. */
+export const LEGACY_PLAN_NAMES: readonly string[] =
+  Object.values(LEGACY_PLAN_SPECS).map(spec => spec.name);
 
 const TIERS: readonly string[] = Object.keys(LEGACY_PLAN_SPECS);
 
@@ -178,7 +184,7 @@ export function resolveEffectiveEntitlements(user: EntitlementUser,
 
 /** Read-only loader for the resolver's second argument: fetches both legacy
  * plans (by their mapped names) with their feature translations. Throws if a
- * legacy plan is missing — i.e. before the backfill script has created it. */
+ * legacy plan is missing — i.e. before the legacy plans exist. */
 export async function loadLegacyPlanSource(
   db: PrismaClient | Prisma.TransactionClient): Promise<LegacyPlanSource> {
   const plans = await db.plan.findMany({

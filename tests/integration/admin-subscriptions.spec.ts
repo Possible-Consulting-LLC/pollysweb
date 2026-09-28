@@ -3,9 +3,12 @@ import type { Page } from '@playwright/test';
 
 /** Subscriptions surface: list-first rendering verification and the behavior
  * pins — keeper search by name AND email on an above-page catalog, the
- * multi-select wizard (batch tray → plan pick → options → "To N keeper(s)"),
- * the post-assign reset to step 1, End → CANCELED with expiry, and Reassign
- * preselection. */
+ * multi-select wizard (batch tray → plan pick → options → "To N keeper(s)")
+ * with the legacy plans excluded, the post-assign reset to step 1, End →
+ * CANCELED with expiry and the keeper's fallback to a tier-derived row,
+ * Reassign preselection, and the Task 11 virtual model (tier-derived rows are
+ * display-only with the gold-dashed "Legacy — derived" marker; Edit
+ * supersedes in place). */
 
 const wizard = (page: Page) => page.getByTestId('assign-wizard');
 const rows = (page: Page) => page.locator('[data-subscription-row]');
@@ -102,6 +105,9 @@ test.describe('subscriptions behavior pins', () => {
     await wizard(page).getByRole('link', { name: /Continue/ }).click();
     await expect(page).toHaveURL(/step=2/);
     await expect(page.getByTestId('wizard-context')).toContainText('2 keepers');
+    // Task 11: the two legacy plans are the resolver's designation holders —
+    // never assignable (excluded by name; still visible on the plans page).
+    await expect(wizard(page).getByRole('button', { name: /Select .*Legacy/ })).toHaveCount(0);
     // The plan pick carries its read-only included-features line (Task 10).
     await expect(wizard(page).getByTestId('plan-features').first()).toBeVisible();
     // Picking a plan advances straight to the options step (U6 auto-advance).
@@ -116,7 +122,9 @@ test.describe('subscriptions behavior pins', () => {
     // with the tray cleared, the wizard still open over the refreshed list.
     await expect(page).toHaveURL(/wizard=open&step=1/);
     await expect(wizard(page).getByTestId('selected-count')).toHaveText(/0 of \d+ selected/);
-    await expect(rows(page)).toHaveCount(2);
+    // Task 11 virtual model: the list is a union — scope to the keepers' rows.
+    for (const keeper of keepers)
+      await expect(rows(page).filter({ hasText: keeper.name ?? '' })).toHaveCount(1);
     const stored = await prisma.userSubscription.findMany({
       where: { userId: { in: keepers.map(entry => entry.id) } },
       select: { userId: true, status: true, planId: true, planBillingOptionId: true, expiresAt: true } });
@@ -129,7 +137,7 @@ test.describe('subscriptions behavior pins', () => {
     } })).toBe(2);
   });
 
-  test('End ends the subscription: CANCELED with an expiry and out of the list', async ({ page, creds }) => {
+  test('End ends the subscription: CANCELED with an expiry, and the keeper falls back to a tier-derived row', async ({ page, creds }) => {
     const keeper = await seedKeeper({ name: `${PREFIX}End Keeper` });
     const plan = await seedPlan({ name: `${PREFIX}End Plan`, active: true,
       billingOptions: [{ interval: 'MONTHLY', basePriceCents: 1000, active: true }] });
@@ -137,10 +145,17 @@ test.describe('subscriptions behavior pins', () => {
       planBillingOptionId: plan.billingOptions[0].id, status: 'ACTIVE', startedAt: new Date() } });
     await reauth(page, creds);
     await page.goto('/admin/subscriptions');
-    await expect(rows(page)).toHaveCount(1);
-    await rows(page).getByRole('button', { name: 'End' }).click();
-    // Row leaves the effective list (effective-only rendering) without reload.
-    await expect(rows(page)).toHaveCount(0);
+    // Task 11 virtual model: scope to the keeper's row (other keepers' tier-
+    // derived rows fill the union list).
+    const keeperRows = rows(page).filter({ hasText: keeper.name ?? '' });
+    await expect(keeperRows).toHaveCount(1);
+    // Expand the row, then End from the detail card.
+    await keeperRows.getByRole('button', { name: keeper.name ?? '' }).click();
+    await keeperRows.getByRole('button', { name: 'End', exact: true }).click();
+    // The stored row is canceled (leaves the union); the keeper's tier signal
+    // (default 'free') takes over — a tier-derived row replaces the real one.
+    await expect(keeperRows).toHaveCount(1);
+    await expect(keeperRows).toContainText('Legacy — derived');
     const row = await prisma.userSubscription.findUnique({ where: { id: created.id }, select: { status: true, expiresAt: true } });
     expect(row?.status).toBe('CANCELED');
     expect(row?.expiresAt).not.toBeNull();
@@ -157,7 +172,10 @@ test.describe('subscriptions behavior pins', () => {
     await prisma.userSubscription.create({ data: { userId: keeper.id, planId: plan.id,
       planBillingOptionId: plan.billingOptions[0].id, status: 'TRIALING', startedAt: new Date() } });
     await page.goto('/admin/subscriptions');
-    await rows(page).getByRole('link', { name: 'Reassign' }).click();
+    const keeperRows = rows(page).filter({ hasText: keeper.name ?? '' });
+    await expect(keeperRows).toHaveCount(1);
+    await keeperRows.getByRole('button', { name: keeper.name ?? '' }).click();
+    await keeperRows.getByRole('link', { name: 'Reassign' }).click();
     await expect(page).toHaveURL(/wizard=open&step=2/);
     await expect(page.getByTestId('wizard-context')).toContainText(keeper.name ?? '');
     // The plan picker lists the active plans with their read-only feature
@@ -214,5 +232,55 @@ test.describe('subscriptions behavior pins', () => {
     await expect(add).toBeVisible();
     await tabTo(page, { role: 'link', name: '＋ Add subscription' });
     await expect(add).toBeFocused();
+  });
+});
+// --- Task 11: virtual subscriptions pivot ------------------------------------
+
+test.describe('virtual subscriptions (Task 11)', () => {
+  test('a legacy-tier keeper without a stored subscription renders a display-only tier-derived row', async ({ page }) => {
+    const keeper = await seedKeeper({ name: `${PREFIX}Legacy Keeper` });
+    await page.goto('/admin/subscriptions');
+    const keeperRows = rows(page).filter({ hasText: keeper.name ?? '' });
+    await expect(keeperRows).toHaveCount(1);
+    await expect(keeperRows).toContainText('Free – Legacy');
+    await expect(keeperRows).toContainText('Legacy — derived');
+    // Derived rows are display-only: no expansion, no End/Reassign/Edit.
+    await expect(keeperRows.getByRole('button')).toHaveCount(0);
+    await expect(keeperRows.getByRole('link', { name: 'Reassign' })).toHaveCount(0);
+  });
+
+  test('Edit supersedes the subscription in place: option + effective date, audited', async ({ page, creds }) => {
+    const keeper = await seedKeeper({ name: `${PREFIX}Edit Keeper` });
+    const plan = await seedPlan({ name: `${PREFIX}Edit Plan`, active: true,
+      billingOptions: [{ interval: 'MONTHLY', basePriceCents: 1000, active: true },
+        { interval: 'ANNUAL', basePriceCents: 10000, active: true }] });
+    const monthly = plan.billingOptions.find(option => option.interval === 'MONTHLY')!;
+    const annual = plan.billingOptions.find(option => option.interval === 'ANNUAL')!;
+    const created = await prisma.userSubscription.create({ data: { userId: keeper.id, planId: plan.id,
+      planBillingOptionId: monthly.id, status: 'ACTIVE', startedAt: new Date() } });
+    await reauth(page, creds);
+    await page.goto('/admin/subscriptions');
+    const keeperRows = rows(page).filter({ hasText: keeper.name ?? '' });
+    await expect(keeperRows).toHaveCount(1);
+    await keeperRows.getByRole('button', { name: keeper.name ?? '' }).click();
+    await keeperRows.getByRole('button', { name: 'Edit', exact: true }).click();
+    await keeperRows.getByLabel('Billing option').selectOption({ label: 'Annual — $100.00' });
+    await keeperRows.getByLabel('Effective date').fill('2026-10-15');
+    await keeperRows.getByRole('button', { name: 'Save changes' }).click();
+    // Supersede semantics: the old row is end-dated, a new ACTIVE row starts.
+    await expect(keeperRows).toContainText('Annual — $100.00');
+    const stored = await prisma.userSubscription.findMany({ where: { userId: keeper.id },
+      select: { id: true, status: true, planBillingOptionId: true, expiresAt: true } });
+    expect(stored).toHaveLength(2);
+    const canceled = stored.find(row => row.id === created.id)!;
+    expect(canceled.status).toBe('CANCELED');
+    expect(canceled.planBillingOptionId).toBe(monthly.id);
+    const replacement = stored.find(row => row.id !== created.id)!;
+    expect(replacement.status).toBe('ACTIVE');
+    expect(replacement.planBillingOptionId).toBe(annual.id);
+    await expect.poll(async () => prisma.adminAudit.count({ where: {
+      actorId: creds.userId, action: 'plan.assign', targetId: keeper.id,
+      reason: `Edited subscription for user ${keeper.id} (${plan.name} ANNUAL) effective 2026-10-15T00:00:00.000Z`,
+    } })).toBe(1);
   });
 });

@@ -34,3 +34,7 @@ export const badgeOnClass =
 /** Off/negative pill: dashed lavender border, muted. */
 export const badgeOffClass =
   'rounded-full border border-dashed border-[var(--lavender-deep)] px-2.5 py-0.5 text-[10.5px] font-bold tracking-wide opacity-45';
+/** Task 11: the tier-derived row's "Legacy — derived" marker — a gold dashed
+ * pill (derived, not stored). Theme tokens only. */
+export const badgeGoldDashedClass =
+  'rounded-full border border-dashed border-[var(--gold)] px-2.5 py-0.5 text-[10.5px] font-bold tracking-wide text-[var(--gold)]';

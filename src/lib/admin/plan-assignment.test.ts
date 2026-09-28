@@ -5,10 +5,11 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import type * as assignment from './plan-assignment';
 import type * as plans from './plans';
+import type * as legacy from './legacy-entitlements';
 import * as maintenancePolicy from './maintenance-policy';
 
 type UserRow = { id: string; name: string | null; email: string; role: string;
-  deletingAt: Date | null };
+  plan?: string | null; deletingAt: Date | null };
 type PlanRow = { id: string; name: string; active: boolean; public: boolean; planType: string;
   sortOrder: number };
 type OptionRow = { id: string; planId: string; interval: string; basePriceCents: number;
@@ -30,7 +31,7 @@ function load(relativePath: string, deps: Record<string, unknown>): Record<strin
 /** Error instances from the vm sandbox live in another realm; tag check works cross-realm. */
 const isFailure = (value: unknown) => Object.prototype.toString.call(value) === '[object Error]';
 /** Results returned from the sandbox live in another realm; JSON copies keep strict comparisons local. */
-const jsonOf = (value: unknown) => JSON.parse(JSON.stringify(value));
+const jsonOf = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const ACTOR: UserRow = { id: 'owner-1', name: 'Owner One', email: 'owner@example.com',
   role: 'super_admin', deletingAt: null };
@@ -72,16 +73,35 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
     if (where.id && typeof where.id === 'object' &&
       Array.isArray((where.id as { in?: string[] }).in) &&
       !(where.id as { in: string[] }).in.includes(row.id)) return false;
-    if (Array.isArray(where.OR) && !where.OR.some((clause: { name?: { contains?: string };
-        email?: { contains?: string } }) =>
-      contains(row.name, clause.name?.contains) || contains(row.email, clause.email?.contains)))
+    if (where.plan !== undefined) {
+      if (typeof where.plan === 'string') {
+        if ((row.plan ?? null) !== where.plan) return false;
+      } else {
+        const tiers = (where.plan as { in?: string[] }).in;
+        if (tiers && !tiers.includes(row.plan ?? '')) return false;
+      }
+    }
+    if (where.subscriptions && typeof where.subscriptions === 'object' &&
+      (where.subscriptions as { none?: Record<string, unknown> }).none) {
+      // Prisma `none` — no subscription of this user's matches the nested where.
+      const subWhere = (where.subscriptions as { none: Record<string, unknown> }).none;
+      const has = [...subscriptionStore.values()].some(sub =>
+        sub.userId === row.id && whereMatches(subWhere, sub));
+      if (has) return false;
+    }
+    if (Array.isArray(where.OR) && !where.OR.some((clause: Record<string, unknown>) =>
+      (clause.name !== undefined || clause.email !== undefined) &&
+        (contains(row.name, (clause as { name?: { contains?: string } }).name?.contains) ||
+          contains(row.email, (clause as { email?: { contains?: string } }).email?.contains)) ||
+      (clause.plan !== undefined && userWhereMatches(clause, row))))
       return false;
     return true;
   };
   const planWhereMatches = (where: Record<string, unknown>, row: PlanRow) => {
     if (where.active !== undefined && row.active !== where.active) return false;
-    const search = (where.name as { contains?: string } | undefined)?.contains;
-    if (search !== undefined && !row.name.toLowerCase().includes(String(search).toLowerCase()))
+    const name = (where.name ?? {}) as { contains?: string; notIn?: string[] };
+    if (name.notIn && name.notIn.includes(row.name)) return false;
+    if (name.contains !== undefined && !row.name.toLowerCase().includes(String(name.contains).toLowerCase()))
       return false;
     return true;
   };
@@ -231,12 +251,14 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
     },
   };
   const audit = load('./audit.ts', { 'server-only': {} });
+  const legacyModule = load('./legacy-entitlements.ts', {}) as typeof legacy;
   const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
   const assignmentModule = load('./plan-assignment.ts',
-    { 'server-only': {}, './audit': audit, './plans': plansModule }) as typeof assignment;
-  return { assignment: assignmentModule, plans: plansModule, tx: tx as never, userStore, planStore,
-    optionStore, subscriptionStore, featureStore, translationStore, translationCalls, audits,
-    effective };
+    { 'server-only': {}, './audit': audit, './plans': plansModule,
+      './legacy-entitlements': legacyModule }) as typeof assignment;
+  return { assignment: assignmentModule, plans: plansModule, legacy: legacyModule, tx: tx as never,
+    userStore, planStore, optionStore, subscriptionStore, featureStore, translationStore,
+    translationCalls, audits, effective };
 }
 
 const validInput = { targetUserId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1',
@@ -436,7 +458,9 @@ test('listEffectiveSubscriptions returns only currently effective rows with join
       expiresAt: new Date(Date.now() + 86_400_000), createdAt: new Date(0), updatedAt: new Date(0) },
   ] });
   const { rows, total } = await f.assignment.listEffectiveSubscriptions(f.tx);
-  assert.deepEqual(rows.map(row => row.id).sort(), ['sub-1', 'sub-4']);
+  // The union's outer array is built in the module realm — normalize first.
+  const ids = jsonOf(rows).map(row => row.id);
+  assert.deepEqual(ids.sort(), ['sub-1', 'sub-4']);
   assert.equal(total, 2);
   assert.ok(rows.every(row => typeof row.planId === 'string'));
   // Joined display details ride along for the page's rows.
@@ -466,23 +490,24 @@ test('listEffectiveSubscriptions searches keeper name, email, plan name, and sta
   f.optionStore.set('opt-9', { ...MONTHLY, id: 'opt-9', planId: 'plan-2' });
   const byName = await f.assignment.listEffectiveSubscriptions(f.tx,
     { search: 'marta', page: 1, pageSize: 20 });
-  assert.deepEqual(byName.rows.map(row => row.id), ['sub-3', 'sub-2']);
+  const idsOf = (result: { rows: Array<{ id: string }> }) => jsonOf(result.rows).map(row => row.id);
+  assert.deepEqual(idsOf(byName), ['sub-3', 'sub-2']);
   const byEmail = await f.assignment.listEffectiveSubscriptions(f.tx,
     { search: 'user@example.com', page: 1, pageSize: 20 });
-  assert.deepEqual(byEmail.rows.map(row => row.id), ['sub-1']);
+  assert.deepEqual(idsOf(byEmail), ['sub-1']);
   const byPlan = await f.assignment.listEffectiveSubscriptions(f.tx,
     { search: 'founding', page: 1, pageSize: 20 });
-  assert.deepEqual(byPlan.rows.map(row => row.id), ['sub-3']);
+  assert.deepEqual(idsOf(byPlan), ['sub-3']);
   const byStatus = await f.assignment.listEffectiveSubscriptions(f.tx,
     { search: 'past', page: 1, pageSize: 20 });
-  assert.deepEqual(byStatus.rows.map(row => row.id), ['sub-2']);
+  assert.deepEqual(idsOf(byStatus), ['sub-2']);
   const nothing = await f.assignment.listEffectiveSubscriptions(f.tx,
     { search: 'zzz', page: 1, pageSize: 20 });
-  assert.deepEqual(nothing.rows, []);
+  assert.deepEqual(jsonOf(nothing.rows), []);
   assert.equal(nothing.total, 0);
   // Pagination over the effective rows with an exact total.
   const page2 = await f.assignment.listEffectiveSubscriptions(f.tx, { page: 2, pageSize: 2 });
-  assert.deepEqual(page2.rows.map(row => row.id), ['sub-2']);
+  assert.deepEqual(idsOf(page2), ['sub-2']);
   assert.equal(page2.total, 3);
 });
 
@@ -810,4 +835,186 @@ test('a keeper turning ineligible mid-batch aborts the rest — the service repo
   // Writes for u-2 already happened in the fake store — production semantics
   // roll them back: the caller (withAdminControl's prisma.$transaction) throws
   // on this returned error, so nothing commits. Pinned at the action level.
+});
+
+// --- Task 11: virtual subscriptions pivot ------------------------------------
+
+const legacyUser = (id: string, name: string, email: string, plan: string,
+  deletingAt: Date | null = null): UserRow =>
+  ({ id, name, email, role: 'user', plan, deletingAt });
+/** The resolver's two designation-holder plans (created by the retired backfill). */
+const seedLegacyPlans = (f: ReturnType<typeof fixture>) => {
+  f.planStore.set('plan-free-legacy',
+    { ...PLAN, id: 'plan-free-legacy', name: 'Free – Legacy', sortOrder: 1 });
+  f.planStore.set('plan-pro-legacy',
+    { ...PLAN, id: 'plan-pro-legacy', name: 'Pro – Legacy', sortOrder: 2 });
+};
+
+test('listAssignablePlans excludes the legacy plans by name (the wizard never offers them)', async () => {
+  const f = fixture('super_admin');
+  seedLegacyPlans(f);
+  const all = await f.assignment.listAssignablePlans(f.tx, { page: 1, pageSize: 20 });
+  assert.deepEqual(all.plans.map(plan => plan.id), ['plan-1'],
+    'the two legacy plans never join the assignable set');
+  assert.equal(all.total, 1);
+  // The exclusion holds under search — searching "Legacy" matches nothing.
+  const searched = await f.assignment.listAssignablePlans(f.tx,
+    { search: 'legacy', page: 1, pageSize: 20 });
+  assert.deepEqual(searched.plans.map(plan => plan.id), []);
+  assert.equal(searched.total, 0);
+  // LEGACY_PLAN_NAMES is the single-source mapping exported for the exclusion.
+  assert.deepEqual([...f.legacy.LEGACY_PLAN_NAMES], ['Free – Legacy', 'Pro – Legacy']);
+});
+
+test('listEffectiveSubscriptions renders tier-derived virtual rows for legacy-tier users without an effective subscription', async () => {
+  const f = fixture('super_admin', { users: [
+    legacyUser('u-free', 'Free Fiona', 'fiona@example.com', 'free'),
+    legacyUser('u-pro', 'Pro Percy', 'percy@example.com', 'pro'),
+    legacyUser('u-covered', 'Covered Carla', 'carla@example.com', 'free'),
+    legacyUser('u-null', 'Null Nate', 'nate@example.com', ''),
+    legacyUser('u-other', 'Other Ola', 'ola@example.com', 'premium'),
+  ], subscriptions: [
+    { id: 'sub-c', userId: 'u-covered', planId: 'plan-1', planBillingOptionId: 'opt-1',
+      status: 'ACTIVE', startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+  ] });
+  seedLegacyPlans(f);
+  const { rows, total } = await f.assignment.listEffectiveSubscriptions(f.tx);
+  // Real rows first (startedAt desc), then tier-derived rows (name order);
+  // a covered user shows their REAL row instead — active sub wins.
+  assert.deepEqual(jsonOf(rows).map(row => row.id), ['sub-c', 'tier:u-free', 'tier:u-pro']);
+  assert.equal(total, 3);
+  const virtual = jsonOf(rows.filter(row => row.source === 'tier'));
+  assert.deepEqual(virtual.map(row =>
+    [row.id, row.userId, row.tierKey, row.planName, row.planId]), [
+    ['tier:u-free', 'u-free', 'free', 'Free – Legacy', 'plan-free-legacy'],
+    ['tier:u-pro', 'u-pro', 'pro', 'Pro – Legacy', 'plan-pro-legacy'],
+  ], 'the mapped legacy plan names carry the display name and the designation-holder id');
+  assert.ok(virtual.every(row => row.status === 'LEGACY' && row.planBillingOptionId === '' &&
+    row.optionInterval === null && row.optionPriceCents === null &&
+    row.renewsAt === null && row.expiresAt === null),
+    'derived rows carry no stored-subscription fields');
+  // Real rows carry the subscription marker and never a tierKey.
+  const real = JSON.parse(JSON.stringify(rows.find(row => row.id === 'sub-c')));
+  assert.equal(real.source, 'subscription');
+  assert.equal(real.tierKey, null);
+  assert.deepEqual(real.planOptions, [{ id: 'opt-1', interval: 'MONTHLY',
+    basePriceCents: 900, active: true }], 'real rows carry their plan\'s active options (the edit form)');
+});
+
+test('listEffectiveSubscriptions search spans the union: keeper, legacy plan name, and the derived marker', async () => {
+  const f = fixture('super_admin', { users: [
+    legacyUser('u-free', 'Free Fiona', 'fiona@example.com', 'free'),
+    legacyUser('u-pro', 'Pro Percy', 'percy@example.com', 'pro'),
+  ], subscriptions: [
+    { id: 'sub-c', userId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1',
+      status: 'ACTIVE', startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+  ] });
+  seedLegacyPlans(f);
+  const byKeeper = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'percy', page: 1, pageSize: 20 });
+  assert.deepEqual(jsonOf(byKeeper.rows).map(row => row.id), ['tier:u-pro']);
+  assert.equal(byKeeper.total, 1);
+  const byPlan = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'legacy', page: 1, pageSize: 20 });
+  assert.deepEqual(jsonOf(byPlan.rows).map(row => row.id), ['tier:u-free', 'tier:u-pro'],
+    'the mapped legacy plan names (and the derived marker) match');
+  const real = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'target', page: 1, pageSize: 20 });
+  assert.deepEqual(jsonOf(real.rows).map(row => row.id), ['sub-c'],
+    'a covered user matches through their real row only');
+  const nothing = await f.assignment.listEffectiveSubscriptions(f.tx,
+    { search: 'zzz', page: 1, pageSize: 20 });
+  assert.deepEqual(jsonOf(nothing.rows), []);
+  assert.equal(nothing.total, 0);
+});
+
+test('listEffectiveSubscriptions paginates across the union with an exact total', async () => {
+  const f = fixture('super_admin', { users: [
+    legacyUser('u-free', 'Free Fiona', 'fiona@example.com', 'free'),
+    legacyUser('u-pro', 'Pro Percy', 'percy@example.com', 'pro'),
+  ], subscriptions: [
+    { id: 'sub-old', userId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1',
+      status: 'ACTIVE', startedAt: new Date(NOW - 2 * 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+    { id: 'sub-new', userId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1',
+      status: 'TRIALING', startedAt: new Date(NOW - 86_400_000), renewsAt: null, expiresAt: null,
+      createdAt: new Date(0), updatedAt: new Date(0) },
+  ] });
+  seedLegacyPlans(f);
+  // Hmm: one user holding two effective rows is impossible in production
+  // (assignments end-date priors) but the union counts rows, not users.
+  const pages = [];
+  for (let page = 1; page <= 5; page++)
+    pages.push(await f.assignment.listEffectiveSubscriptions(f.tx, { page, pageSize: 1 }));
+  assert.deepEqual(pages.map(result => jsonOf(result.rows).map(row => row.id)), [
+    ['sub-new'], ['sub-old'], ['tier:u-free'], ['tier:u-pro'], [],
+  ], 'real rows first (newest first), then tier-derived rows (name order)');
+  assert.ok(pages.every(result => result.total === 4), 'the total stays the union size');
+  // An empty page beyond the union returns no rows but keeps the total honest.
+});
+
+test('editSubscriptionAction supersedes the row via the audited assignment service with a derived reason', async () => {
+  const f = fixture('super_admin', { subscriptions: [activeSub('sub-1')] });
+  f.optionStore.set('opt-2', { ...MONTHLY, id: 'opt-2', interval: 'ANNUAL', basePriceCents: 9000 });
+  const api = load('../../app/admin/subscriptions/actions.ts', {
+    'next/cache': { revalidatePath: () => {} },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, _kind: unknown,
+      _action: string, work: () => Promise<unknown>) => work() },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
+      work(f.tx, { id: 'owner-1' }) },
+    '@/lib/admin/plan-assignment': f.assignment,
+  }) as { editSubscriptionAction: (form: FormData) => Promise<unknown> };
+  const form = new FormData();
+  form.set('subscriptionId', 'sub-1');
+  form.set('planBillingOptionId', 'opt-2');
+  form.set('effectiveAt', '2026-09-28T00:00:00.000Z');
+  assert.deepEqual(jsonOf(await api.editSubscriptionAction(form)), { success: true });
+  // Supersede semantics: the prior row end-dated as of the effective date, one
+  // new ACTIVE row on the chosen option.
+  assert.equal(f.subscriptionStore.get('sub-1')!.status, 'CANCELED');
+  assert.equal(f.subscriptionStore.get('sub-1')!.expiresAt!.getTime(),
+    new Date('2026-09-28T00:00:00.000Z').getTime(), 'the prior row is end-dated as of the effective date');
+  const created = [...f.subscriptionStore.values()].find(row => row.id !== 'sub-1')!;
+  assert.equal(created.status, 'ACTIVE');
+  assert.equal(created.planId, 'plan-1', 'the row\'s own plan is kept');
+  assert.equal(created.planBillingOptionId, 'opt-2');
+  assert.equal(created.startedAt.getTime(), new Date('2026-09-28T00:00:00.000Z').getTime());
+  assert.deepEqual(f.audits, [{ action: 'plan.assign', targetId: 'user-1',
+    reason: 'Edited subscription for user user-1 (Standard ANNUAL) effective 2026-09-28T00:00:00.000Z',
+    changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-28T00:00:00.000Z' } }]);
+});
+
+test('editSubscriptionAction fails closed on an ended row, a foreign option, and a missing row — no writes', async () => {
+  const f = fixture('super_admin', { subscriptions: [
+    { ...activeSub('sub-ended'), status: 'CANCELED', expiresAt: new Date(NOW) },
+    activeSub('sub-live'),
+  ] });
+  f.optionStore.set('opt-9', { ...MONTHLY, id: 'opt-9', planId: 'plan-9' });
+  const api = load('../../app/admin/subscriptions/actions.ts', {
+    'next/cache': { revalidatePath: () => {} },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, _kind: unknown,
+      _action: string, work: () => Promise<unknown>) => work() },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
+      work(f.tx, { id: 'owner-1' }) },
+    '@/lib/admin/plan-assignment': f.assignment,
+  }) as { editSubscriptionAction: (form: FormData) => Promise<unknown> };
+  const attempt = async (subscriptionId: string, planBillingOptionId: string) => {
+    const form = new FormData();
+    form.set('subscriptionId', subscriptionId);
+    form.set('planBillingOptionId', planBillingOptionId);
+    form.set('effectiveAt', '2026-09-28T00:00:00.000Z');
+    return jsonOf(await api.editSubscriptionAction(form)) as { error: string };
+  };
+  assert.match((await attempt('sub-ended', 'opt-1')).error, /already ended/);
+  assert.match((await attempt('sub-live', 'opt-9')).error, /does not belong/);
+  assert.match((await attempt('sub-missing', 'opt-1')).error, /no longer exists/);
+  assert.match((await attempt('', 'opt-1')).error, /subscription is required/);
+  assert.equal(f.subscriptionStore.get('sub-ended')!.status, 'CANCELED');
+  assert.equal(f.subscriptionStore.get('sub-live')!.status, 'ACTIVE');
+  assert.equal(f.subscriptionStore.size, 2, 'no supersede writes on any failure');
+  assert.equal(f.audits.length, 0);
 });

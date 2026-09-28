@@ -1,5 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { listPlans, type PlanSummary } from '@/lib/admin/plans';
+import { listEffectiveSubscriptions } from '@/lib/admin/plan-assignment';
+import { LEGACY_PLAN_NAMES } from '@/lib/admin/legacy-entitlements';
 import { isRegisteredFeatureKey } from '@/lib/features/registry';
 
 /** Live-search narrowing services (UX Task 8 fix round 1).
@@ -141,15 +143,17 @@ export async function narrowUsers(tx: Pick<SuggestDb, 'user'>, search: string,
 }
 
 /** Active plans by name (case-insensitive contains), display order first —
- * listAssignablePlans' where-shape. Task 10: the narrowed rows carry the same
- * read-only enabled feature NAMES as the committed picker rows (one grouped
- * translations query per pause), so the "Included features" line never
- * disappears while narrowing. */
+ * listAssignablePlans' where-shape INCLUDING the legacy-plan exclusion (Task
+ * 11). Task 10: the narrowed rows carry the same read-only enabled feature
+ * NAMES as the committed picker rows (one grouped translations query per
+ * pause), so the "Included features" line never disappears while narrowing. */
 export type NarrowAssignablePlanRow = Suggestion & { features: string[] };
 export async function narrowAssignablePlans(tx: Pick<SuggestDb,
   'plan' | 'featurePlanTranslation'>, search: string, page: number,
   pageSize: number): Promise<{ rows: NarrowAssignablePlanRow[]; total: number }> {
-  const where: Prisma.PlanWhereInput = { active: true, name: { contains: search, mode: 'insensitive' } };
+  const where: Prisma.PlanWhereInput = { active: true,
+    name: { notIn: [...LEGACY_PLAN_NAMES],
+      ...(search ? { contains: search, mode: 'insensitive' } : {}) } };
   const [total, rows] = await Promise.all([
     tx.plan.count({ where }),
     tx.plan.findMany({ where, select: { id: true, name: true, planType: true },
@@ -172,30 +176,20 @@ export async function narrowAssignablePlans(tx: Pick<SuggestDb,
     features: (featuresByPlan.get(row.id) ?? []).sort((a, b) => a.localeCompare(b)) })) };
 }
 
-/** Effective subscriptions by keeper name/email, plan name, or status — the
- * listEffectiveSubscriptions search shape, kept to display columns only. */
-export async function narrowSubscriptions(tx: Pick<SuggestDb, 'userSubscription'>,
-  search: string, page: number, pageSize: number): Promise<NarrowingResult> {
-  const where: Prisma.UserSubscriptionWhereInput = { OR: [
-    { user: { OR: [{ name: { contains: search, mode: 'insensitive' } },
-      { email: { contains: search, mode: 'insensitive' } }] } },
-    { plan: { name: { contains: search, mode: 'insensitive' } } },
-    { status: { contains: search, mode: 'insensitive' } },
-  ] };
-  const [total, rows] = await Promise.all([
-    tx.userSubscription.count({ where }),
-    tx.userSubscription.findMany({ where,
-      select: { id: true, status: true,
-        user: { select: { name: true, email: true } },
-        plan: { select: { name: true } },
-        billingOption: { select: { interval: true } } },
-      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize, take: pageSize }),
-  ]);
+/** Effective subscriptions by keeper name/email, plan name, or status —
+ * Task 11: the committed page's own UNION query (listEffectiveSubscriptions:
+ * real effective rows + tier-derived legacy rows), so the narrowed view is
+ * exactly what /admin/subscriptions renders, kept to display triples only. */
+export async function narrowSubscriptions(tx: Pick<SuggestDb,
+  'user' | 'plan' | 'userSubscription'>, search: string, page: number,
+  pageSize: number): Promise<NarrowingResult> {
+  const { rows, total } = await listEffectiveSubscriptions(tx, { search, page, pageSize });
   return { total, rows: rows.map(row => {
-    const keeper = row.user?.name ?? row.user?.email ?? row.status;
-    const option = [row.plan?.name, row.billingOption?.interval].filter(Boolean).join(' · ');
-    return { id: row.id, title: keeper, subtitle: option || row.status };
+    const keeper = row.userName ?? row.userEmail ?? row.userId;
+    const option = row.source === 'tier'
+      ? `${row.planName ?? row.planId} · Legacy — derived`
+      : [row.planName, row.optionInterval].filter(Boolean).join(' · ') || row.status;
+    return { id: row.id, title: keeper, subtitle: option };
   }) };
 }
 

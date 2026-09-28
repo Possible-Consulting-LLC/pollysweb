@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
+import * as legacyEntitlements from './legacy-entitlements';
 
 /** Live-search narrowing services (UX Task 8 fix round 1, ruling 1+3): typing
  * must narrow the RENDERED LIST to matches spanning ALL rows with a TRUTHFUL
@@ -60,6 +61,9 @@ let userCalls: Captured[] = [];
 let subCalls: Captured[] = [];
 let listPlansCalls: Captured[] = [];
 let translationCalls: Captured[] = [];
+let listSubsCalls: Captured[] = [];
+/** The listing service's union rows (Task 11) the narrowing stub serves. */
+let listSubsRows: Array<Record<string, unknown>> = [];
 let counts: Record<string, number> = {};
 
 /** A committed PlanSummary fixture (plans.ts's own row shape). */
@@ -69,8 +73,20 @@ let featureFixtures: Array<Record<string, unknown>> = [];
 
 const reset = () => {
   planCalls = []; featureCalls = []; userCalls = []; subCalls = [];
-  listPlansCalls = []; translationCalls = [];
-  counts = { plan: 42, feature: 34, user: 7, userSubscription: 12 };
+  listPlansCalls = []; translationCalls = []; listSubsCalls = [];
+  counts = { plan: 42, feature: 34, user: 7, userSubscription: 12, listSubs: 3 };
+  listSubsRows = [
+    { id: 'sub-1', userId: 'u-1', planId: 'p-1', planBillingOptionId: 'o-1', status: 'ACTIVE',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null,
+      userName: 'Ada Keeper', userEmail: 'ada@example.com', planName: 'Basic',
+      optionInterval: 'MONTHLY', optionPriceCents: 199, source: 'subscription',
+      tierKey: null, planOptions: [] },
+    { id: 'tier:u-2', userId: 'u-2', planId: 'p-legacy', planBillingOptionId: '', status: 'LEGACY',
+      startedAt: new Date(0), renewsAt: null, expiresAt: null,
+      userName: null, userEmail: 'ada2@example.com', planName: 'Free – Legacy',
+      optionInterval: null, optionPriceCents: null, source: 'tier', tierKey: 'free',
+      planOptions: [] },
+  ];
   planSummaryFixture = {
     id: 'plan-1', name: 'Basic', description: 'Essential care for one spood',
     planType: 'STANDARD', maxSpiders: 1, active: true, public: true, sortOrder: 3,
@@ -143,6 +159,16 @@ stubs['@/lib/features/registry'] = {
   // The registry is code-owned; the stub mirrors a registry where every key is
   // registered except legacy ones.
   isRegisteredFeatureKey: (key: string) => !key.startsWith('legacy.'),
+};
+stubs['@/lib/admin/legacy-entitlements'] = legacyEntitlements;
+stubs['@/lib/admin/plan-assignment'] = {
+  // narrowSubscriptions DELEGATES to the committed page's own union query
+  // (Task 11): the narrowed rows are exactly /admin/subscriptions' rows.
+  listEffectiveSubscriptions: async (tx: unknown, query: Record<string, unknown>) => {
+    assert.equal(tx, prisma, 'the narrowing query runs through the passed tx');
+    listSubsCalls.push(query);
+    return { rows: listSubsRows.map(row => ({ ...row })), total: counts.listSubs };
+  },
 };
 
 const suggest = loadSuggest();
@@ -239,7 +265,9 @@ test('narrowRows(assignable-plans) narrows over active plans only, carrying the 
   const result = await suggest.narrowRows(prisma, 'assignable-plans', 'bas', 1, 10);
   const query = planCalls[0] as { where: unknown; select: Record<string, unknown> };
   assert.deepEqual(plain(query.where), { active: true,
-    name: { contains: 'bas', mode: 'insensitive' } });
+    name: { notIn: ['Free – Legacy', 'Pro – Legacy'],
+      contains: 'bas', mode: 'insensitive' } },
+    'the narrowed picker excludes the legacy plans exactly like the committed one');
   // Lean plan select (id/title/subtitle columns) + ONE grouped translations
   // query for the page's rows: the narrowed plan row renders the same
   // read-only "Included features" line as the committed picker row (Task 10).
@@ -254,16 +282,21 @@ test('narrowRows(assignable-plans) narrows over active plans only, carrying the 
     total: 42 });
 });
 
-test('narrowRows(subscriptions) narrows effective rows over keeper, plan, and status', async () => {
+test('narrowRows(subscriptions) delegates to the listing service\'s union (real + tier-derived) and keeps display triples', async () => {
   reset();
   const result = await suggest.narrowRows(prisma, 'subscriptions', 'ada', 1, 20);
-  assert.equal(subCalls.length, 1);
-  const query = subCalls[0] as { where: unknown; select: Record<string, unknown> };
-  assert.ok(query.where, 'the query narrows over the subscription join');
-  assert.deepEqual(Object.keys(query.select).sort(),
-    ['billingOption', 'id', 'plan', 'status', 'user']);
+  assert.deepEqual(plain(listSubsCalls), [{ search: 'ada', page: 1, pageSize: 20 }],
+    'the narrowing IS the committed page\'s union query');
+  assert.equal(subCalls.length + userCalls.length + planCalls.length, 0,
+    'no duplicate raw queries beside the delegated union query');
   assert.deepEqual(plain(result), {
-    rows: [{ id: 'sub-1', title: 'Ada Keeper', subtitle: 'Basic · MONTHLY' }], total: 12 });
+    rows: [
+      { id: 'sub-1', title: 'Ada Keeper', subtitle: 'Basic · MONTHLY' },
+      { id: 'tier:u-2', title: 'ada2@example.com', subtitle: 'Free – Legacy · Legacy — derived' },
+    ], total: 3 });
+  // Page and pageSize are clamped before the delegation, like every entity.
+  await suggest.narrowRows(prisma, 'subscriptions', 'ada', -3, 10_000);
+  assert.deepEqual(plain(listSubsCalls[1]), { search: 'ada', page: 1, pageSize: 50 });
 });
 
 test('a blank query narrows to nothing and queries nothing (committed view stays)', async () => {
@@ -272,7 +305,7 @@ test('a blank query narrows to nothing and queries nothing (committed view stays
     assert.deepEqual(plain(await suggest.narrowRows(prisma, entity, '   ', 1, 10)),
       { rows: [], total: 0 });
   assert.equal(planCalls.length + featureCalls.length + userCalls.length + subCalls.length +
-    listPlansCalls.length + translationCalls.length, 0);
+    listPlansCalls.length + translationCalls.length + listSubsCalls.length, 0);
 });
 
 test('page and pageSize are clamped to sane bounds', async () => {

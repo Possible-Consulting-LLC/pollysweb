@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EFFECTIVE_SUBSCRIPTION_STATUSES,
+  LEGACY_PLAN_NAMES,
   LEGACY_PLAN_SPECS,
   isEffectiveSubscription,
   legacyPlanNameForTier,
@@ -52,6 +53,12 @@ test('the mapping sends free → "Free – Legacy" and pro → "Pro – Legacy" 
   assert.equal(legacyPlanNameForTier('pro'), 'Pro – Legacy');
   assert.equal(LEGACY_PLAN_SPECS.free.name, 'Free – Legacy');
   assert.equal(LEGACY_PLAN_SPECS.pro.name, 'Pro – Legacy');
+});
+
+test('LEGACY_PLAN_NAMES pins the two designation-holder names (the wizard exclusion\'s single source)', () => {
+  assert.deepEqual([...LEGACY_PLAN_NAMES], ['Free – Legacy', 'Pro – Legacy']);
+  // Derived from the mapping itself — the two can never drift apart.
+  assert.deepEqual([...LEGACY_PLAN_NAMES], Object.values(LEGACY_PLAN_SPECS).map(spec => spec.name));
 });
 
 test('resolver picks an ACTIVE subscription\'s plan features over the tier fallback', () => {

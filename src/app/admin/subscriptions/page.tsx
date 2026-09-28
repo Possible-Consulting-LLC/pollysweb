@@ -142,7 +142,7 @@ export default async function SubscriptionsPage({ searchParams }:
           className={buttonVariants({ variant: 'primary', size: 'md' })}>＋ Add subscription</Link>
       </div>
       <p>Assign a plan to one or more keepers in a single audited batch: assigning ends each keeper&apos;s prior effective subscription (marked canceled as of the effective date). Only active plans and their active billing options can be assigned. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
-      <p>{`${subs.total} effective subscription${subs.total === 1 ? '' : 's'} — effective only; canceled and expired rows are hidden.`}</p>
+      <p>{`${subs.total} effective — stored subscriptions plus tier-derived legacy rows (marked “Legacy — derived”); canceled and expired rows are hidden.`}</p>
     </header>
     {wizardProps ? <AssignPlanWizard {...wizardProps} /> : null}
     {/* The list search narrows the rendered list live (ruling 1); the URL-param
@@ -157,6 +157,7 @@ export default async function SubscriptionsPage({ searchParams }:
         expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
         userName: row.userName, userEmail: row.userEmail, planName: row.planName,
         optionInterval: row.optionInterval, optionPriceCents: row.optionPriceCents,
+        source: row.source, tierKey: row.tierKey, planOptions: row.planOptions,
       }))}
       total={subs.total} search={parsed.search} page={listPage}
       pageSize={parsed.pageSize} lastPage={lastPage} wizardParams={wizardParams} />

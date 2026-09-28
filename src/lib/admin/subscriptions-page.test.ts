@@ -58,7 +58,9 @@ function loadSubscriptionsPage() {
 type Row = { id: string; userId: string; planId: string; planBillingOptionId: string;
   status: string; startedAt: Date; renewsAt: Date | null; expiresAt: Date | null;
   userName: string | null; userEmail: string | null; planName: string | null;
-  optionInterval: string | null; optionPriceCents: number | null };
+  optionInterval: string | null; optionPriceCents: number | null;
+  source: 'subscription' | 'tier'; tierKey: string | null;
+  planOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }> };
 
 let capturedSubQueries: Array<{ search: string; page: number; pageSize: number }> = [];
 let capturedUserQueries: Array<{ search: string; page: number; pageSize: number }> = [];
@@ -145,7 +147,11 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   id: 'sub-1', userId: 'u-1', planId: 'p-1', planBillingOptionId: 'o-1', status: 'ACTIVE',
   startedAt: new Date('2026-08-01T00:00:00Z'), renewsAt: new Date('2026-09-01T00:00:00Z'),
   expiresAt: null, userName: 'Marta Keeper', userEmail: 'marta@example.com',
-  planName: 'Pro', optionInterval: 'MONTHLY', optionPriceCents: 499, ...overrides });
+  planName: 'Pro', optionInterval: 'MONTHLY', optionPriceCents: 499,
+  source: 'subscription', tierKey: null,
+  planOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
+    { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true }],
+  ...overrides });
 
 function elementsOf(tree: unknown) {
   const all = elements(tree);
@@ -167,18 +173,26 @@ test('renders the current subscriptions section with the keeper rows fed to the 
   ];
   servedSubTotal = 2;
   const tree = await render();
-  assert.match(textOf(tree), /2 effective subscriptions/);
+  assert.match(textOf(tree), /2 effective/);
+  assert.match(textOf(tree), /tier-derived legacy rows/,
+    'the header copy describes the union honestly');
   // The client island receives the serializable row data for the committed view.
   const list = jsonOf(capturedListProps)[0] as Record<string, unknown>;
   assert.deepEqual(list.rows, [
     { id: 'sub-1', userId: 'u-1', planId: 'p-1', planBillingOptionId: 'o-1', status: 'ACTIVE',
       startedAt: '2026-08-01T00:00:00.000Z', renewsAt: '2026-09-01T00:00:00.000Z', expiresAt: null,
       userName: 'Marta Keeper', userEmail: 'marta@example.com', planName: 'Pro',
-      optionInterval: 'MONTHLY', optionPriceCents: 499 },
+      optionInterval: 'MONTHLY', optionPriceCents: 499,
+      source: 'subscription', tierKey: null,
+      planOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
+        { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true }] },
     { id: 'sub-2', userId: 'u-2', planId: 'p-1', planBillingOptionId: 'o-1', status: 'PAST_DUE',
       startedAt: '2026-07-30T00:00:00.000Z', renewsAt: null, expiresAt: '2026-09-28T00:00:00.000Z',
       userName: 'Dan O.', userEmail: 'dan@example.com', planName: 'Basic',
-      optionInterval: 'ANNUAL', optionPriceCents: 1999 },
+      optionInterval: 'ANNUAL', optionPriceCents: 1999,
+      source: 'subscription', tierKey: null,
+      planOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
+        { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true }] },
   ]);
   assert.equal(list.total, 2);
   assert.equal(list.page, 1);
@@ -190,6 +204,23 @@ test('renders the current subscriptions section with the keeper rows fed to the 
   const add = elementsOf(tree).links.find(link => textOf(link).includes('Add subscription'));
   assert.equal(add?.props.href, '/admin/subscriptions?wizard=open&step=1');
   assert.deepEqual(capturedSubQueries, [{ search: '', page: 1, pageSize: 20 }]);
+});
+
+test('tier-derived rows pass through to the client island with their source markers', async () => {
+  capturedListProps = [];
+  servedRows = [{ ...row(), id: 'tier:u-9', userId: 'u-9', status: 'LEGACY',
+    source: 'tier', tierKey: 'free', planName: 'Free – Legacy',
+    planBillingOptionId: '', optionInterval: null, optionPriceCents: null,
+    planOptions: [], startedAt: new Date(0), renewsAt: null, expiresAt: null }];
+  servedSubTotal = 1;
+  const tree = await render();
+  elementsOf(tree);
+  const list = jsonOf(capturedListProps)[0] as { rows: Array<Record<string, unknown>> };
+  assert.deepEqual(list.rows[0], { id: 'tier:u-9', userId: 'u-9', planId: 'p-1',
+    planBillingOptionId: '', status: 'LEGACY', startedAt: '1970-01-01T00:00:00.000Z',
+    renewsAt: null, expiresAt: null, userName: 'Marta Keeper', userEmail: 'marta@example.com',
+    planName: 'Free – Legacy', optionInterval: null, optionPriceCents: null,
+    source: 'tier', tierKey: 'free', planOptions: [] });
 });
 
 test('the list is paginated at 20 with URL-driven pages and honest page counts', async () => {

@@ -1,6 +1,8 @@
 import 'server-only';
 import type { Prisma } from '@prisma/client';
 import { appendAudit } from './audit';
+import { LEGACY_PLAN_NAMES, LEGACY_PLAN_SPECS, mapLegacyTier } from './legacy-entitlements';
+import type { LegacyTier } from './legacy-entitlements';
 
 export type AssignmentInput = { targetUserId: string; planId: string; planBillingOptionId: string;
   effectiveAt: Date; reason: string };
@@ -160,37 +162,129 @@ export async function assignPlanToUsers(tx: AssignmentDb, actorId: string,
 
 /** Currently effective subscriptions across all users (admin overview), with
  * joined keeper/plan/option display details, optional case-insensitive search
- * over keeper name/email, plan name, and status, and offset pagination. */
+ * over keeper name/email, plan name, and status, and offset pagination.
+ *
+ * Task 11 (VIRTUAL-ONLY MODEL): the listing is the UNION of
+ * (a) real effective subscriptions and (b) resolver-derived tier rows for
+ * every user with a legacy tier signal (`User.plan` ∈ free/pro) and no
+ * effective subscription — an active real subscription wins over the tier
+ * fallback. Virtual rows (source 'tier') are display-only: they carry the
+ * mapped legacy plan's name/id and never stored-subscription fields. The
+ * union order is deterministic: real rows first (startedAt desc, id desc),
+ * then tier-derived rows (keeper name asc, id asc); search and pagination
+ * span the whole union. */
 export type EffectiveSubscriptionRow = SubscriptionSummary & {
   userName: string | null; userEmail: string | null; planName: string | null;
-  optionInterval: string | null; optionPriceCents: number | null; };
+  optionInterval: string | null; optionPriceCents: number | null;
+  /** 'subscription' = a stored row; 'tier' = a resolver-derived virtual row. */
+  source: 'subscription' | 'tier';
+  /** The mapped legacy tier — set only when source === 'tier'. */
+  tierKey: LegacyTier | null;
+  /** The row's plan's ACTIVE billing options (the in-place edit form's
+   * choices); empty for tier-derived rows. */
+  planOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }>;
+};
 export type EffectiveSubscriptionsQuery = { search?: string; page: number; pageSize: number };
-export async function listEffectiveSubscriptions(tx: AssignmentDb,
+/** Virtual rows' status marker (never a real subscription status; searchable —
+ * a search hitting "legacy" matches every derived row). */
+export const TIER_ROW_STATUS = 'LEGACY';
+const LEGACY_TIERS = Object.keys(LEGACY_PLAN_SPECS) as readonly LegacyTier[];
+type ListingDb = Pick<Prisma.TransactionClient, 'user' | 'plan' | 'userSubscription'>;
+/** The joined row shape the real-subscription page query returns. */
+type RealSubscriptionRow = Prisma.UserSubscriptionGetPayload<{
+  include: { user: { select: { name: true; email: true } };
+    plan: { select: { name: true; billingOptions: { select: { id: true; interval: true;
+      basePriceCents: true; active: true } } } };
+    billingOption: { select: { interval: true; basePriceCents: true } } };
+}>;
+/** The user slice the tier-derived page query returns. */
+type TierUserRow = { id: string; name: string | null; email: string; plan: string };
+/** Users that render a tier-derived row: a legacy tier signal and no
+ * effective subscription (the active-sub-wins resolver rule). Search narrows
+ * the union: keeper name/email, the mapped legacy plan name (per tier), or
+ * the derived marker (status-shaped search). */
+const tierDerivedUserWhere = (search: string): Prisma.UserWhereInput => {
+  const base: Prisma.UserWhereInput = { plan: { in: [...LEGACY_TIERS] },
+    subscriptions: { none: effectiveWhere() } };
+  if (!search) return base;
+  const lower = search.toLowerCase();
+  const planNameHits = LEGACY_TIERS.filter(tier =>
+    LEGACY_PLAN_SPECS[tier].name.toLowerCase().includes(lower))
+    .map(tier => ({ plan: tier }));
+  const statusHit = TIER_ROW_STATUS.toLowerCase().includes(lower);
+  return { ...base, OR: [
+    { name: { contains: search, mode: 'insensitive' } },
+    { email: { contains: search, mode: 'insensitive' } },
+    ...planNameHits,
+    ...(statusHit ? [{ plan: { in: [...LEGACY_TIERS] } }] : []),
+  ] };
+};
+export async function listEffectiveSubscriptions(tx: ListingDb,
   query?: EffectiveSubscriptionsQuery): Promise<{ rows: EffectiveSubscriptionRow[]; total: number }> {
   const page = Math.max(1, Math.trunc(query?.page ?? 1) || 1);
   const pageSize = Math.max(1, Math.trunc(query?.pageSize ?? 20) || 1);
   const search = (query?.search ?? '').trim();
+  const skip = (page - 1) * pageSize;
   // Search terms nest under AND so they never loosen the effective-only filter.
-  const where: Prisma.UserSubscriptionWhereInput = search ? { AND: [effectiveWhere(), { OR: [
+  const realWhere: Prisma.UserSubscriptionWhereInput = search ? { AND: [effectiveWhere(), { OR: [
     { user: { OR: [{ name: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } }] } },
     { plan: { name: { contains: search, mode: 'insensitive' } } },
     { status: { contains: search, mode: 'insensitive' } },
   ] }] } : effectiveWhere();
-  const [rows, total] = await Promise.all([
-    tx.userSubscription.findMany({ where,
-      include: { user: { select: { name: true, email: true } }, plan: { select: { name: true } },
+  const [realTotal, virtualTotal] = await Promise.all([
+    tx.userSubscription.count({ where: realWhere }),
+    tx.user.count({ where: tierDerivedUserWhere(search) }),
+  ]);
+  const total = realTotal + virtualTotal;
+  // Offset pagination over the deterministic union order: the page's slice is
+  // split between the two sources — real rows fill the page first, the
+  // remainder comes from the tier-derived rows.
+  const realSkip = Math.min(skip, realTotal);
+  const realTake = Math.max(0, Math.min(pageSize, realTotal - realSkip));
+  const virtualSkip = Math.max(0, skip - realTotal);
+  const virtualTake = Math.max(0, Math.min(pageSize - realTake, virtualTotal - virtualSkip));
+  const [realRows, virtualUsers] = await Promise.all([
+    realTake > 0 ? tx.userSubscription.findMany({ where: realWhere,
+      include: { user: { select: { name: true, email: true } },
+        plan: { select: { name: true, billingOptions: { select: { id: true,
+          interval: true, basePriceCents: true, active: true } } } },
         billingOption: { select: { interval: true, basePriceCents: true } } },
       orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize, take: pageSize }),
-    tx.userSubscription.count({ where }),
+      skip: realSkip, take: realTake }) : Promise.resolve<RealSubscriptionRow[]>([]),
+    virtualTake > 0 ? tx.user.findMany({ where: tierDerivedUserWhere(search),
+      select: { id: true, name: true, email: true, plan: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      skip: virtualSkip, take: virtualTake }) : Promise.resolve<TierUserRow[]>([]),
   ]);
-  return { total, rows: rows.map(row => ({ id: row.id, userId: row.userId, planId: row.planId,
-    planBillingOptionId: row.planBillingOptionId, status: row.status, startedAt: row.startedAt,
-    renewsAt: row.renewsAt, expiresAt: row.expiresAt, userName: row.user?.name ?? null,
-    userEmail: row.user?.email ?? null, planName: row.plan?.name ?? null,
+  const legacyIdByName = new Map<string, string>();
+  if (virtualUsers.length > 0) {
+    const legacyPlans = await tx.plan.findMany({
+      where: { name: { in: [...LEGACY_PLAN_NAMES] } }, select: { id: true, name: true } });
+    for (const plan of legacyPlans) legacyIdByName.set(plan.name, plan.id);
+  }
+  const realMapped = realRows.map(row => ({ id: row.id, userId: row.userId,
+    planId: row.planId, planBillingOptionId: row.planBillingOptionId, status: row.status,
+    startedAt: row.startedAt, renewsAt: row.renewsAt, expiresAt: row.expiresAt,
+    userName: row.user?.name ?? null, userEmail: row.user?.email ?? null,
+    planName: row.plan?.name ?? null,
     optionInterval: row.billingOption?.interval ?? null,
-    optionPriceCents: row.billingOption?.basePriceCents ?? null })) };
+    optionPriceCents: row.billingOption?.basePriceCents ?? null,
+    source: 'subscription' as const, tierKey: null,
+    planOptions: (row.plan?.billingOptions ?? []).filter(option => option.active)
+      .map(option => ({ id: option.id, interval: option.interval,
+        basePriceCents: option.basePriceCents, active: option.active })) }));
+  const virtualMapped = virtualUsers.map(user => {
+    const tierKey = mapLegacyTier(user.plan);
+    const spec = LEGACY_PLAN_SPECS[tierKey];
+    return { id: `tier:${user.id}`, userId: user.id,
+      planId: legacyIdByName.get(spec.name) ?? '', planBillingOptionId: '',
+      status: TIER_ROW_STATUS, startedAt: new Date(0), renewsAt: null, expiresAt: null,
+      userName: user.name ?? null, userEmail: user.email, planName: spec.name,
+      optionInterval: null, optionPriceCents: null,
+      source: 'tier' as const, tierKey, planOptions: [] };
+  });
+  return { total, rows: [...realMapped, ...virtualMapped] };
 }
 
 /** Keepers for the assignment wizard's user step: name OR email contains
@@ -222,7 +316,9 @@ export async function searchUsers(tx: Pick<AssignmentDb, 'user'>,
 /** Active plans for the assignment wizard's plan step. Search, ordering, and
  * pagination mirror listPlans' conventions but run over active rows only, so
  * the total and page math describe exactly the assignable set (filtering a
- * mixed page would strand active plans behind inactive ones). */
+ * mixed page would strand active plans behind inactive ones). Task 11: the two
+ * LEGACY_PLAN_NAMES are EXCLUDED by name — they are the resolver's designation
+ * holders, never assignable (they stay visible on the plans page). */
 export type AssignablePlanRow = { id: string; name: string; planType: string;
   billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }>;
   /** Enabled feature NAMES for the picker's read-only "Included features" line
@@ -236,7 +332,8 @@ export async function listAssignablePlans(tx: Pick<Prisma.TransactionClient,
   const pageSize = Math.max(1, Math.trunc(query.pageSize) || 1);
   const search = (query.search ?? '').trim();
   const where: Prisma.PlanWhereInput = { active: true,
-    ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}) };
+    name: { notIn: [...LEGACY_PLAN_NAMES],
+      ...(search ? { contains: search, mode: 'insensitive' } : {}) } };
   const [rows, total] = await Promise.all([
     tx.plan.findMany({ where, include: { billingOptions: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
