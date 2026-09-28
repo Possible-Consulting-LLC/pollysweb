@@ -21,6 +21,7 @@ const statusBadge: Record<string, { label: string; on: boolean }> = {
 const price = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const day = (date: string | Date) =>
   (typeof date === 'string' ? date : date.toISOString()).slice(0, 10);
+const tierLabel = (tier: string) => tier.charAt(0).toUpperCase() + tier.slice(1);
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean)
   .map(word => word.charAt(0)).join('').slice(0, 2).toUpperCase();
 
@@ -30,11 +31,13 @@ export type SubscriptionListRow = {
   userName: string | null; userEmail: string | null; planName: string | null;
   optionInterval: string | null; optionPriceCents: number | null;
   /** 'subscription' = a stored row; 'tier' = a resolver-derived virtual row
-   * (display-only — no End/Reassign/Edit, no dates, gold-dashed badge). */
+   * (expandable with a view-only detail card — no End/Reassign/Edit, no
+   * dates, gold-dashed badge; one action: Convert to real subscription). */
   source: 'subscription' | 'tier';
   tierKey: string | null;
   /** The row's plan's ACTIVE billing options — the in-place edit form's
-   * choices; empty when there is nothing to switch to. */
+   * choices; empty for tier-derived rows (Task 13: a virtual row converts via
+   * the wizard instead — its plan is picked in the wizard, not here). */
   planOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }>;
 };
 
@@ -133,14 +136,47 @@ function SubscriptionDetail({ row, reassignHref, editing, onStartEdit, onCancelE
   </div>;
 }
 
-/** One committed row (Task 11 ruling 1): collapsed it reads like the mockup's
- * list line; expanding it reveals the detail card with the row's actions. A
- * tier-derived row is display-only — the gold-dashed marker instead of a
- * status, no dates, no expansion, no actions (it is derived, not stored). */
+/** A tier-derived row's expanded detail card (Task 13): VIEW-ONLY — keeper,
+ * tier, mapped legacy plan name; no dates, no stored-row actions. The single
+ * action is Convert to real subscription: the audited assign wizard seeded
+ * with the keeper preselected via the Reassign deep-link pattern (the `user`
+ * param rides the URL; the wizard's batch seeds from it on mount). */
+function VirtualSubscriptionDetail({ row, convertHref }: {
+  row: SubscriptionListRow;
+  convertHref: string;
+}) {
+  return <div className="space-y-2.5 px-3.5 pb-3.5 pt-1">
+    <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3.5">
+      <h3 className="mb-2 text-[13px] font-semibold text-[var(--plum)]">Legacy tier</h3>
+      <dl data-kv-grid className="grid grid-cols-[minmax(110px,130px)_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+        <dt className="font-semibold opacity-60">Keeper</dt>
+        <dd className="min-w-0">{row.userName ?? row.userId}{row.userEmail
+          ? <span className="block text-[12.5px] opacity-70">{row.userEmail}</span> : null}</dd>
+        <dt className="font-semibold opacity-60">Tier</dt>
+        <dd>{row.tierKey ? tierLabel(row.tierKey) : '—'}</dd>
+        <dt className="font-semibold opacity-60">Legacy plan</dt>
+        <dd>{row.planName ?? row.planId}</dd>
+      </dl>
+    </div>
+    <div className="flex flex-wrap gap-2 pt-1">
+      <Link href={convertHref}
+        className={buttonVariants({ variant: 'primary', size: 'sm' })}>Convert to real subscription</Link>
+    </div>
+  </div>;
+}
+
+/** One committed row (Task 11 ruling 1; Task 13 amendment): collapsed it
+ * reads like the mockup's list line; expanding it reveals the detail card.
+ * A stored row's card carries Edit (in-place), Reassign (wizard preselect),
+ * and End; a tier-derived row's card is view-only with the gold-dashed
+ * marker retained and exactly ONE action — Convert to real subscription
+ * (it is derived, not stored — it has no dates and nothing to edit/end). */
 function SubscriptionRow({ row, reassignHref, expanded, onToggleExpand, editing,
   onStartEdit, onCancelEdit }: {
     row: SubscriptionListRow;
-    /** The Reassign wizard URL with the list's search/page riding along. */
+    /** The wizard URL seeding the keeper preselect (`?user=<id>`, with the
+     * list's search/page riding along) — Reassign for a stored row, Convert
+     * for a tier-derived one. */
     reassignHref: string;
     expanded: boolean;
     onToggleExpand(): void;
@@ -179,8 +215,19 @@ function SubscriptionRow({ row, reassignHref, expanded, onToggleExpand, editing,
   </>;
   if (derived)
     return <div data-subscription-row={row.id} data-legacy-derived="true"
-      className="flex flex-wrap items-center gap-3 rounded-2xl border border-transparent px-3.5 py-3">
-      {body}
+      className={cn('rounded-2xl border', expanded
+        ? 'border-[var(--plum)]/20 bg-[var(--card)]'
+        : 'border-transparent')}>
+      <button type="button" onClick={onToggleExpand} aria-expanded={expanded}
+        className="flex w-full flex-wrap items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-colors hover:bg-[var(--hover)]">
+        <ChevronDown aria-hidden="true"
+          className={cn('h-4 w-4 shrink-0 text-[var(--plum)] transition-transform',
+            expanded && 'rotate-180')} />
+        {body}
+      </button>
+      {expanded
+        ? <VirtualSubscriptionDetail row={row} convertHref={reassignHref} />
+        : null}
     </div>;
   return <div data-subscription-row={row.id}
     className={cn('rounded-2xl border', expanded

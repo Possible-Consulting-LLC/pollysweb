@@ -6,9 +6,10 @@ import type { Page } from '@playwright/test';
  * multi-select wizard (batch tray → plan pick → options → "To N keeper(s)")
  * with the legacy plans excluded, the post-assign reset to step 1, End →
  * CANCELED with expiry and the keeper's fallback to a tier-derived row,
- * Reassign preselection, and the Task 11 virtual model (tier-derived rows are
- * display-only with the gold-dashed "Legacy — derived" marker; Edit
- * supersedes in place). */
+ * Reassign preselection, and the Task 11/13 virtual model (tier-derived rows
+ * are expandable with a view-only detail card and a single Convert action
+ * that seeds the wizard via the Reassign deep-link pattern; Edit supersedes
+ * in place). */
 
 const wizard = (page: Page) => page.getByTestId('assign-wizard');
 const rows = (page: Page) => page.locator('[data-subscription-row]');
@@ -236,17 +237,51 @@ test.describe('subscriptions behavior pins', () => {
 });
 // --- Task 11: virtual subscriptions pivot ------------------------------------
 
-test.describe('virtual subscriptions (Task 11)', () => {
-  test('a legacy-tier keeper without a stored subscription renders a display-only tier-derived row', async ({ page }) => {
+test.describe('virtual subscriptions (Task 11 + Task 13)', () => {
+  test('a legacy-tier keeper renders an expandable tier-derived row: view-only detail, Convert seeds the wizard, assign makes it real', async ({ page, creds }) => {
     const keeper = await seedKeeper({ name: `${PREFIX}Legacy Keeper` });
+    const plan = await seedPlan({ name: `${PREFIX}Convert Plan`, active: true,
+      billingOptions: [{ interval: 'MONTHLY', basePriceCents: 1200, active: true }] });
     await page.goto('/admin/subscriptions');
     const keeperRows = rows(page).filter({ hasText: keeper.name ?? '' });
     await expect(keeperRows).toHaveCount(1);
     await expect(keeperRows).toContainText('Free – Legacy');
     await expect(keeperRows).toContainText('Legacy — derived');
-    // Derived rows are display-only: no expansion, no End/Reassign/Edit.
-    await expect(keeperRows.getByRole('button')).toHaveCount(0);
+    // Collapsed: the expand toggle is the ONLY button — still no stored-row
+    // actions on a derived row.
+    await expect(keeperRows.getByRole('button')).toHaveCount(1);
     await expect(keeperRows.getByRole('link', { name: 'Reassign' })).toHaveCount(0);
+    // Expand → the view-only detail card: keeper, tier, mapped legacy plan;
+    // no dates, no Edit/End/Reassign.
+    await keeperRows.getByRole('button', { name: keeper.name ?? '' }).click();
+    await expect(keeperRows).toContainText('Legacy tier');
+    await expect(keeperRows).toContainText('Free');
+    await expect(keeperRows).not.toContainText(/since 1970/);
+    await expect(keeperRows.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+    await expect(keeperRows.getByRole('button', { name: 'End', exact: true })).toHaveCount(0);
+    // Convert click → the audited assign wizard opens with the keeper
+    // preselected (the Reassign deep-link seeding: ?wizard=open&step=2&user=).
+    await keeperRows.getByRole('link', { name: 'Convert to real subscription' }).click();
+    await expect(page).toHaveURL(new RegExp(`wizard=open&step=2&user=${keeper.id}`));
+    await expect(page.getByTestId('wizard-context')).toContainText(keeper.name ?? '');
+    // Completing the conversion rides the EXISTING audited assign flow (no
+    // new server action): pick the plan, pick the option, assign.
+    await reauth(page, creds);
+    await page.goto(`/admin/subscriptions?wizard=open&step=2&user=${keeper.id}`);
+    await expect(page.getByTestId('wizard-context')).toContainText(keeper.name ?? '');
+    await wizard(page).getByRole('button', { name: `Select ${plan.name}` }).click();
+    await expect(page).toHaveURL(/step=3/);
+    await wizard(page).getByRole('button', { name: /Select Monthly — \$12\.00/ }).click();
+    await wizard(page).getByRole('button', { name: 'Assign plan' }).click();
+    await expect(page).toHaveURL(/wizard=open&step=1/);
+    // The active real subscription wins over the tier fallback: the keeper's
+    // single row is now a REAL row — the virtual one is gone.
+    await expect(keeperRows).toHaveCount(1);
+    await expect(keeperRows).not.toContainText('Legacy — derived');
+    await expect(keeperRows).toContainText(`${plan.name} · Monthly — $12.00`);
+    await expect.poll(async () => prisma.adminAudit.count({ where: {
+      actorId: creds.userId, action: 'plan.assign', targetId: keeper.id,
+    } })).toBe(1);
   });
 
   test('Edit supersedes the subscription in place: option + effective date, audited', async ({ page, creds }) => {
@@ -267,8 +302,18 @@ test.describe('virtual subscriptions (Task 11)', () => {
     await keeperRows.getByLabel('Billing option').selectOption({ label: 'Annual — $100.00' });
     await keeperRows.getByLabel('Effective date').fill('2026-10-15');
     await keeperRows.getByRole('button', { name: 'Save changes' }).click();
-    // Supersede semantics: the old row is end-dated, a new ACTIVE row starts.
+    // The save is asynchronous (server action + revalidated list re-render) and
+    // takes seconds to commit — reading the DB right after the click races the
+    // transaction (the prior shape failed its row-count check pre-commit, and
+    // the teardown's plan deletion then raced the in-flight response render:
+    // Prisma "Inconsistent query result" → React #441 — probe-verified 2026-09-
+    // 28: the flow itself is sound with this actor). Wait for the SUPERSEDED
+    // row's new dates line first — the only post-save signal that cannot pass
+    // spuriously (the still-open editor's select shows "Annual — $100.00"
+    // before the save lands too).
+    await expect(keeperRows).toContainText('since 2026-10-15');
     await expect(keeperRows).toContainText('Annual — $100.00');
+    // Supersede semantics: the old row is end-dated, a new ACTIVE row starts.
     const stored = await prisma.userSubscription.findMany({ where: { userId: keeper.id },
       select: { id: true, status: true, planBillingOptionId: true, expiresAt: true } });
     expect(stored).toHaveLength(2);

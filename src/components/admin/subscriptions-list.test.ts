@@ -238,28 +238,60 @@ test('a plan without active options offers no Edit (nothing to switch to)', () =
   assert.match(expanded, /no active billing options/i);
 });
 
-test('tier-derived rows render the gold-dashed Legacy — derived badge and carry no actions or expansion', () => {
-  const tree = renderView({ rows: [tierRow()] });
-  const rendered = textOf(tree);
-  assert.match(rendered, /Free Fiona/);
-  assert.match(rendered, /Free – Legacy/);
-  assert.match(rendered, /Legacy — derived/);
-  const rows = elementsOf(tree).rows;
+test('tier-derived rows render the gold-dashed Legacy — derived badge, expandable, with only Convert', () => {
+  // Collapsed: the badge and the expand toggle; NO stored-row actions.
+  const collapsed = renderView({ rows: [tierRow()] });
+  const collapsedText = textOf(collapsed);
+  assert.match(collapsedText, /Free Fiona/);
+  assert.match(collapsedText, /Free – Legacy/);
+  assert.match(collapsedText, /Legacy — derived/);
+  const rows = elementsOf(collapsed).rows;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].props['data-legacy-derived'], 'true', 'the virtual row is marked');
-  // No expand toggle, no Reassign/End/Edit — derived rows are display-only.
-  assert.equal(elementsOf(tree).buttons.filter(item =>
-    item.props['aria-expanded'] !== undefined).length, 0);
-  assert.equal(elementsOf(tree).links.find(link => textOf(link) === 'Reassign'), undefined);
-  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'end-action'), undefined);
-  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'edit-action'), undefined);
+  // Task 13: virtual rows expand — the toggle is the ONLY button collapsed.
+  const toggles = elementsOf(collapsed).buttons.filter(item =>
+    item.props['aria-expanded'] !== undefined);
+  assert.deepEqual(toggles.map(item => item.props['aria-expanded']), [false]);
+  assert.equal(elementsOf(collapsed).links.find(link => textOf(link) === 'Reassign'), undefined);
+  assert.equal(elementsOf(collapsed).forms.find(form => form.props.action === 'end-action'), undefined);
+  assert.equal(elementsOf(collapsed).forms.find(form => form.props.action === 'edit-action'), undefined);
   // The badge is gold-dashed via theme tokens.
-  const badge = elements(tree).find(item => item.type === 'span' &&
+  const badge = elements(collapsed).find(item => item.type === 'span' &&
     String(item.props.className ?? '').includes('border-[var(--gold)]'));
   assert.ok(badge, 'the badge grounds on the gold token');
   assert.match(String(badge!.props.className), /border-dashed/);
   // No dates line for a derived row (epoch sentinel never renders).
-  assert.doesNotMatch(rendered, /since 1970/);
+  assert.doesNotMatch(collapsedText, /since 1970/);
+
+  // Expanded: a VIEW-ONLY detail card (keeper, tier, mapped legacy plan — no
+  // dates) with exactly ONE action — Convert to real subscription (the audited
+  // wizard, keeper preselected via the Reassign deep-link seeding).
+  const tree = renderView({ rows: [tierRow()], expandedId: 'tier:u-9' });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Free Fiona/);
+  assert.match(rendered, /fiona@example\.com/);
+  assert.match(rendered, /Free/);
+  assert.match(rendered, /Free – Legacy/);
+  assert.doesNotMatch(rendered, /since 1970/, 'no dates on a derived detail card');
+  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'end-action'), undefined,
+    'no End on a virtual row');
+  assert.equal(elementsOf(tree).forms.find(form => form.props.action === 'edit-action'), undefined,
+    'no Edit on a virtual row');
+  assert.equal(elementsOf(tree).links.find(link => textOf(link) === 'Reassign'), undefined,
+    'no Reassign on a virtual row');
+  const convert = elementsOf(tree).links.find(link =>
+    textOf(link) === 'Convert to real subscription');
+  assert.ok(convert, 'Convert is the virtual row\'s single action');
+  assert.equal(convert?.props.href, '/admin/subscriptions?wizard=open&step=2&user=u-9');
+});
+
+test('the virtual row\'s Convert deep link carries the list search and page along', () => {
+  const tree = renderView({ rows: [tierRow()], expandedId: 'tier:u-9',
+    search: 'legacy', page: 2 });
+  const convert = elementsOf(tree).links.find(link =>
+    textOf(link) === 'Convert to real subscription');
+  assert.equal(convert?.props.href,
+    '/admin/subscriptions?search=legacy&page=2&wizard=open&step=2&user=u-9');
 });
 
 test('the toolbar pairs the search input with a truthful effective-count chip', () => {
