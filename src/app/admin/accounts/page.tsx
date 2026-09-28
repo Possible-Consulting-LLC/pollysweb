@@ -12,8 +12,13 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
     demo: boolean('demo'), verified: boolean('verified'), suspended: boolean('suspended'),
     plan: ['free', 'pro'].includes(one(params.plan) ?? '') ? one(params.plan) as 'free' | 'pro' : undefined,
     cursor: one(params.cursorAt) && one(params.cursorId) ? { createdAt: one(params.cursorAt)!, id: one(params.cursorId)! } : undefined };
-  const result = await searchAccounts(filters);
-  const { dates, timezone } = await getAdminDateFormatter();
+  // searchAccounts and getAdminDateFormatter each authorize themselves and
+  // share no data dependency — overlap the two waterfalls (each is ~6 DB round
+  // trips when sequential) instead of stacking them.
+  const [result, { dates, timezone }] = await Promise.all([
+    searchAccounts(filters),
+    getAdminDateFormatter(),
+  ]);
   const next = new URLSearchParams();
   for (const key of ['q', 'role', 'demo', 'verified', 'suspended', 'plan']) { const v = one(params[key]); if (v) next.set(key, v); }
   if (result.nextCursor) { next.set('cursorAt', result.nextCursor.createdAt); next.set('cursorId', result.nextCursor.id); }

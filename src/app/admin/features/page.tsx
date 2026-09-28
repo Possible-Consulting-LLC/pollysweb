@@ -27,13 +27,21 @@ export default async function FeatureCatalogPage({ searchParams }:
         { key: { contains: query.search, mode: 'insensitive' as const } },
       ] }
     : undefined;
-  const [rows, total, totalPlans] = await Promise.all([
+  const [rows, total, totalPlans, translations] = await Promise.all([
     prisma.feature.findMany({
       where, orderBy: [{ category: 'asc' }, { key: 'asc' }],
       skip: (query.page - 1) * query.pageSize, take: query.pageSize,
     }),
     prisma.feature.count({ where }),
     prisma.plan.count(),
+    // Assignments are keyed by the same feature filter as the page read (not
+    // by the paged rows' ids), so this query is independent of `total` and the
+    // clamp below and joins the initial batch. It covers the whole filtered
+    // set — a superset of any clamped page — and only page rows are looked up.
+    prisma.featurePlanTranslation.findMany({
+      where: { enabled: true, ...(where ? { feature: where } : {}) },
+      select: { featureId: true, plan: { select: { name: true } } },
+    }),
   ]);
   // A page beyond the (possibly filtered) total re-queries the last valid page.
   const page = clampPage(query.page, total, query.pageSize);
@@ -44,14 +52,8 @@ export default async function FeatureCatalogPage({ searchParams }:
         skip: (page - 1) * query.pageSize, take: query.pageSize,
       });
   // One grouped query for the whole page's assignments — never per-row.
-  const assignments = pageRows.length
-    ? await prisma.featurePlanTranslation.findMany({
-        where: { featureId: { in: pageRows.map(row => row.id) }, enabled: true },
-        select: { featureId: true, plan: { select: { name: true } } },
-      })
-    : [];
   const plansByFeature = new Map<string, string[]>();
-  for (const translation of assignments) {
+  for (const translation of translations) {
     const names = plansByFeature.get(translation.featureId) ?? [];
     names.push(translation.plan.name);
     plansByFeature.set(translation.featureId, names);

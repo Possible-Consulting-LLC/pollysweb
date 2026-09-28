@@ -112,7 +112,10 @@ const prismaStub = {
   featurePlanTranslation: {
     findMany: async (args: Record<string, unknown>) => {
       translationQueries.push(JSON.parse(JSON.stringify(args)));
-      const ids = (args.where as { featureId: { in: string[] } }).featureId.in;
+      // Before the batching refactor the query depended on the paged rows
+      // (featureId.in); after it filters by the shared feature relation.
+      const dependent = args.where as { featureId?: { in?: string[] } } | undefined;
+      const ids = dependent?.featureId?.in ?? servedRows.map(row => row.id);
       return ids.filter(id => id === DB_ROWS[20].id).map(featureId => ({
         featureId, enabled: true, plan: { name: 'Basic' } }));
     },
@@ -192,6 +195,20 @@ test('a page beyond the total clamps back to the last valid page', async () => {
   const paged = featureQueries.filter(query => 'skip' in query);
   assert.equal(paged[paged.length - 1].skip, 20, 're-queried at the last valid page (2 of 25 at 20/page)');
   assert.equal(capturedProps[0].page, 2);
+});
+
+test('assignments ride the initial batch: the translation query filters by the shared feature relation, not the paged rows', async () => {
+  featureQueries = []; translationQueries = []; capturedProps = [];
+  servedRows = DB_ROWS; servedTotal = 25;
+  const tree = await render({ search: 'spood', page: '2' });
+  elementsOf(tree);
+  assert.equal(translationQueries.length, 1);
+  const where = translationQueries[0].where as Record<string, unknown>;
+  assert.ok(where.feature, 'assignments query is independent of the paged rows so it can join the initial Promise.all');
+  assert.ok(!('featureId' in where), 'assignments query must not depend on the row ids it used to wait for');
+  const props = JSON.parse(JSON.stringify(capturedProps[0]));
+  assert.deepEqual(props.features.map((feature: { assignedPlans: string[] }) => feature.assignedPlans),
+    servedRows.slice(20, 40).map(row => row.id === DB_ROWS[20].id ? ['Basic'] : []));
 });
 
 test('the page needs no header stat paragraph — registry sync is button chrome', async () => {
