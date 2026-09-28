@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Prisma } from '@prisma/client';
 import { appendAudit } from './audit';
+import { effectiveSubscriptionWhere } from './legacy-entitlements';
 
 export type PlanType = 'STANDARD' | 'CUSTOM' | 'INTERNAL';
 export type BillingInterval = 'MONTHLY' | 'ANNUAL';
@@ -62,11 +63,6 @@ export function deleteActionFor(historyCount: number): 'deactivated' | 'deleted'
   if (!Number.isInteger(historyCount) || historyCount < 0) throw new Error('Invalid history count.');
   return historyCount > 0 ? 'deactivated' : 'deleted';
 }
-
-const effectiveSubscriptionWhere = (): Prisma.UserSubscriptionWhereInput => ({
-  status: { in: ['TRIALING', 'ACTIVE', 'PAST_DUE'] },
-  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-});
 
 /** Effective-subscription history on a plan: any row whose status is
  * TRIALING/ACTIVE/PAST_DUE and not expired forces deactivation over deletion. */

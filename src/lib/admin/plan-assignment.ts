@@ -1,7 +1,8 @@
 import 'server-only';
 import type { Prisma } from '@prisma/client';
 import { appendAudit } from './audit';
-import { LEGACY_PLAN_NAMES, LEGACY_PLAN_SPECS, mapLegacyTier } from './legacy-entitlements';
+import { effectiveSubscriptionWhere, isEffectiveSubscription,
+  LEGACY_PLAN_NAMES, LEGACY_PLAN_SPECS, mapLegacyTier } from './legacy-entitlements';
 import type { LegacyTier } from './legacy-entitlements';
 
 export type AssignmentInput = { targetUserId: string; planId: string; planBillingOptionId: string;
@@ -13,12 +14,6 @@ type AssignmentDb = Pick<Prisma.TransactionClient, 'user' | 'plan' | 'planBillin
   | 'userSubscription' | 'adminAudit' | '$queryRaw'>;
 
 const unsafeText = /[\u0000-\u001f\u007f@]/;
-const EFFECTIVE_STATUSES: readonly string[] = ['TRIALING', 'ACTIVE', 'PAST_DUE'];
-/** Rows that count as "one effective subscription per user" / plan history. */
-const effectiveWhere = (): Prisma.UserSubscriptionWhereInput => ({
-  status: { in: [...EFFECTIVE_STATUSES] },
-  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-});
 
 const idOk = (value: string) => value.length > 0 && value.length <= 128;
 
@@ -72,7 +67,7 @@ export async function assignPlanSubscription(tx: AssignmentDb, actorId: string,
   if (!option) return new Error('That billing option does not belong to the chosen plan. Reload the page.');
   if (!option.active) return new Error('Choose an active billing option.');
   // End-date prior effective subscriptions so exactly one row is effective.
-  await tx.userSubscription.updateMany({ where: { userId: targetUserId, ...effectiveWhere() },
+  await tx.userSubscription.updateMany({ where: { userId: targetUserId, ...effectiveSubscriptionWhere() },
     data: { status: 'CANCELED', expiresAt: effectiveAt } });
   const created = await tx.userSubscription.create({ data: { userId: targetUserId, planId,
     planBillingOptionId, status: 'ACTIVE', startedAt: effectiveAt, renewsAt: null, expiresAt: null } });
@@ -205,7 +200,7 @@ type TierUserRow = { id: string; name: string | null; email: string; plan: strin
  * the derived marker (status-shaped search). */
 const tierDerivedUserWhere = (search: string): Prisma.UserWhereInput => {
   const base: Prisma.UserWhereInput = { plan: { in: [...LEGACY_TIERS] },
-    subscriptions: { none: effectiveWhere() } };
+    subscriptions: { none: effectiveSubscriptionWhere() } };
   if (!search) return base;
   const lower = search.toLowerCase();
   const planNameHits = LEGACY_TIERS.filter(tier =>
@@ -226,12 +221,12 @@ export async function listEffectiveSubscriptions(tx: ListingDb,
   const search = (query?.search ?? '').trim();
   const skip = (page - 1) * pageSize;
   // Search terms nest under AND so they never loosen the effective-only filter.
-  const realWhere: Prisma.UserSubscriptionWhereInput = search ? { AND: [effectiveWhere(), { OR: [
+  const realWhere: Prisma.UserSubscriptionWhereInput = search ? { AND: [effectiveSubscriptionWhere(), { OR: [
     { user: { OR: [{ name: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } }] } },
     { plan: { name: { contains: search, mode: 'insensitive' } } },
     { status: { contains: search, mode: 'insensitive' } },
-  ] }] } : effectiveWhere();
+  ] }] } : effectiveSubscriptionWhere();
   const [realTotal, virtualTotal] = await Promise.all([
     tx.userSubscription.count({ where: realWhere }),
     tx.user.count({ where: tierDerivedUserWhere(search) }),
@@ -381,8 +376,7 @@ export async function endSubscription(tx: AssignmentDb, actorId: string,
     select: { userId: true, planId: true, status: true, expiresAt: true } });
   if (!row) return new Error('That subscription no longer exists. Reload the page.');
   const now = new Date();
-  const stillEffective = EFFECTIVE_STATUSES.includes(row.status) &&
-    (row.expiresAt === null || row.expiresAt.getTime() > now.getTime());
+  const stillEffective = isEffectiveSubscription(row, now);
   if (!stillEffective) return new Error('That subscription has already ended.');
   await tx.userSubscription.update({ where: { id: subscriptionId },
     data: { status: 'CANCELED', expiresAt: now } });

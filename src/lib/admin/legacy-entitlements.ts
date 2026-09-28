@@ -83,17 +83,14 @@ export function mapLegacyTier(tier: string | null | undefined): LegacyTier {
   return tier as LegacyTier;
 }
 
-/** Convenience: the mapped legacy plan NAME for a tier (mapping inverse). */
-export function legacyPlanNameForTier(tier: string | null | undefined): string {
-  return LEGACY_PLAN_SPECS[mapLegacyTier(tier)].name;
-}
-
 // ---------------------------------------------------------------------------
 // Effective-entitlements resolver (pure; the gating phase adopts this)
 // ---------------------------------------------------------------------------
 
 /** A subscription is effective when its status is TRIALING/ACTIVE/PAST_DUE and
- * it has not expired — identical semantics to the assignment service. */
+ * it has not expired — THE single definition, shared by the plan-assignment
+ * service, the plans services, and the subscriptions actions (the row
+ * predicate and its Prisma where-clause form below). */
 export const EFFECTIVE_SUBSCRIPTION_STATUSES: readonly string[] =
   ['TRIALING', 'ACTIVE', 'PAST_DUE'];
 
@@ -102,6 +99,16 @@ export function isEffectiveSubscription(
   return EFFECTIVE_SUBSCRIPTION_STATUSES.includes(row.status) &&
     (row.expiresAt === null || row.expiresAt.getTime() > now.getTime());
 }
+
+/** The same predicate as a Prisma where-clause, for count/update/findMany
+ * queries (plan history, end-dating prior subscriptions, the subscriptions
+ * page's union). Kept beside isEffectiveSubscription so the query and row
+ * forms of "effective subscription" can never drift. */
+export const effectiveSubscriptionWhere =
+  (): Prisma.UserSubscriptionWhereInput => ({
+    status: { in: [...EFFECTIVE_SUBSCRIPTION_STATUSES] },
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+  });
 
 export type PlanFeatureSnapshot = { enabled: boolean; feature: { key: string } };
 
@@ -197,7 +204,11 @@ export async function loadLegacyPlanSource(
     const name = LEGACY_PLAN_SPECS[tier].name;
     const plan = byName.get(name);
     if (!plan)
-      throw new Error(`Legacy plan "${name}" does not exist yet; run the legacy backfill first.`);
+      throw new Error(
+        `Legacy plan "${name}" does not exist yet; both legacy plans named in ` +
+        `LEGACY_PLAN_SPECS must exist with their feature translations — create ` +
+        `them via the admin plans page so legacy-tier users (their tier-derived ` +
+        `rows on the subscriptions page) resolve against them.`);
     return plan;
   };
   return { free: pick('free'), pro: pick('pro') };

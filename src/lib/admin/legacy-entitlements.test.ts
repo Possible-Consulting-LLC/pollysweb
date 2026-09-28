@@ -10,7 +10,6 @@ import {
   LEGACY_PLAN_NAMES,
   LEGACY_PLAN_SPECS,
   isEffectiveSubscription,
-  legacyPlanNameForTier,
   loadLegacyPlanSource,
   mapLegacyTier,
   resolveEffectiveEntitlements,
@@ -49,8 +48,6 @@ const activeOn = (plan: PlanSnapshot) => ({ status: 'ACTIVE', expiresAt: null, p
 test('the mapping sends free → "Free – Legacy" and pro → "Pro – Legacy" (both tiers)', () => {
   assert.equal(mapLegacyTier('free'), 'free');
   assert.equal(mapLegacyTier('pro'), 'pro');
-  assert.equal(legacyPlanNameForTier('free'), 'Free – Legacy');
-  assert.equal(legacyPlanNameForTier('pro'), 'Pro – Legacy');
   assert.equal(LEGACY_PLAN_SPECS.free.name, 'Free – Legacy');
   assert.equal(LEGACY_PLAN_SPECS.pro.name, 'Pro – Legacy');
 });

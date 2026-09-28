@@ -252,7 +252,8 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
   };
   const audit = load('./audit.ts', { 'server-only': {} });
   const legacyModule = load('./legacy-entitlements.ts', {}) as typeof legacy;
-  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
+  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit,
+    './legacy-entitlements': legacyModule }) as typeof plans;
   const assignmentModule = load('./plan-assignment.ts',
     { 'server-only': {}, './audit': audit, './plans': plansModule,
       './legacy-entitlements': legacyModule }) as typeof assignment;
@@ -396,6 +397,7 @@ test('assignSubscriptionAction assigns the whole keeper batch with per-user deri
     '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
       work(f.tx, { id: 'owner-1' }) },
     '@/lib/admin/plan-assignment': f.assignment,
+    '@/lib/admin/legacy-entitlements': f.legacy,
   }) as { assignSubscriptionAction: (form: FormData) => Promise<unknown> };
   const form = new FormData();
   // One form field carries the batch; duplicates collapse, ids arrive directly.
@@ -424,6 +426,7 @@ test('assignSubscriptionAction fails the whole batch with the named keeper error
     '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
       work(f.tx, { id: 'owner-1' }) },
     '@/lib/admin/plan-assignment': f.assignment,
+    '@/lib/admin/legacy-entitlements': f.legacy,
   }) as { assignSubscriptionAction: (form: FormData) => Promise<unknown> };
   const form = new FormData();
   form.set('userIds', 'user-1,u-gone');
@@ -655,6 +658,7 @@ test('endSubscriptionAction derives the audit reason from context without a form
     '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
       work(f.tx, { id: 'owner-1' }) },
     '@/lib/admin/plan-assignment': f.assignment,
+    '@/lib/admin/legacy-entitlements': f.legacy,
   }) as { endSubscriptionAction: (form: FormData) => Promise<unknown> };
   const form = new FormData();
   form.set('subscriptionId', 'sub-1');
@@ -966,6 +970,7 @@ test('editSubscriptionAction supersedes the row via the audited assignment servi
     '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
       work(f.tx, { id: 'owner-1' }) },
     '@/lib/admin/plan-assignment': f.assignment,
+    '@/lib/admin/legacy-entitlements': f.legacy,
   }) as { editSubscriptionAction: (form: FormData) => Promise<unknown> };
   const form = new FormData();
   form.set('subscriptionId', 'sub-1');
@@ -1001,6 +1006,7 @@ test('editSubscriptionAction fails closed on an ended row, a foreign option, and
     '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
       work(f.tx, { id: 'owner-1' }) },
     '@/lib/admin/plan-assignment': f.assignment,
+    '@/lib/admin/legacy-entitlements': f.legacy,
   }) as { editSubscriptionAction: (form: FormData) => Promise<unknown> };
   const attempt = async (subscriptionId: string, planBillingOptionId: string) => {
     const form = new FormData();

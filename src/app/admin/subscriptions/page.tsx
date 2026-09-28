@@ -105,7 +105,6 @@ export default async function SubscriptionsPage({ searchParams }:
         active: option.active })) } : null,
     selectedOptionId: wizardOptionId,
     // Focused views keep the picker's search/page so "Change" restores the view.
-    // Focused views keep the picker's search/page so "Change" restores the view.
     userPicker: userList
       ? { rows: userList.data.users.map((user: UserSummary) =>
           ({ id: user.id, title: user.name, subtitle: user.email,

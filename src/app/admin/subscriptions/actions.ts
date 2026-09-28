@@ -5,6 +5,7 @@ import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
 import { assignPlanSubscription, assignPlanToUsers, endSubscription,
   BULK_ASSIGNMENT_MAX_USERS } from '@/lib/admin/plan-assignment';
+import { isEffectiveSubscription } from '@/lib/admin/legacy-entitlements';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
 
 type Result = { error?: string; success?: boolean };
@@ -86,9 +87,7 @@ export async function editSubscriptionAction(form: FormData): Promise<Result> {
           select: { userId: true, planId: true, status: true, expiresAt: true,
             plan: { select: { name: true } } } });
         if (!row) throw Error('That subscription no longer exists. Reload the page.');
-        const now = new Date();
-        const stillEffective = ['TRIALING', 'ACTIVE', 'PAST_DUE'].includes(row.status) &&
-          (row.expiresAt === null || row.expiresAt.getTime() > now.getTime());
+        const stillEffective = isEffectiveSubscription(row, new Date());
         if (!stillEffective) throw Error('That subscription has already ended.');
         const option = await tx.planBillingOption.findUnique({ where: { id: planBillingOptionId },
           select: { interval: true } });

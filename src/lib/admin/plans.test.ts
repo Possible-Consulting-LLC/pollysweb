@@ -172,7 +172,9 @@ function fixture(role: 'admin' | 'super_admin', options: OptionRow[] = [MONTHLY]
     },
   };
   const audit = load('./audit.ts', { 'server-only': {} });
-  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit }) as typeof plans;
+  const legacyModule = load('./legacy-entitlements.ts', {});
+  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit,
+    './legacy-entitlements': legacyModule }) as typeof plans;
   const registry = load('../features/registry.ts', {});
   const pricing = load('../features/pricing.ts', { './registry': registry });
   const planFeatures = load('./plan-features.ts', { 'server-only': {}, './audit': audit,

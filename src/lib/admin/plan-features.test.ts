@@ -126,7 +126,9 @@ function fixture(role: Actor['role'], setup: MatrixSetup = {}) {
   const registry = load('../features/registry.ts', {});
   const pricing = load('../features/pricing.ts', { './registry': registry });
   const audit = load('./audit.ts', { 'server-only': {} });
-  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit });
+  const legacyModule = load('./legacy-entitlements.ts', {});
+  const plansModule = load('./plans.ts', { 'server-only': {}, './audit': audit,
+    './legacy-entitlements': legacyModule });
   // planHistoryCount is the Task 3 seam that Task 5 wires to the real count; the
   // stub stands in for a plan with effective subscribers so the removal warning
   // path is exercised before subscriptions exist.
