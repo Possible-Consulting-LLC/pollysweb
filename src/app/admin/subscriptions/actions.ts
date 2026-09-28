@@ -3,27 +3,42 @@
 import { revalidatePath } from 'next/cache';
 import { withMutation } from '@/lib/mutation-boundary';
 import { withAdminControl } from '@/lib/admin/actor';
-import { assignPlanSubscription, endSubscription } from '@/lib/admin/plan-assignment';
+import { assignPlanToUsers, endSubscription, BULK_ASSIGNMENT_MAX_USERS } from '@/lib/admin/plan-assignment';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
 
 type Result = { error?: string; success?: boolean };
 
 const value = (form: FormData, key: string) => String(form.get(key) ?? '').trim();
 
-const failure = (error: unknown, fallback: string) =>
-  ({ error: error instanceof Error && error.message ? error.message : fallback });
+const failure = (error: unknown, fallback: string) => {
+  // Services may fail with Error instances from another module realm (the tag
+  // check works in both) — a NAMED service error must reach the UI intact.
+  const message = error instanceof Error && error.message ? error.message
+    : Object.prototype.toString.call(error) === '[object Error]' &&
+      (error as Error).message ? (error as Error).message : '';
+  return { error: message || fallback };
+};
 
 // Service failures may be Error instances from another module realm; the tag check works in both.
 const isServiceError = (result: unknown): result is Error =>
   Object.prototype.toString.call(result) === '[object Error]';
 
-/** Assigns a plan (and one of its active billing options) to the user matched
- * by email or id. The effective date defaults to now when left empty. */
+/** Assigns a plan (and one of its active billing options) to the keeper batch
+ * carried as `userIds` (comma-separated, duplicates collapse) — ALL-OR-NOTHING
+ * via assignPlanToUsers: one transaction, per-user row locks, per-user derived
+ * audit reasons, every keeper's prior effective subscription end-dated first;
+ * any ineligible keeper aborts the WHOLE batch with a named error. The
+ * effective date defaults to now when left empty. No reason field: the audit
+ * reasons are derived from the batch's own context. */
 export async function assignSubscriptionAction(form: FormData): Promise<Result> {
   return withMutation(form, 'admin', 'assignplan', async () => {
     try {
-      const userQuery = value(form, 'userQuery');
-      if (!userQuery || userQuery.length > 256) throw Error('Enter a user email or id.');
+      const rawUserIds = value(form, 'userIds');
+      if (rawUserIds.length > 65_536) throw Error('Too many keepers in one batch.');
+      const userIds = [...new Set(rawUserIds.split(',').map(id => id.trim()).filter(Boolean))];
+      if (userIds.length === 0) throw Error('Select at least one keeper.');
+      if (userIds.length > BULK_ASSIGNMENT_MAX_USERS)
+        throw Error(`Too many keepers in one batch — select at most ${BULK_ASSIGNMENT_MAX_USERS}.`);
       const planId = value(form, 'planId');
       if (!planId || planId.length > 128) throw Error('A valid plan is required.');
       const planBillingOptionId = value(form, 'planBillingOptionId');
@@ -32,15 +47,8 @@ export async function assignSubscriptionAction(form: FormData): Promise<Result> 
       const effectiveAt = rawEffectiveAt ? new Date(rawEffectiveAt) : new Date();
       if (Number.isNaN(effectiveAt.getTime())) throw Error('Enter a valid effective date.');
       await withAdminControl(async (tx, actor) => {
-        const target = await tx.user.findFirst({
-          where: { OR: [{ email: userQuery }, { id: userQuery }] }, select: { id: true } });
-        if (!target) throw Error('No user matches that email or id.');
-        const plan = await tx.plan.findUnique({ where: { id: planId }, select: { name: true } });
-        if (!plan) throw Error('That plan no longer exists. Reload the page.');
-        const reason =
-          `Assigned plan ${plan.name} to user ${target.id} effective ${effectiveAt.toISOString()}`;
-        const result = await assignPlanSubscription(tx, actor.id,
-          { targetUserId: target.id, planId, planBillingOptionId, effectiveAt, reason });
+        const result = await assignPlanToUsers(tx, actor.id,
+          { userIds, planId, planBillingOptionId, effectiveAt });
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/subscriptions');
@@ -48,7 +56,7 @@ export async function assignSubscriptionAction(form: FormData): Promise<Result> 
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
-      return failure(error, 'The subscription was not assigned. Reload and check your administrator access.');
+      return failure(error, 'The subscriptions were not assigned. Reload and check your administrator access.');
     }
   });
 }

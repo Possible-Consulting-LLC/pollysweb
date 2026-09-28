@@ -52,6 +52,10 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
   const optionStore = new Map<string, OptionRow>([[MONTHLY.id, { ...MONTHLY }]]);
   const subscriptionStore = new Map<string, SubscriptionRow>(
     setup.subscriptions?.map(row => [row.id, { ...row }] as const) ?? []);
+  const featureStore = new Map<string, { name: string }>();
+  const translationStore = new Map<string, { id: string; planId: string; featureId: string;
+    enabled: boolean }>();
+  const translationCalls: Array<Record<string, unknown>> = [];
   const audits: Array<{ action: string; targetId: string | null; reason: string;
     changes: Record<string, unknown> }> = [];
   let nextId = 10;
@@ -65,6 +69,9 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
     needle !== undefined && (value ?? '').toLowerCase().includes(needle.toLowerCase());
   const userWhereMatches = (where: Record<string, unknown>, row: UserRow) => {
     if (where.deletingAt === null && row.deletingAt !== null) return false;
+    if (where.id && typeof where.id === 'object' &&
+      Array.isArray((where.id as { in?: string[] }).in) &&
+      !(where.id as { in: string[] }).in.includes(row.id)) return false;
     if (Array.isArray(where.OR) && !where.OR.some((clause: { name?: { contains?: string };
         email?: { contains?: string } }) =>
       contains(row.name, clause.name?.contains) || contains(row.email, clause.email?.contains)))
@@ -166,6 +173,18 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         optionStore.has(id) ? { ...optionStore.get(id)! } : null,
     },
+    featurePlanTranslation: {
+      findMany: async (args: { where?: { planId?: { in?: string[] }; enabled?: boolean };
+        select?: Record<string, unknown> } = {}) => {
+        translationCalls.push(args);
+        const ids = args.where?.planId?.in;
+        return [...translationStore.values()]
+          .filter(translation => (ids ? ids.includes(translation.planId) : true) &&
+            (args.where?.enabled === undefined || translation.enabled === args.where.enabled))
+          .map(translation => ({ ...translation, feature: featureStore.has(translation.featureId)
+            ? { ...featureStore.get(translation.featureId)! } : null }));
+      },
+    },
     userSubscription: {
       findUnique: async ({ where: { id }, select }: { where: { id: string };
         select?: Record<string, unknown> }) => {
@@ -216,7 +235,8 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin', setup: {
   const assignmentModule = load('./plan-assignment.ts',
     { 'server-only': {}, './audit': audit, './plans': plansModule }) as typeof assignment;
   return { assignment: assignmentModule, plans: plansModule, tx: tx as never, userStore, planStore,
-    optionStore, subscriptionStore, audits, effective };
+    optionStore, subscriptionStore, featureStore, translationStore, translationCalls, audits,
+    effective };
 }
 
 const validInput = { targetUserId: 'user-1', planId: 'plan-1', planBillingOptionId: 'opt-1',
@@ -344,8 +364,8 @@ test('the assignment acquires the target user row lock inside the transaction', 
   assert.ok(locks[0].values.includes('user-1'));
 });
 
-test('assignSubscriptionAction derives the audit reason from context without a form reason', async () => {
-  const f = fixture();
+test('assignSubscriptionAction assigns the whole keeper batch with per-user derived audit reasons', async () => {
+  const f = fixture('super_admin', { users: [userRow('u-2', 'Marta Keeper', 'marta@example.com')] });
   const api = load('../../app/admin/subscriptions/actions.ts', {
     'next/cache': { revalidatePath: () => {} },
     '@/lib/admin/maintenance-policy': maintenancePolicy,
@@ -356,14 +376,46 @@ test('assignSubscriptionAction derives the audit reason from context without a f
     '@/lib/admin/plan-assignment': f.assignment,
   }) as { assignSubscriptionAction: (form: FormData) => Promise<unknown> };
   const form = new FormData();
-  form.set('userQuery', 'user@example.com');
+  // One form field carries the batch; duplicates collapse, ids arrive directly.
+  form.set('userIds', 'user-1, u-2, user-1');
   form.set('planId', 'plan-1');
   form.set('planBillingOptionId', 'opt-1');
   form.set('effectiveAt', '2026-09-26T12:00:00.000Z');
   assert.deepEqual(jsonOf(await api.assignSubscriptionAction(form)), { success: true });
-  assert.deepEqual(f.audits, [{ action: 'plan.assign', targetId: 'user-1',
-    reason: 'Assigned plan Standard to user user-1 effective 2026-09-26T12:00:00.000Z',
-    changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-26T12:00:00.000Z' } }]);
+  assert.deepEqual(f.audits.map(audit => audit.targetId), ['user-1', 'u-2'],
+    'one audited assignment per distinct keeper, in selection order');
+  assert.deepEqual(f.audits.map(audit => audit.reason), [
+    'Assigned plan Standard to user user-1 effective 2026-09-26T12:00:00.000Z',
+    'Assigned plan Standard to user u-2 effective 2026-09-26T12:00:00.000Z',
+  ]);
+});
+
+test('assignSubscriptionAction fails the whole batch with the named keeper error and no writes', async () => {
+  const f = fixture('super_admin', { users: [
+    userRow('u-gone', 'Gone Keeper', 'gone@example.com', new Date(NOW)),
+  ] });
+  const api = load('../../app/admin/subscriptions/actions.ts', {
+    'next/cache': { revalidatePath: () => {} },
+    '@/lib/admin/maintenance-policy': maintenancePolicy,
+    '@/lib/mutation-boundary': { withMutation: async (_form: unknown, _kind: unknown,
+      _action: string, work: () => Promise<unknown>) => work() },
+    '@/lib/admin/actor': { withAdminControl: async (work: (tx: unknown, actor: unknown) => Promise<unknown>) =>
+      work(f.tx, { id: 'owner-1' }) },
+    '@/lib/admin/plan-assignment': f.assignment,
+  }) as { assignSubscriptionAction: (form: FormData) => Promise<unknown> };
+  const form = new FormData();
+  form.set('userIds', 'user-1,u-gone');
+  form.set('planId', 'plan-1');
+  form.set('planBillingOptionId', 'opt-1');
+  const result = jsonOf(await api.assignSubscriptionAction(form)) as { error: string };
+  assert.match(result.error, /Gone Keeper/);
+  assert.equal(f.subscriptionStore.size, 0, 'never a partial assignment');
+  assert.equal(f.audits.length, 0);
+  const empty = new FormData();
+  empty.set('userIds', '');
+  assert.deepEqual(jsonOf(await api.assignSubscriptionAction(empty)),
+    { error: 'Select at least one keeper.' });
+  assert.equal(f.audits.length, 0);
 });
 
 test('listEffectiveSubscriptions returns only currently effective rows with joined details', async () => {
@@ -602,4 +654,160 @@ test('listAssignablePlans returns only active plans with an active-only total', 
   const paginated = await f.assignment.listAssignablePlans(f.tx, { page: 2, pageSize: 1 });
   assert.deepEqual(paginated.plans.map(plan => plan.id), ['plan-3']);
   assert.equal(paginated.total, 2);
+});
+
+// --- Task 10: bulk keeper assignment (wizard rework) ---
+
+test('listAssignablePlans carries each plan\'s enabled feature names via one grouped query', async () => {
+  const f = fixture('super_admin');
+  f.planStore.set('plan-3', { ...PLAN, id: 'plan-3', name: 'Zebra', sortOrder: 2 });
+  f.featureStore.set('f-1', { name: 'Log feeding' });
+  f.featureStore.set('f-2', { name: 'Log hydration' });
+  f.featureStore.set('f-3', { name: 'Manage enclosure' });
+  f.translationStore.set('t-1', { id: 't-1', planId: 'plan-1', featureId: 'f-2', enabled: true });
+  f.translationStore.set('t-2', { id: 't-2', planId: 'plan-1', featureId: 'f-1', enabled: true });
+  f.translationStore.set('t-3', { id: 't-3', planId: 'plan-1', featureId: 'f-3', enabled: false });
+  f.translationStore.set('t-4', { id: 't-4', planId: 'plan-3', featureId: 'f-2', enabled: true });
+  const { plans } = await f.assignment.listAssignablePlans(f.tx, { page: 1, pageSize: 20 });
+  const basic = plans.find(plan => plan.id === 'plan-1')!;
+  assert.deepEqual(jsonOf(basic.features), ['Log feeding', 'Log hydration'],
+    'enabled feature names only, name-ordered — the read-only picker line');
+  assert.deepEqual(jsonOf(plans.find(plan => plan.id === 'plan-3')!.features), ['Log hydration']);
+  assert.equal(f.translationCalls.length, 1,
+    'one grouped translations query for the page, never per-plan');
+  const query = f.translationCalls[0] as { where: Record<string, unknown>;
+    select: Record<string, unknown> };
+  assert.deepEqual(JSON.parse(JSON.stringify(query.where)),
+    { planId: { in: ['plan-1', 'plan-3'] }, enabled: true });
+  assert.deepEqual(Object.keys(query.select), ['planId', 'feature']);
+});
+
+test('assignPlanToUsers assigns every keeper in one transaction: per-user locks, end-dated priors, derived per-user audit reasons', async () => {
+  const f = fixture('super_admin', { users: [
+    userRow('u-2', 'Marta Keeper', 'marta@example.com'),
+    userRow('u-3', 'Dan O.', 'dan@example.com'),
+  ], subscriptions: [activeSub('sub-prior', 'u-2')] });
+  const locks: Array<{ strings: string[]; values: unknown[] }> = [];
+  (f.tx as { $queryRaw: unknown }).$queryRaw = (strings: string[], ...values: unknown[]) => {
+    locks.push({ strings, values }); return Promise.resolve([]);
+  };
+  const result = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { userIds: ['u-2', 'u-3'], planId: 'plan-1', planBillingOptionId: 'opt-1',
+      effectiveAt: new Date(NOW) });
+  assert.ok(!isFailure(result));
+  const { assignments } = result as { assignments: Array<{ userId: string;
+    subscriptionId: string }> };
+  assert.deepEqual(jsonOf(assignments.map(row => row.userId)), ['u-2', 'u-3']);
+  assert.ok(assignments.every(row => f.subscriptionStore.has(row.subscriptionId) &&
+    f.subscriptionStore.get(row.subscriptionId)!.status === 'ACTIVE'));
+  // The caller's ONE transaction did all the work: a per-user row lock each.
+  assert.deepEqual(jsonOf(locks.map(lock => lock.values)), [['u-2'], ['u-3']]);
+  assert.ok(locks.every(lock => lock.strings.join('').includes('FOR UPDATE')));
+  // Each keeper's prior effective subscription is end-dated first.
+  assert.equal(f.subscriptionStore.get('sub-prior')!.status, 'CANCELED');
+  assert.deepEqual(f.subscriptionStore.get('sub-prior')!.expiresAt, new Date(NOW));
+  // Per-user derived audit reasons (the Task 2 format), one plan.assign each.
+  assert.deepEqual(f.audits, [
+    { action: 'plan.assign', targetId: 'u-2',
+      reason: 'Assigned plan Standard to user u-2 effective 2026-09-26T12:00:00.000Z',
+      changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-26T12:00:00.000Z' } },
+    { action: 'plan.assign', targetId: 'u-3',
+      reason: 'Assigned plan Standard to user u-3 effective 2026-09-26T12:00:00.000Z',
+      changes: { planId: 'plan-1', status: 'ACTIVE', effectiveAt: '2026-09-26T12:00:00.000Z' } },
+  ]);
+});
+
+test('assignPlanToUsers aborts the whole batch with a named error before any writes when a keeper is ineligible', async () => {
+  const f = fixture('super_admin', { users: [
+    userRow('u-2', 'Marta Keeper', 'marta@example.com'),
+    userRow('u-3', 'Gone Keeper', 'gone@example.com', new Date(NOW)),
+  ] });
+  const locks: Array<unknown> = [];
+  (f.tx as { $queryRaw: unknown }).$queryRaw = (...args: unknown[]) => {
+    locks.push(args); return Promise.resolve([]);
+  };
+  const deleting = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { userIds: ['u-2', 'u-3'], planId: 'plan-1', planBillingOptionId: 'opt-1',
+      effectiveAt: new Date(NOW) });
+  assert.ok(isFailure(deleting));
+  assert.match((deleting as Error).message, /Gone Keeper/,
+    'the error names the ineligible keeper');
+  assert.equal(f.subscriptionStore.size, 0, 'never a partial assignment');
+  assert.equal(f.audits.length, 0);
+  assert.equal(locks.length, 0, 'pre-validation precedes every write, locks included');
+  const missing = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { userIds: ['u-2', 'u-missing'], planId: 'plan-1', planBillingOptionId: 'opt-1',
+      effectiveAt: new Date(NOW) });
+  assert.ok(isFailure(missing));
+  assert.match((missing as Error).message, /u-missing/);
+  assert.equal(f.subscriptionStore.size, 0);
+  assert.equal(f.audits.length, 0);
+});
+
+test('assignPlanToUsers rejects a bad plan or option before any writes', async () => {
+  const f = fixture('super_admin');
+  const base = { userIds: ['user-1'], planId: 'plan-1', planBillingOptionId: 'opt-1',
+    effectiveAt: new Date(NOW) };
+  f.planStore.set('plan-dead', { ...PLAN, id: 'plan-dead', active: false });
+  const inactive = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { ...base, planId: 'plan-dead' });
+  assert.ok(isFailure(inactive));
+  const foreign = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { ...base, planBillingOptionId: 'opt-9' });
+  assert.ok(isFailure(foreign));
+  f.optionStore.set('opt-9', { ...MONTHLY, id: 'opt-9', planId: 'plan-9' });
+  const mismatch = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { ...base, planBillingOptionId: 'opt-9' });
+  assert.ok(isFailure(mismatch));
+  assert.equal(f.subscriptionStore.size, 0);
+  assert.equal(f.audits.length, 0);
+});
+
+test('assignPlanToUsers validates the batch shape: non-empty, deduped, capped, valid date', async () => {
+  const f = fixture('super_admin');
+  const base = { planId: 'plan-1', planBillingOptionId: 'opt-1', effectiveAt: new Date(NOW) };
+  for (const bad of [
+    { ...base, userIds: [] },
+    { ...base, userIds: ['   '] },
+    { ...base, userIds: ['x'.repeat(129)] },
+    { ...base, userIds: Array.from({ length: 501 }, (_, index) => `u-${index}`) },
+    { ...base, userIds: ['user-1'], effectiveAt: new Date(Number.NaN) },
+  ] as Array<{ userIds: string[]; effectiveAt?: Date }>) {
+    const result = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+      { ...base, ...bad } as never);
+    assert.ok(isFailure(result), JSON.stringify(bad));
+  }
+  assert.equal(f.audits.length, 0);
+  // Duplicate picks collapse (a stale form can repeat an id).
+  const duped = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { ...base, userIds: ['user-1', 'user-1'] });
+  assert.ok(!isFailure(duped));
+  assert.equal((duped as { assignments: unknown[] }).assignments.length, 1);
+});
+
+test('a keeper turning ineligible mid-batch aborts the rest — the service reports the failure for the caller\'s rollback', async () => {
+  const f = fixture('super_admin', { users: [
+    userRow('u-2', 'Marta Keeper', 'marta@example.com'),
+    userRow('u-3', 'Dan O.', 'dan@example.com'),
+  ] });
+  const locks: Array<{ values: unknown[] }> = [];
+  (f.tx as { $queryRaw: unknown }).$queryRaw = (strings: string[], ...values: unknown[]) => {
+    locks.push({ values });
+    // Simulate a concurrent deletion landing between the pre-checks and u-3's
+    // row lock (the pre-checks and the lock cannot both be transactionally
+    // fresh without serializing the whole table).
+    if (locks.length === 2) {
+      const vanishing = f.userStore.get('u-3')!;
+      vanishing.deletingAt = new Date(NOW);
+    }
+    return Promise.resolve([]);
+  };
+  const result = await f.assignment.assignPlanToUsers(f.tx, 'owner-1',
+    { userIds: ['u-2', 'u-3'], planId: 'plan-1', planBillingOptionId: 'opt-1',
+      effectiveAt: new Date(NOW) });
+  assert.ok(isFailure(result), 'the batch fails closed instead of skipping a keeper');
+  assert.match((result as Error).message, /u-3|Dan O\./);
+  // Writes for u-2 already happened in the fake store — production semantics
+  // roll them back: the caller (withAdminControl's prisma.$transaction) throws
+  // on this returned error, so nothing commits. Pinned at the action level.
 });

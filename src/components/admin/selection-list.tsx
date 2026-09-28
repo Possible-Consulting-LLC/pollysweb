@@ -88,6 +88,11 @@ export type SelectionListProps = {
    * select affordance and keeps firing `onToggle`. Single mode is untouched —
    * its rows are pick buttons. */
   rowClick?: 'select' | 'expand';
+  /** Task 10: an ALWAYS-VISIBLE per-row detail line rendered beneath the row's
+   * subtitle in both modes (unlike S13a's expand-only `detailFor`) — the plan
+   * picker's read-only "Included features" line. Receives the row; extra
+   * host fields (e.g. features) survive on it. Absent → nothing renders. */
+  rowDetail?: (row: SelectionRow) => ReactNode;
   /** S13a expand mode: which row's detail is open (parent-owned, one at a
    * time if the host so chooses). */
   expandedId?: string;
@@ -147,6 +152,7 @@ export function SelectionList({
   footerAction,
   toolbar = true,
   rowClick = 'select',
+  rowDetail,
   expandedId,
   detailFor,
   onExpandToggle,
@@ -249,6 +255,9 @@ export function SelectionList({
           {row.subtitle
             ? <span className="block truncate text-[11.5px] opacity-55">{row.subtitle}</span>
             : null}
+          {rowDetail
+            ? <span data-row-detail-line className="mt-1.5 block">{rowDetail(row)}</span>
+            : null}
         </span>
         {row.badge ? <RowBadge badge={row.badge} className="ml-auto" /> : null}
       </button>
@@ -280,11 +289,20 @@ export function SelectionList({
         aria-label={`Toggle ${row.title}`}
         className="h-4 w-4 shrink-0 accent-[var(--plum)]"
       />
+      {row.leading
+        ? <span aria-hidden="true" data-row-avatar={row.leading}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--lavender)] text-[13px] font-bold text-[var(--midnight)]">
+            {row.leading}
+          </span>
+        : null}
       <span className="min-w-0 flex-1">
         <span className={cn('block truncate text-sm font-semibold',
           row.selected && 'text-[var(--plum)]', row.disabled && 'opacity-60')}>{row.title}</span>
         {row.subtitle
           ? <span className="block truncate font-mono text-[11px] opacity-55">{row.subtitle}</span>
+          : null}
+        {rowDetail
+          ? <span data-row-detail-line className="mt-1.5 block">{rowDetail(row)}</span>
           : null}
       </span>
       {row.badge ? <RowBadge badge={row.badge} /> : null}

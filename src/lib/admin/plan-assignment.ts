@@ -80,6 +80,84 @@ export async function assignPlanSubscription(tx: AssignmentDb, actorId: string,
   return created.id;
 }
 
+// --- Task 10: bulk keeper assignment (all-or-nothing) ------------------------
+
+/** Batch size cap — mirrors the select-all payload cap (suggest.ts): the tray
+ * can never hold more, so a larger form submission is rejected outright. */
+export const BULK_ASSIGNMENT_MAX_USERS = 500;
+
+export type BulkAssignmentInput = { userIds: string[]; planId: string;
+  planBillingOptionId: string; effectiveAt: Date };
+export type BulkAssignmentRow = { userId: string; subscriptionId: string };
+
+/** Error instances from another module realm; the tag check works in both. */
+const isError = (value: unknown): value is Error =>
+  Object.prototype.toString.call(value) === '[object Error]';
+
+/** Assigns one plan (and one of its active billing options) to N keepers
+ * ALL-OR-NOTHING (owner-approved wizard rework, Task 10): everything runs in
+ * the caller's ONE authorized withAdminControl transaction —
+ * - whole-batch pre-validation BEFORE any writes: every keeper must exist and
+ *   not be deleting, the plan must be active, and the option must belong to it
+ *   and be active; any violation returns a NAMED error and the caller aborts
+ *   with zero writes;
+ * - per keeper, the existing per-user service runs: its own row lock
+ *   serializes concurrent assignments, its prior effective subscription is
+ *   end-dated first, and one plan.assign audit lands with a DERIVED per-user
+ *   reason (no reason input anywhere in the flow);
+ * - a keeper turning ineligible between the pre-checks and its lock (a race)
+ *   fails the remaining batch via the returned error, which the action throws
+ *   inside the same transaction — the whole batch rolls back, never a partial
+ *   assignment. Success returns per-user outcomes. */
+export async function assignPlanToUsers(tx: AssignmentDb, actorId: string,
+  input: BulkAssignmentInput): Promise<{ assignments: BulkAssignmentRow[] } | Error> {
+  const userIds = [...new Set(Array.isArray(input.userIds)
+    ? input.userIds.filter(id => typeof id === 'string') : [])];
+  if (userIds.length === 0) return new Error('Select at least one keeper.');
+  if (userIds.length > BULK_ASSIGNMENT_MAX_USERS)
+    return new Error(`Too many keepers in one batch — select at most ${BULK_ASSIGNMENT_MAX_USERS}.`);
+  if (userIds.some(id => !idOk(id))) return new Error('A valid keeper selection is required.');
+  if (!idOk(input.planId) || !idOk(input.planBillingOptionId))
+    return new Error('A plan and a billing option are required.');
+  if (Object.prototype.toString.call(input.effectiveAt) !== '[object Date]' ||
+      !Number.isFinite(input.effectiveAt.getTime()))
+    return new Error('Enter a valid effective date.');
+  // Whole-batch eligibility pre-checks — one query, strictly before any write.
+  const users = await tx.user.findMany({ where: { id: { in: userIds } },
+    select: { id: true, name: true, deletingAt: true } });
+  const keepersById = new Map(users.map(user => [user.id, user]));
+  for (const id of userIds) {
+    const keeper = keepersById.get(id);
+    if (!keeper)
+      return new Error(`Keeper ${id} no longer exists. Reload and review the selection.`);
+    if (keeper.deletingAt)
+      return new Error(`${keeper.name ?? id}'s account is being deleted — remove them from the selection.`);
+  }
+  const actor = await tx.user.findUnique({ where: { id: actorId }, select: { role: true } });
+  if (!actor || actor.role !== 'super_admin')
+    return new Error('Administrator access denied.');
+  const plan = await tx.plan.findUnique({ where: { id: input.planId },
+    include: { billingOptions: true } });
+  if (!plan) return new Error('That plan no longer exists. Reload the page.');
+  if (!plan.active) return new Error('Choose an active plan.');
+  const option = plan.billingOptions.find(candidate => candidate.id === input.planBillingOptionId);
+  if (!option) return new Error('That billing option does not belong to the chosen plan. Reload the page.');
+  if (!option.active) return new Error('Choose an active billing option.');
+  const assignments: BulkAssignmentRow[] = [];
+  for (const targetUserId of userIds) {
+    // Derived per-user audit reason (the Task 2 format) — no reason input.
+    const reason =
+      `Assigned plan ${plan.name} to user ${targetUserId} effective ${input.effectiveAt.toISOString()}`;
+    const result = await assignPlanSubscription(tx, actorId,
+      { targetUserId, planId: input.planId, planBillingOptionId: input.planBillingOptionId,
+        effectiveAt: input.effectiveAt, reason });
+    if (isError(result))
+      return new Error(`Keeper ${targetUserId}: ${result.message}`);
+    assignments.push({ userId: targetUserId, subscriptionId: result });
+  }
+  return { assignments };
+}
+
 /** Currently effective subscriptions across all users (admin overview), with
  * joined keeper/plan/option display details, optional case-insensitive search
  * over keeper name/email, plan name, and status, and offset pagination. */
@@ -146,9 +224,13 @@ export async function searchUsers(tx: Pick<AssignmentDb, 'user'>,
  * the total and page math describe exactly the assignable set (filtering a
  * mixed page would strand active plans behind inactive ones). */
 export type AssignablePlanRow = { id: string; name: string; planType: string;
-  billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }> };
+  billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }>;
+  /** Enabled feature NAMES for the picker's read-only "Included features" line
+   * (Task 10: nothing feature-editable on the assignment surface — display only). */
+  features: string[] };
 export type AssignablePlansQuery = { search?: string; page: number; pageSize: number };
-export async function listAssignablePlans(tx: Pick<Prisma.TransactionClient, 'plan'>,
+export async function listAssignablePlans(tx: Pick<Prisma.TransactionClient,
+  'plan' | 'featurePlanTranslation'>,
   query: AssignablePlansQuery): Promise<{ plans: AssignablePlanRow[]; total: number }> {
   const page = Math.max(1, Math.trunc(query.page) || 1);
   const pageSize = Math.max(1, Math.trunc(query.pageSize) || 1);
@@ -161,9 +243,27 @@ export async function listAssignablePlans(tx: Pick<Prisma.TransactionClient, 'pl
       skip: (page - 1) * pageSize, take: pageSize }),
     tx.plan.count({ where }),
   ]);
-  return { total, plans: rows.map(row => ({ id: row.id, name: row.name, planType: row.planType,
-    billingOptions: row.billingOptions.map(option => ({ id: option.id, interval: option.interval,
-      basePriceCents: option.basePriceCents, active: option.active })) })) };
+  // ONE grouped query for the page's rows (never per-plan): each plan's
+  // enabled feature names, name-ordered.
+  const translations = rows.length ? await tx.featurePlanTranslation.findMany({
+    where: { planId: { in: rows.map(row => row.id) }, enabled: true },
+    select: { planId: true, feature: { select: { name: true } } },
+  }) : [];
+  const featuresByPlan = new Map<string, string[]>();
+  for (const translation of translations) {
+    if (!translation.feature) continue;
+    const names = featuresByPlan.get(translation.planId) ?? [];
+    names.push(translation.feature.name);
+    featuresByPlan.set(translation.planId, names);
+  }
+  return { total, plans: rows.map(row => {
+    const features = (featuresByPlan.get(row.id) ?? [])
+      .sort((a, b) => a.localeCompare(b));
+    return { id: row.id, name: row.name, planType: row.planType,
+      billingOptions: row.billingOptions.map(option => ({ id: option.id, interval: option.interval,
+        basePriceCents: option.basePriceCents, active: option.active })),
+      features };
+  }) };
 }
 
 /** Ends one still-effective subscription: status CANCELED with expiresAt now,

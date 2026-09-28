@@ -70,7 +70,8 @@ let servedSubTotal = 0;
 let servedUsers: Array<{ id: string; name: string; email: string; deleting: boolean }> = [];
 let servedUserTotal = 0;
 let servedPlans: Array<{ id: string; name: string; planType: string; billingOptionCount: number;
-  billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }> }> = [];
+  billingOptions: Array<{ id: string; interval: string; basePriceCents: number; active: boolean }>;
+  features: string[] }> = [];
 let servedPlanTotal = 0;
 const dbUsers: Record<string, { id: string; name: string; email: string }> = {};
 const dbPlans: Record<string, { id: string; name: string; planType: string;
@@ -108,7 +109,8 @@ const deps: Record<string, unknown> = {
   '@/components/admin/assign-plan-wizard': { AssignPlanWizard: (props: Record<string, unknown>) => {
     capturedWizardProps.push({ ...props });
     return jsx.jsx('div', { 'data-wizard': true, 'data-step': props.step,
-      'data-user': (props.selectedUser as { id?: string } | null)?.id ?? '' });
+      'data-user': ((props.prefilledKeepers ?? []) as Array<{ id?: string }>)
+        .map(keeper => keeper.id ?? '').join(',') });
   } },
   // The list section is a client island (headless narrowing owns the search);
   // the page pins the server-owned props, the component test pins the rows.
@@ -218,7 +220,7 @@ test('wizard params ride along on list navigation so an assignment survives', as
   assert.deepEqual(jsonOf(list.wizardParams), { wizard: 'open', step: '2', user: 'u-1' });
 });
 
-test('＋ Add subscription unfolds the wizard above the list with the user step', async () => {
+test('＋ Add subscription unfolds the wizard above the list with the keeper step', async () => {
   capturedWizardProps = []; capturedUserQueries = [];
   servedRows = [row()]; servedSubTotal = 1;
   servedUsers = [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com', deleting: false }];
@@ -227,8 +229,8 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
   // Resolving the tree invokes the stubs (wizard + list captures).
   const flat = elements(tree);
   assert.deepEqual(jsonOf(capturedWizardProps), [{
-    step: 1, listSearch: '', listPage: 1, selectedUser: null, selectedPlan: null,
-    selectedOptionId: '',
+    step: 1, listSearch: '', listPage: 1, prefilledKeepers: [],
+    selectedPlan: null, selectedOptionId: '',
     userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com',
           leading: 'MK', disabled: false }],
       total: 1, page: 1, pageSize: 20, search: '' },
@@ -241,7 +243,7 @@ test('＋ Add subscription unfolds the wizard above the list with the user step'
   assert.ok(listIndex > wizardIndex, 'wizard above the list island');
 });
 
-test('Reassign opens the wizard at step 2 with that keeper preselected', async () => {
+test('Reassign opens the wizard at step 2 with that keeper preselected for the batch', async () => {
   capturedWizardProps = [];
   servedRows = Array.from({ length: 45 }, (_, index) =>
     row({ id: `sub-${index + 1}`, userId: `u-${index + 1}`, userName: `Keeper ${index + 1}` }));
@@ -251,9 +253,12 @@ test('Reassign opens the wizard at step 2 with that keeper preselected', async (
   elementsOf(tree);
   assert.deepEqual(jsonOf(capturedWizardProps), [{
     step: 2, listSearch: 'keeper', listPage: 2, selectedOptionId: '',
-    selectedUser: { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' },
+    prefilledKeepers: [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }],
     selectedPlan: null,
-    userPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
+    // The keeper picker page is always served while the wizard is open.
+    userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com',
+          leading: 'MK', disabled: false }],
+      total: 1, page: 1, pageSize: 20, search: '' },
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);
   // Row actions (Reassign/End) live in the client island and are pinned there.
@@ -271,13 +276,15 @@ test('step 3 receives the chosen plan with its billing options', async () => {
   elementsOf(tree);
   assert.deepEqual(jsonOf(capturedWizardProps), [{
     step: 3, listSearch: '', listPage: 1,
-    selectedUser: { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' },
+    prefilledKeepers: [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }],
     selectedPlan: { id: 'p-1', name: 'Pro', planType: 'STANDARD', billingOptions: [
       { id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
       { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true },
     ] },
     selectedOptionId: 'o-1',
-    userPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
+    userPicker: { rows: [{ id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com',
+          leading: 'MK', disabled: false }],
+      total: 1, page: 1, pageSize: 20, search: '' },
     planPicker: { rows: [], total: 0, page: 1, pageSize: 20, search: '' },
   }]);
 });
@@ -285,22 +292,27 @@ test('step 3 receives the chosen plan with its billing options', async () => {
 test('wizard steps clamp to what the URL state supports', async () => {
   capturedWizardProps = []; servedRows = []; servedSubTotal = 0;
   elementsOf(await render({ wizard: 'open', step: '9' }));
-  assert.equal(capturedWizardProps[0]?.step, 1, 'no keeper yet → step 1');
+  assert.equal(capturedWizardProps[0]?.step, 1, 'nonsense step → step 1');
   elementsOf(await render({ wizard: 'open', step: '3', user: 'u-1' }));
   assert.equal(capturedWizardProps[1]?.step, 2, 'no plan yet → step 2');
+  elementsOf(await render({ wizard: 'open', step: '3', plan: 'p-9' }));
+  assert.equal(capturedWizardProps[2]?.step, 2, 'an unknown plan folds to step 2');
+  // Steps beyond 1 no longer require a `user` URL param: the keeper selection
+  // is client-owned (the tray); the view clamps when the batch is empty.
   elementsOf(await render({ wizard: 'open', step: '3', plan: 'p-1' }));
-  assert.equal(capturedWizardProps[2]?.step, 1, 'no keeper yet → step 1');
+  assert.equal(capturedWizardProps[3]?.step, 3, 'plan present → the step stands');
 });
 
-test('the plan step is served active plans with search and pagination', async () => {
+test('the plan step is served active plans with search and pagination (and read-only feature names)', async () => {
   capturedWizardProps = []; capturedPlanQueries = [];
   servedRows = []; servedSubTotal = 0;
   dbUsers['u-1'] = { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' };
   servedPlans = [
     { id: 'p-1', name: 'Pro', planType: 'STANDARD', billingOptionCount: 2,
+      features: ['Log feeding', 'Log hydration'],
       billingOptions: [{ id: 'o-1', interval: 'MONTHLY', basePriceCents: 499, active: true },
         { id: 'o-2', interval: 'ANNUAL', basePriceCents: 4999, active: true }] },
-    { id: 'p-2', name: 'Basic', planType: 'STANDARD', billingOptionCount: 2,
+    { id: 'p-2', name: 'Basic', planType: 'STANDARD', billingOptionCount: 2, features: [],
       billingOptions: [{ id: 'o-3', interval: 'MONTHLY', basePriceCents: 199, active: true },
         { id: 'o-4', interval: 'ANNUAL', basePriceCents: 1999, active: true }] },
   ];
@@ -311,8 +323,9 @@ test('the plan step is served active plans with search and pagination', async ()
   assert.equal(first.step, 2);
   assert.deepEqual(first.planPicker, {
     rows: [
-      { id: 'p-1', title: 'Pro', subtitle: 'Standard · 2 options' },
-      { id: 'p-2', title: 'Basic', subtitle: 'Standard · 2 options' },
+      { id: 'p-1', title: 'Pro', subtitle: 'Standard · 2 options',
+        features: ['Log feeding', 'Log hydration'] },
+      { id: 'p-2', title: 'Basic', subtitle: 'Standard · 2 options', features: [] },
     ],
     total: 45, page: 1, pageSize: 20, search: '',
   });

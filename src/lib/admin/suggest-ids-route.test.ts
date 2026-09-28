@@ -49,7 +49,7 @@ const deps: Record<string, unknown> = {
     return { id: 'actor-1', role: 'super_admin' };
   } },
   '@/lib/db': { prisma: { tagged: 'prisma' } },
-  '@/lib/admin/suggest': { SELECTABLE_ENTITIES: ['features', 'plans'],
+  '@/lib/admin/suggest': { SELECTABLE_ENTITIES: ['features', 'plans', 'users'],
     selectableRows: async (tx: unknown, entity: string, q: string) => {
       assert.equal(tx, (deps['@/lib/db'] as { prisma: unknown }).prisma,
         'the route queries through the app prisma');
@@ -93,9 +93,16 @@ test('a non-super-admin is denied with 403 and no ids query runs', async () => {
   assert.equal(called.length, 0);
 });
 
-test('single-mode picker entities and unknown names fail closed with 404', async () => {
+test('the Task 10 user-picker entity is served (multi-select step 1); the rest fail closed with 404', async () => {
+  actorError = null; servedRows = [{ id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' }];
+  called = [];
+  const users = await call('users', 'q=ada');
+  assert.equal(users.status, 200);
+  assert.deepEqual(plain((users.body as { rows: Array<{ id: string }> }).rows.map(row => row.id)),
+    ['u-1']);
+  assert.deepEqual(called, [{ entity: 'users', q: 'ada' }]);
   actorError = null; called = [];
-  for (const entity of ['users', 'assignable-plans', 'subscriptions', 'accounts']) {
+  for (const entity of ['assignable-plans', 'subscriptions', 'accounts']) {
     const response = await call(entity);
     assert.equal(response.status, 404, `${entity} must not be selectable`);
     assert.equal(response.headers['Cache-Control'], 'no-store');

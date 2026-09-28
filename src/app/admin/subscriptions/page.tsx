@@ -57,23 +57,25 @@ export default async function SubscriptionsPage({ searchParams }:
   const userPickerQuery = parseListQuery({ search: params.usearch, page: params.upage });
   const planPickerQuery = parseListQuery({ search: params.psearch, page: params.ppage });
 
-  // Wizard step from the URL, clamped to what the state supports: no keeper →
-  // 1; keeper but no plan → 2; both → the requested step within 2..3.
+  // Wizard step from the URL, clamped to what the state supports: the
+  // plan/option are URL-owned (no plan → step 2), but the keeper batch is
+  // client-owned (the tray) — the view folds any step beyond 1 back to step 1
+  // when its batch is empty, so the page no longer gates steps on `user`.
   let step = rawStep >= 1 && rawStep <= 3 ? rawStep : 1;
-  if (step > 1 && !wizardUserId) step = 1;
   if (step > 2 && !wizardPlanId) step = 2;
 
   const { data: subs, page: listPage } = await paged(
     query => listEffectiveSubscriptions(prisma, query), listQuery);
   const lastPage = Math.max(1, Math.ceil(subs.total / parsed.pageSize));
 
-  // Wizard data, fetched in parallel and only for the open wizard's step.
+  // Wizard data, fetched in parallel: the keeper picker page is always served
+  // while the wizard is open (the view's empty-batch clamp can land on step 1
+  // from any URL state), the plan picker only for the plan step, and the
+  // Reassign preselect's row for the tray seed.
   const wizardData = wizardOpen ? await Promise.all([
-    step === 1 && !wizardUserId
-      ? paged(query => searchUsers(prisma, query),
-          { search: userPickerQuery.search, page: userPickerQuery.page,
-            pageSize: userPickerQuery.pageSize })
-      : null,
+    paged(query => searchUsers(prisma, query),
+      { search: userPickerQuery.search, page: userPickerQuery.page,
+        pageSize: userPickerQuery.pageSize }),
     step === 2 && !wizardPlanId
       ? paged(query => listAssignablePlans(prisma, query),
           { search: planPickerQuery.search, page: planPickerQuery.page,
@@ -85,22 +87,24 @@ export default async function SubscriptionsPage({ searchParams }:
       include: { billingOptions: true } }) : null,
   ]) : null;
   const [userList, planList, userRow, planRow] = wizardData ?? [null, null, null, null];
-  // A keeper/plan that vanished between navigation and render folds the step back.
-  if (step > 1 && !userRow) step = 1;
+  // A vanished plan folds the step back; a vanished preselect folds to step 1.
   if (step > 2 && !planRow) step = 2;
+  if (step > 1 && wizardUserId && !userRow) step = 1;
 
   const wizardProps = wizardData ? {
     step,
     listSearch: parsed.search,
     listPage,
-    selectedUser: userRow
-      ? { id: userRow.id, name: userRow.name ?? '', email: userRow.email } : null,
+    // The Reassign preselect seeds the client-owned keeper batch.
+    prefilledKeepers: userRow
+      ? [{ id: userRow.id, name: userRow.name ?? '', email: userRow.email }] : [],
     selectedPlan: planRow ? { id: planRow.id, name: planRow.name,
       planType: planRow.planType,
       billingOptions: planRow.billingOptions.map(option => ({ id: option.id,
         interval: option.interval, basePriceCents: option.basePriceCents,
         active: option.active })) } : null,
     selectedOptionId: wizardOptionId,
+    // Focused views keep the picker's search/page so "Change" restores the view.
     // Focused views keep the picker's search/page so "Change" restores the view.
     userPicker: userList
       ? { rows: userList.data.users.map((user: UserSummary) =>
@@ -113,7 +117,8 @@ export default async function SubscriptionsPage({ searchParams }:
     planPicker: planList
       ? { rows: planList.data.plans.map((plan: AssignablePlanRow) =>
           ({ id: plan.id, title: plan.name,
-            subtitle: `${typeLabel[plan.planType] ?? plan.planType} · ${plan.billingOptions.length} option${plan.billingOptions.length === 1 ? '' : 's'}` })),
+            subtitle: `${typeLabel[plan.planType] ?? plan.planType} · ${plan.billingOptions.length} option${plan.billingOptions.length === 1 ? '' : 's'}`,
+            features: plan.features })),
           total: planList.data.total, page: planList.page,
           pageSize: planPickerQuery.pageSize, search: planPickerQuery.search }
       : { ...emptyPicker, page: planPickerQuery.page, search: planPickerQuery.search },
@@ -136,7 +141,7 @@ export default async function SubscriptionsPage({ searchParams }:
         <Link href={subscriptionsHref(parsed.search, listPage, { wizard: 'open', step: '1' })}
           className={buttonVariants({ variant: 'primary', size: 'md' })}>＋ Add subscription</Link>
       </div>
-      <p>Assign a plan to one keeper at a time: assigning ends the prior effective subscription (marked canceled as of the effective date). Only active plans and their active billing options can be assigned. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
+      <p>Assign a plan to one or more keepers in a single audited batch: assigning ends each keeper&apos;s prior effective subscription (marked canceled as of the effective date). Only active plans and their active billing options can be assigned. Recent <Link href="/admin/reauth" className="underline">identity confirmation</Link> is required for every change.</p>
       <p>{`${subs.total} effective subscription${subs.total === 1 ? '' : 's'} — effective only; canceled and expired rows are hidden.`}</p>
     </header>
     {wizardProps ? <AssignPlanWizard {...wizardProps} /> : null}

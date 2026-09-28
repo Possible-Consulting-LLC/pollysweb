@@ -48,6 +48,8 @@ function loadSuggest() {
       Promise<Array<{ id: string; title: string; subtitle: string }>>;
     selectablePlanRows: (tx: unknown, search: string) =>
       Promise<Array<{ id: string; title: string; subtitle: string }>>;
+    selectableUserRows: (tx: unknown, search: string) =>
+      Promise<Array<{ id: string; title: string; subtitle: string }>>;
   };
 }
 
@@ -103,7 +105,8 @@ const prisma = {
   featurePlanTranslation: {
     findMany: async (args: Captured) => {
       translationCalls.push(args);
-      return [{ featureId: 'feature-1', enabled: true, plan: { name: 'Basic' } }];
+      return [{ featureId: 'feature-1', enabled: true, plan: { name: 'Basic' },
+        planId: 'plan-1', feature: { name: 'Log feeding' } }];
     },
   },
   user: {
@@ -231,16 +234,24 @@ test('narrowRows(users) includes deleting accounts flagged; the picker greys the
     ], total: 7 });
 });
 
-test('narrowRows(assignable-plans) narrows over active plans only, lean for the picker', async () => {
+test('narrowRows(assignable-plans) narrows over active plans only, carrying the read-only feature names', async () => {
   reset();
   const result = await suggest.narrowRows(prisma, 'assignable-plans', 'bas', 1, 10);
   const query = planCalls[0] as { where: unknown; select: Record<string, unknown> };
   assert.deepEqual(plain(query.where), { active: true,
     name: { contains: 'bas', mode: 'insensitive' } });
-  // Picker entities stay lean (S13): id/title/subtitle/disabled only.
+  // Lean plan select (id/title/subtitle columns) + ONE grouped translations
+  // query for the page's rows: the narrowed plan row renders the same
+  // read-only "Included features" line as the committed picker row (Task 10).
   assert.deepEqual(Object.keys(query.select).sort(), ['id', 'name', 'planType']);
+  assert.equal(translationCalls.length, 1, 'one grouped query per debounced pause');
+  assert.deepEqual(plain(translationCalls[0]), {
+    where: { planId: { in: ['plan-1'] }, enabled: true },
+    select: { planId: true, feature: { select: { name: true } } },
+  });
   assert.deepEqual(plain(result), {
-    rows: [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }], total: 42 });
+    rows: [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD', features: ['Log feeding'] }],
+    total: 42 });
 });
 
 test('narrowRows(subscriptions) narrows effective rows over keeper, plan, and status', async () => {
@@ -355,8 +366,36 @@ test('S13c: selectablePlanRows mirrors the committed plans search shape, lean an
     [{ id: 'plan-1', title: 'Basic', subtitle: 'STANDARD' }]);
 });
 
-test('S13c: only the multi-select surfaces are selectable entities (single-mode pickers excluded)', async () => {
-  assert.deepEqual([...suggest.SELECTABLE_ENTITIES], ['features', 'plans']);
-  await assert.rejects(() => suggest.selectableRows(prisma, 'users', 'ada'));
-  await assert.rejects(() => suggest.selectableRows(prisma, 'accounts', 'x'));
+test('S13c: selectableUserRows serves every non-deleting keeper matching name or email, lean and capped', async () => {
+  reset();
+  const rows = await suggest.selectableRows(prisma, 'users', 'ada');
+  assert.equal(userCalls.length, 1, 'exactly ONE lean query per click');
+  assert.equal(planCalls.length + featureCalls.length + subCalls.length +
+    listPlansCalls.length + translationCalls.length, 0, 'no rich-row cost');
+  const query = userCalls[0] as { where: unknown; take: number; skip?: number;
+    select: Record<string, unknown>; orderBy: unknown };
+  // The picker's search where-shape (name OR email, case-insensitive) AND the
+  // deleting guard: deleting accounts never join Select all (Task 10 — they
+  // are greyed/unselectable everywhere).
+  assert.deepEqual(plain(query.where), { deletingAt: null, OR: [
+    { name: { contains: 'ada', mode: 'insensitive' } },
+    { email: { contains: 'ada', mode: 'insensitive' } },
+  ] });
+  assert.equal(query.take, suggest.SELECT_ALL_CAP, 'the payload is capped');
+  assert.equal(query.skip, undefined, 'no pagination — select all spans all pages');
+  assert.deepEqual(plain(query.orderBy), [{ name: 'asc' }, { id: 'asc' }]);
+  assert.deepEqual(Object.keys(query.select).sort(), ['email', 'id', 'name']);
+  // Display triples; a nameless keeper falls back to its email as the title.
+  assert.deepEqual(plain(rows), [
+    { id: 'u-1', title: 'Ada Keeper', subtitle: 'ada@example.com' },
+    { id: 'u-2', title: 'ada2@example.com', subtitle: 'ada2@example.com' },
+    { id: 'u-3', title: 'Adaline Gone', subtitle: 'gone@example.com' },
+  ], 'the stub serves every fixture; deleting exclusion is the where-clause, pinned above');
+});
+
+test('S13c: the user picker is a selectable entity now (Task 10 multi-select step 1)', async () => {
+  assert.deepEqual([...suggest.SELECTABLE_ENTITIES], ['features', 'plans', 'users']);
+  assert.equal(await suggest.selectableRows(prisma, 'users', 'ada').then(rows => rows.length), 3);
+  await assert.rejects(() => suggest.selectableRows(prisma, 'accounts', 'x'),
+    'still fail-closed for anything unlisted');
 });

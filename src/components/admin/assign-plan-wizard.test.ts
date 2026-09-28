@@ -50,7 +50,7 @@ function loadModule(path: string, deps: Record<string, unknown>): Record<string,
   return exports;
 }
 
-// The real shared SelectionList runs (single mode is the point of the wizard);
+// The real shared SelectionList runs (multi mode is now the point of step 1);
 // only its own dependencies are stubbed.
 const buttonStub = {
   Button: ({ variant, size, className, ...props }: Record<string, unknown>) =>
@@ -75,17 +75,35 @@ const selectionList = loadModule('./selection-list.tsx', {
   '@/components/admin/selection-tray': selectionTray,
 });
 
+/** Captures for the state-owning wrapper tests (the useState stub records every
+ * setter argument; navigation and the action record their calls). */
+let stateSetterCalls: unknown[] = [];
+let pushed: string[] = [];
+let idFetches: Array<{ entity: string; query: string }> = [];
+let selectableFixture: Array<{ id: string; title: string; subtitle: string }> = [];
+let actionCalls: FormData[] = [];
+let actionResult: { error?: string; success?: boolean } = {};
+
+const resetCaptures = () => {
+  stateSetterCalls = []; pushed = []; idFetches = []; selectableFixture = [];
+  actionCalls = []; actionResult = {};
+};
+
 const deps: Record<string, unknown> = {
-  // Hook stubs: only the thin client wrapper uses hooks; tests drive the
-  // hook-free view, exactly like the plans accordion tests.
+  // Hook stubs: the tests drive both the hook-free view AND the thin client
+  // wrapper whose state owner logic (selection map, post-assign reset) is
+  // pinned via the recorded setters — the plans-accordion tests' pattern.
   react: {
-    useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => {}],
+    useState: (initial: unknown) => {
+      const value = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+      return [value, (next: unknown) => { stateSetterCalls.push(next); }];
+    },
     useEffect: () => {},
     useRef: () => ({ current: null }),
     useActionState: () => [undefined, () => {}, false],
   },
   'react/jsx-runtime': jsx,
-  'next/navigation': { useRouter: () => ({ push: () => {} }) },
+  'next/navigation': { useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) },
   // Live-search stub: records the picker input props; the narrowing states are
   // plain props the tests drive directly.
   '@/components/admin/live-search': {
@@ -97,6 +115,10 @@ const deps: Record<string, unknown> = {
     },
     NarrowPager: (props: Record<string, unknown>) => jsx.jsx('nav',
       { 'data-narrow-pager': true, 'data-page': props.page, 'data-total': props.total }),
+    fetchSelectableRows: (entity: string, query: string) => {
+      idFetches.push({ entity, query });
+      return Promise.resolve(selectableFixture);
+    },
   },
   'next/link': { default: ({ href, children, className, ...rest }: Record<string, unknown>) =>
     jsx.jsx('a', { href, className, ...rest, children }) },
@@ -106,14 +128,24 @@ const deps: Record<string, unknown> = {
   '@/components/admin/list-shared': listSharedExports,
   '@/components/ui/card': { cardClassName: 'card' },
   '@/components/ui/button': buttonStub,
-  '@/components/mutation-form': { MutationForm: ({ action, children, ...props }: Record<string, unknown>) =>
-    jsx.jsx('form', { ...props, 'data-action': String(action), children }) },
+  '@/components/mutation-form': { MutationForm: ({ action, children, ...props }: {
+    action: (form: FormData) => void; children?: unknown; [key: string]: unknown }) =>
+    jsx.jsx('form', { ...props, 'data-action': String(action),
+      onSubmit: (event: { preventDefault(): void }) => {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+        action(new FormData());
+      }, children }) },
   '@/components/mutation-context': { MutationContextInput: () => null },
-  '@/app/admin/subscriptions/actions': { assignSubscriptionAction: 'assign-action' },
+  '@/app/admin/subscriptions/actions': { assignSubscriptionAction: (form: FormData) => {
+    actionCalls.push(form);
+    return Promise.resolve(actionResult);
+  } },
 };
 
 const wizardModule = loadModule('./assign-plan-wizard.tsx', deps);
 const AssignPlanWizardView = wizardModule.AssignPlanWizardView as
+  (props: Record<string, unknown>) => unknown;
+const AssignPlanWizard = wizardModule.AssignPlanWizard as
   (props: Record<string, unknown>) => unknown;
 const subscriptionsHref = wizardModule.subscriptionsHref as
   (list: { search: string; page: number }) => string;
@@ -145,8 +177,10 @@ const baseUserPicker = {
 };
 const basePlanPicker = {
   rows: [
-    { id: 'p-1', title: 'Pro', subtitle: 'Standard · 2 active billing options' },
-    { id: 'p-2', title: 'Basic', subtitle: 'Standard · 2 active billing options' },
+    { id: 'p-1', title: 'Pro', subtitle: 'Standard · 2 active billing options',
+      features: ['View the collection', 'Log feeding'] },
+    { id: 'p-2', title: 'Basic', subtitle: 'Standard · 2 active billing options',
+      features: [] },
   ],
   total: 2, page: 1, pageSize: 20, search: '',
 };
@@ -158,15 +192,18 @@ const planWithTwoOptions = {
     { id: 'o-dead', interval: 'MONTHLY', basePriceCents: 999, active: false },
   ],
 };
-const selectedUser = { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' };
+const selectedKeeper = { id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' };
+const selectedKeeper2 = { id: 'u-2', name: 'Dan O.', email: 'dan@example.com' };
 
 const base: Partial<AssignPlanWizardViewProps> = {
   step: 1, listSearch: '', listPage: 1,
-  selectedUser: null, selectedPlan: null, selectedOptionId: '',
+  selectedKeepers: [], selectedPlan: null, selectedOptionId: '',
   userPicker: baseUserPicker, planPicker: basePlanPicker,
   userNarrowing: userNarrowingState() as unknown as AssignPlanWizardViewProps['userNarrowing'],
   planNarrowing: planNarrowingState() as unknown as AssignPlanWizardViewProps['planNarrowing'],
   effectiveAt: '', onEffectiveAtChange: () => {},
+  onToggleKeeper: () => {}, onSelectAllKeepers: () => {}, onSelectNoneKeepers: () => {},
+  trayCollapsed: false, onTrayCollapsedToggle: () => {},
   navigate: () => {}, navigateSearch: () => {},
   assignDispatch: () => {}, assignResult: undefined,
   assignPending: false,
@@ -176,15 +213,16 @@ const render = (overrides: Partial<AssignPlanWizardViewProps> = {}) => {
   lastLiveSearch = [];
   const nav: string[] = [];
   const navSearch: string[] = [];
-  const dispatched: FormData[] = [];
+  const toggled: string[] = [];
   const tree = AssignPlanWizardView({ ...base, ...overrides,
     navigate: (href: string) => { nav.push(href); },
     navigateSearch: (href: string) => { navSearch.push(href); },
-    assignDispatch: (form: FormData) => { dispatched.push(form); } }) as unknown;
+    onToggleKeeper: (id: string) => { toggled.push(id); },
+    assignDispatch: () => {} }) as unknown;
   // Resolving the tree invokes the function-component stubs (the live search
   // hook) so tests can drive it.
   elements(tree);
-  return { tree, nav, navSearch, dispatched,
+  return { tree, nav, navSearch, toggled,
     buttons: () => elements(tree).filter((item) => item.type === 'button'),
     links: () => elements(tree).filter((item) => item.type === 'a'),
     inputs: () => elements(tree).filter((item) => item.type === 'input'),
@@ -198,339 +236,132 @@ test('URL builders preserve the list location and drop empty wizard params', () 
   assert.equal(subscriptionsHref({ search: 'x', page: 1 }), '/admin/subscriptions?search=x');
   assert.equal(subscriptionsHref({ search: '', page: 2 }), '/admin/subscriptions?page=2');
   assert.equal(subscriptionsHref({ search: '', page: 1 }), '/admin/subscriptions');
-  assert.equal(wizardHref(list, { step: 2, user: 'u-1' }),
-    '/admin/subscriptions?wizard=open&step=2&user=u-1');
+  assert.equal(wizardHref(list, { step: 2 }),
+    '/admin/subscriptions?wizard=open&step=2');
   assert.equal(wizardHref({ search: 'x', page: 3 }, { step: 1 }),
     '/admin/subscriptions?search=x&page=3&wizard=open&step=1');
-  assert.equal(wizardHref(list, { step: 3, user: 'u-1', plan: 'p-1', option: 'o-1',
+  assert.equal(wizardHref(list, { step: 3, plan: 'p-1', option: 'o-1',
     usearch: 'ma', upage: 2, psearch: 'pro', ppage: 2 }),
-    '/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1&option=o-1&usearch=ma&upage=2&psearch=pro&ppage=2');
+    '/admin/subscriptions?wizard=open&step=3&plan=p-1&option=o-1&usearch=ma&upage=2&psearch=pro&ppage=2');
 });
 
-// --- Step 1: user ---
+// --- Step 1: keepers (multi-select, Task 10) ---
 
-test('step 1 lists keepers through the single-mode SelectionList', () => {
-  const { tree, buttons } = render();
-  assert.equal(elements(tree).some((item) => item.props.role === 'checkbox'), false);
-  assert.match(textOf(tree), /Marta Keeper/);
-  assert.match(textOf(tree), /marta@example\.com/);
-  assert.ok(buttons().find((item) => textOf(item) === 'Continue to plan'), 'continue affordance missing');
-});
-
-test('picker rows carry the leading initials avatar (mockup row anatomy)', () => {
+test('step 1 is a multi-select keeper list: checkboxes, the gold N of M counter, and the select pair', () => {
   const { tree } = render();
-  const marta = elements(tree).find((item) => item.props['aria-label'] === 'Select Marta Keeper');
-  const avatar = elements(marta!).find((item) => item.props['data-row-avatar']);
-  assert.ok(avatar, 'committed picker rows lack the initials avatar');
-  assert.equal(avatar?.props['data-row-avatar'], 'MK');
-  assert.equal(String(avatar.props.className).includes('bg-[var(--lavender)]'), true);
-  // Narrowed (live) rows derive their initials locally — the suggest endpoint
-  // does not carry a leading glyph.
-  const live = render({ ...base, userNarrowing: userNarrowingState({
-    narrowed: true, active: true, query: 'nova',
-    rows: [{ id: 'u-9', title: 'Nova Q. Keeper', subtitle: 'nova@example.com' }],
-    total: 1, page: 1 }) });
-  const nova = elements(live.tree).find((item) => item.props['aria-label'] === 'Select Nova Q. Keeper');
-  const liveAvatar = elements(nova!).find((item) => item.props['data-row-avatar']);
-  assert.equal(liveAvatar?.props['data-row-avatar'], 'NQ', 'narrowed rows lack the initials avatar');
+  const checkboxes = elements(tree).filter((item) =>
+    item.type === 'input' && item.props.type === 'checkbox');
+  assert.equal(checkboxes.length, 2, 'every keeper row carries a checkbox');
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'select-all'), true,
+    'Select all renders');
+  assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'select-none'), true,
+    'Select none renders');
+  const counter = elements(tree).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.ok(counter, 'the selection counter renders');
+  assert.equal(textOf(counter!), '0 of 2 selected');
+  assert.equal(String(counter.props.className).includes('goldchip'), true,
+    'the counter is the gold mockup chip');
 });
 
-test('picker rows render the meta badge slot: Valid on keepers, Selected in the focused view', () => {
+test('keeper rows carry the initials avatar in multi mode (mockup row anatomy)', () => {
   const { tree } = render();
-  const badges = elements(tree).filter((item) => item.props['data-row-badge']);
-  assert.deepEqual(badges.map((item) => item.props['data-row-badge']), ['Valid', 'Valid'],
-    'every selectable keeper row carries the Valid badge');
-  // The focused view (selection held) shows the gold Selected badge.
-  const focused = render({ selectedUser });
-  const selected = elements(focused.tree)
-    .find((item) => item.props['data-row-badge'] === 'Selected');
-  assert.ok(selected, 'focused view missing the Selected badge');
-  assert.equal(String(selected.props.className).includes('bg-[var(--gold)]'), true);
+  const avatar = elements(tree).find((item) => item.props['data-row-avatar'] === 'MK');
+  assert.ok(avatar, 'multi-mode keeper rows lack the initials avatar');
+});
+
+test('clicking a keeper row or its checkbox toggles the parent-owned selection', () => {
+  const { tree, toggled } = render();
+  const checkbox = elements(tree).find((item) =>
+    item.props['aria-label'] === 'Toggle Marta Keeper');
+  (checkbox!.props.onChange as () => void)();
+  assert.deepEqual(toggled, ['u-1'], 'the checkbox toggles');
+  const rowLi = elements(tree).find((item) => item.props['data-row-id'] === 'u-2');
+  assert.ok(rowLi, 'row not found');
+  (rowLi!.props.onClick as (event: unknown) => void)({ target: { tagName: 'DIV' } });
+  assert.deepEqual(toggled, ['u-1', 'u-2'], 'the row click toggles');
+});
+
+test('selected keepers render Selected badges, the tray chips, and the counter follows', () => {
+  const { tree, toggled } = render({ selectedKeepers: [selectedKeeper] });
+  const counter = elements(tree).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.equal(textOf(counter!), '1 of 2 selected');
+  const tray = elements(tree).find((item) => item.props['data-testid'] === 'selection-tray');
+  assert.ok(tray, 'the tray renders while keepers are selected');
+  assert.match(textOf(tray!), /Marta Keeper/);
+  const checkbox = elements(tree).find((item) =>
+    item.props['aria-label'] === 'Toggle Marta Keeper');
+  assert.equal(checkbox?.props.checked, true);
+  assert.equal(elements(tree).some((item) => item.props['data-row-badge'] === 'Selected'), true);
+  // A tray chip's × removes the keeper through the same toggle handler.
+  const remove = elements(tray!).find((item) =>
+    item.props['aria-label'] === 'Deselect Marta Keeper');
+  (remove!.props.onClick as () => void)();
+  assert.deepEqual(toggled, ['u-1']);
 });
 
 test('deleting keepers are greyed and unselectable (mockup disabled rows)', () => {
-  const { nav, tree } = render({ userPicker: { ...baseUserPicker, rows: [
+  const { tree, toggled } = render({ userPicker: { ...baseUserPicker, rows: [
     { id: 'u-1', title: 'Marta Keeper', subtitle: 'marta@example.com' },
     { id: 'u-9', title: 'Old Acct', subtitle: 'deleting@example.com',
       disabled: true, badgeLabel: 'deleting' },
   ] } });
-  const old = elements(tree).find((item) => item.props['aria-label'] === 'Select Old Acct');
-  assert.ok(old, 'deleting row missing');
-  assert.equal(old?.props.disabled, true, 'deleting rows must be unselectable');
-  assert.equal(String(old?.props.className).includes('cursor-not-allowed'), true,
-    'deleting rows are greyed out');
-  const badge = elements(old!).find((item) => item.props['data-row-badge'] === 'deleting');
+  const checkbox = elements(tree).find((item) => item.props['aria-label'] === 'Toggle Old Acct');
+  assert.ok(checkbox, 'deleting row missing');
+  assert.equal(checkbox?.props.disabled, true, 'deleting rows must be unselectable');
+  const rowLi = elements(tree).find((item) => item.props['data-row-id'] === 'u-9');
+  (rowLi!.props.onClick as (event: unknown) => void)({ target: { tagName: 'DIV' } });
+  assert.deepEqual(toggled, [], 'a deleting keeper must never join the selection');
+  const badge = elements(tree).find((item) => item.props['data-row-badge'] === 'deleting');
   assert.ok(badge, 'deleting rows carry their status badge');
-  (old!.props.onClick as () => void)();
-  assert.deepEqual(nav, [], 'a disabled row must never navigate');
 });
 
-test('picking a keeper auto-advances straight to step 2 (no confirmation click)', () => {
-  const { nav, byLabel } = render();
-  (byLabel('Select Marta Keeper')!.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&user=u-1']);
-  const paged = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
-  (paged.byLabel('Select Marta Keeper')!.props.onClick as () => void)();
-  assert.deepEqual(paged.nav,
-    ['/admin/subscriptions?wizard=open&step=2&user=u-1&usearch=ma&upage=2']);
+test('Continue is explicit: disabled at zero keepers, live at N ≥ 1, carrying the picker location', () => {
+  const disabled = render();
+  const disabledButton = disabled.buttons().find((item) => textOf(item) === 'Continue ›');
+  assert.ok(disabledButton, 'continue affordance missing');
+  assert.equal(disabledButton?.props.disabled, true);
+  const ready = render({ selectedKeepers: [selectedKeeper, selectedKeeper2],
+    userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  const link = ready.links().find((item) => textOf(item) === 'Continue ›');
+  assert.equal(link?.props.href,
+    '/admin/subscriptions?wizard=open&step=2&usearch=ma&upage=2');
+});
+
+test('the step 1 hint carries the batch constraints', () => {
+  const { tree } = render();
+  const rendered = textOf(tree);
+  assert.match(rendered, /Build a list of keepers/);
+  assert.match(rendered, /deleting accounts never join/);
 });
 
 test('keeper search resets to page 1 and pagination preserves the search', () => {
   // S13d: the input contract is pinned on an above-page picker (a smaller
   // picker hides the input entirely — see the S13d test).
-  const { navSearch, nav, tree } = render({ userPicker: { ...baseUserPicker, total: 45 } });
-  // The picker's search input is the narrowing input; its explicit fallback
-  // (Enter) is the URL-param search — typed text and a reset to page 1.
+  const { navSearch } = render({ userPicker: { ...baseUserPicker, total: 45 } });
   assert.ok(live(), 'keeper search missing');
   (live()!.onEnter as (text: string) => void)('ma');
-  // Dropping upage returns the picker to page 1.
   assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=1&usearch=ma']);
   const pager = render({ userPicker: { ...baseUserPicker, search: 'ma', page: 2,
     total: 45, rows: Array.from({ length: 20 }, (_, index) =>
       ({ id: `u-${index + 1}`, title: `Keeper ${index + 1}` })) } });
   (pager.byLabel('Next page')!.props.onClick as () => void)();
   assert.deepEqual(pager.nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=3']);
-  void nav;
-  void tree;
 });
 
-test('a selected keeper folds the list into the focused view with a change affordance', () => {
-  const { tree, nav } = render({ selectedUser });
-  const rendered = textOf(tree);
-  assert.match(rendered, /Marta Keeper/);
-  assert.match(rendered, /marta@example\.com/);
-  assert.doesNotMatch(rendered, /Dan O\./);
-  const change = elements(tree).find((item) => item.type === 'button' && textOf(item) === 'Change');
-  assert.ok(change, 'focused-view change affordance missing');
-  (change.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
-  // Continue advances to the plan step with the keeper carried along.
-  const continueLink = elements(tree).find((item) => item.type === 'a' && textOf(item) === 'Continue to plan');
-  assert.equal(continueLink?.props.href, '/admin/subscriptions?wizard=open&step=2&user=u-1');
-});
-
-test('changing the keeper restores the picker view the user came from', () => {
-  const { tree, nav } = render({ selectedUser,
-    userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
-  const changeButton = elements(tree).find((item) => item.type === 'button' && textOf(item) === 'Change');
-  (changeButton!.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=2']);
-});
-
-// --- Step 2: plan + context bar ---
-
-test('step 2 shows the keeper context bar and the active plan list', () => {
-  const { tree, nav, byLabel } = render({ step: 2, selectedUser });
-  const rendered = textOf(tree);
-  assert.match(rendered, /Assigning to/);
-  assert.match(rendered, /Marta Keeper/);
-  assert.match(rendered, /marta@example\.com/);
-  assert.match(rendered, /Pro/);
-  const change = byLabel('Change keeper');
-  assert.ok(change, 'context bar change affordance missing');
-  (change.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
-  (byLabel('Select Pro')!.props.onClick as () => void)();
-  assert.deepEqual(nav.slice(1),
-    ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1'],
-    'picking a plan advances straight to the options step');
-});
-
-test('picking a plan clears a stale option and lands on step 3', () => {
-  const { nav, byLabel } = render({ step: 2, selectedUser, selectedOptionId: 'o-monthly' });
-  (byLabel('Select Pro')!.props.onClick as () => void)();
-  const href = nav[0];
-  assert.ok(href.includes('step=3'), href);
-  assert.ok(href.includes('plan=p-1'), href);
-  assert.equal(href.includes('option='), false, 'stale option must be cleared');
-  const { navSearch } = render({ step: 2, selectedUser,
-    planPicker: { ...basePlanPicker, total: 45 } });
-  assert.ok(live(), 'plan search missing');
-  (live()!.onEnter as (text: string) => void)('pro');
-  assert.deepEqual(navSearch,
-    ['/admin/subscriptions?wizard=open&step=2&user=u-1&psearch=pro']);
-});
-
-test('a selected plan folds the plan list; back returns to the keeper step', () => {
-  const { tree, nav, links } = render({ step: 2, selectedUser, selectedPlan: planWithTwoOptions });
-  const rendered = textOf(tree);
-  assert.match(rendered, /Pro/);
-  assert.doesNotMatch(rendered, /Basic/);
-  // The plan focused view's Change (not the context bar's, which carries an
-  // aria-label) unfolds the plan list again.
-  const change = elements(tree).find((item) => item.type === 'button' &&
-    textOf(item) === 'Change' && !item.props['aria-label']);
-  (change!.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2&user=u-1']);
-  const back = links().find((item) => textOf(item) === 'Back to user');
-  assert.equal(back?.props.href, '/admin/subscriptions?wizard=open&step=1&user=u-1');
-});
-
-// --- Step 3: options, summary, assign ---
-
-const step3: Partial<AssignPlanWizardViewProps> = {
-  step: 3, selectedUser, selectedPlan: planWithTwoOptions, selectedOptionId: '',
-  effectiveAt: '', onEffectiveAtChange: () => {}, assignResult: undefined,
-};
-
-test('step 3 lists only the chosen plan\'s active billing options', () => {
-  const { tree } = render(step3);
-  const rendered = textOf(tree);
-  assert.match(rendered, /Monthly — \$4\.99/);
-  assert.match(rendered, /Annual — \$49\.99/);
-  assert.doesNotMatch(rendered, /\$9\.99/, 'inactive option must not render');
-  assert.doesNotMatch(rendered, /o-dead/);
-});
-
-test('picking an option folds the option list and updates the live summary', () => {
-  const selected = render({ ...step3, selectedOptionId: 'o-monthly' });
-  const rendered = textOf(selected.tree);
-  assert.match(rendered, /Monthly — \$4\.99/);
-  assert.doesNotMatch(rendered, /Annual — \$49\.99/);
-  assert.match(rendered, /Assigning: Pro \(Monthly — \$4\.99\)/);
-  assert.match(rendered, /To: Marta Keeper \(marta@example\.com\)/);
-  assert.match(rendered, /Effective: today/);
-  assert.match(rendered, /row-locked/);
-  const change = elements(selected.tree).find((item) => item.type === 'button' &&
-    textOf(item) === 'Change' && !item.props['aria-label']);
-  (change!.props.onClick as () => void)();
-  assert.deepEqual(selected.nav, ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1']);
-  const unfolded = render(step3);
-  (unfolded.byLabel('Select Annual — $49.99')!.props.onClick as () => void)();
-  assert.deepEqual(unfolded.nav,
-    ['/admin/subscriptions?wizard=open&step=3&user=u-1&plan=p-1&option=o-annual']);
-});
-
-test('the assign form carries the selection as hidden inputs and gates the submit', () => {
-  const gated = render(step3);
-  const form = elements(gated.tree).find((item) => item.type === 'form');
-  assert.ok(form, 'assign form missing');
-  const hidden = elements(form).filter((item) => item.type === 'input');
-  // MutationContextInput is stubbed to null here; the wizard's own fields are
-  // what carry the selection.
-  assert.deepEqual(hidden.map((item) => ({ name: item.props.name, value: item.props.value })), [
-    { name: 'userQuery', value: 'u-1' },
-    { name: 'planId', value: 'p-1' },
-    { name: 'planBillingOptionId', value: '' },
-    { name: 'effectiveAt', value: '' },
-  ]);
-  const submit = gated.buttons().find((item) => textOf(item) === 'Assign plan');
-  assert.equal(submit?.props.disabled, true);
-  const ready = render({ ...step3, selectedOptionId: 'o-monthly' });
-  const readySubmit = ready.buttons().find((item) => textOf(item) === 'Assign plan');
-  assert.equal(readySubmit?.props.disabled, false);
-  const readyForm = elements(ready.tree).find((item) => item.type === 'form');
-  assert.deepEqual(elements(readyForm).filter((item) => item.type === 'input')
-    .map((item) => ({ name: item.props.name as string, value: item.props.value }))
-    .filter((item) => item.name === 'planBillingOptionId'),
-    [{ name: 'planBillingOptionId', value: 'o-monthly' }]);
-});
-
-test('the effective date is a controlled date field and feeds the summary', () => {
-  let changed = '';
-  const { inputs } = render({ ...step3,
-    onEffectiveAtChange: (value: string) => { changed = value; } });
-  const field = inputs().find((item) => item.props.name === 'effectiveAt');
-  assert.ok(field, 'effective date field missing');
-  assert.equal(field?.props.type, 'date', 'the mockup uses a type="date" field');
-  (field.props.onChange as (event: unknown) => void)({ target: { value: '2026-10-01' } });
-  assert.equal(changed, '2026-10-01');
-  const withDate = render({ ...step3, selectedOptionId: 'o-monthly', effectiveAt: '2026-10-01' });
-  assert.match(textOf(withDate.tree), /Effective: 2026-10-01/);
-});
-
-test('the client wrapper prefills the effective date with today (mockup parity)', () => {
-  lastLiveSearch = [];
-  const { effectiveAt: _e, onEffectiveAtChange: _o, navigate: _n, navigateSearch: _s,
-    assignDispatch: _d, assignResult: _r, assignPending: _p, ...wrapperProps } = {
-    ...base, step: 3, selectedUser, selectedPlan: planWithTwoOptions,
-    selectedOptionId: 'o-monthly' } as AssignPlanWizardViewProps;
-  const tree = (wizardModule.AssignPlanWizard as (props: Record<string, unknown>) => unknown)
-    (wrapperProps) as unknown;
-  elements(tree);
-  const field = elements(tree).find((item) => item.props.name === 'effectiveAt');
-  assert.ok(field, 'wrapper-rendered effective date field missing');
-  assert.match(String(field?.props.value), /^\d{4}-\d{2}-\d{2}$/,
-    'the effective date is prefilled with today');
-});
-
-test('step 3 navigates back to the plan step and cancel folds the wizard', () => {
-  const { nav, links, buttons } = render({ ...step3, selectedOptionId: 'o-monthly',
-    listSearch: 'x', listPage: 2 });
-  const back = links().find((item) => textOf(item) === 'Back to plan');
-  assert.equal(back?.props.href,
-    '/admin/subscriptions?search=x&page=2&wizard=open&step=2&user=u-1&plan=p-1');
-  const cancel = buttons().find((item) => textOf(item) === 'Cancel');
-  assert.ok(cancel, 'cancel affordance missing');
-  (cancel.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?search=x&page=2']);
-});
-
-test('a failed assign renders the error and keeps the wizard open', () => {
-  const { tree } = render({ ...step3, selectedOptionId: 'o-monthly',
-    assignResult: { error: 'Choose an active billing option.' } });
-  const rendered = textOf(tree);
-  assert.match(rendered, /Choose an active billing option\./);
-  assert.match(rendered, /Assigning: Pro/);
-});
-
-test('a successful assign folds the wizard away', () => {
-  const { tree } = render({ ...step3, selectedOptionId: 'o-monthly',
-    assignResult: { success: true } });
-  assert.equal(textOf(tree), '');
-});
-
-test('the step chips mark the current step', () => {
-  const { tree } = render(step3);
-  const chips = elements(tree).filter((item) => item.props['aria-current'] === 'step');
-  assert.equal(chips.length, 1);
-  assert.match(textOf(chips[0]), /3 · Options/);
-  assert.match(textOf(tree), /1 · User/);
-  assert.match(textOf(tree), /2 · Plan/);
-});
-
-// --- Task 8 fix round 1: headless narrowing in the pickers ---
-
-type InputProps = Record<string, unknown> & {
-  id?: string; value?: string; placeholder?: string;
-  onEnter?: (text: string) => void;
-};
-
-const live = (): InputProps => lastLiveSearch.at(-1) as InputProps;
-
-test('step 1 search is a plain narrowing input wired to the users endpoint', () => {
-  // S13d: pinned on an above-page picker (a smaller picker hides the input).
-  render({ userPicker: { ...baseUserPicker, total: 45 } });
-  const props = live();
-  assert.ok(props, 'live search missing');
-  assert.equal(props.id, 'wizard-user-search');
-  assert.equal(props.value, '');
-  assert.equal(props.onEnter !== undefined, true,
-    'Enter is the explicit full-page fallback');
-});
-
-test('typing live-renders matched keepers in place with a truthful live count', () => {
-  const { nav, navSearch, tree } = render(base);
-  // Idle: the committed picker page renders with the committed total.
-  assert.match(textOf(tree), /2 keepers/);
-  assert.match(textOf(tree), /Marta Keeper/);
-  // Narrowed matches land: they replace the committed page in place.
-  const live = render({ ...base, userNarrowing: userNarrowingState({
+test('typing live-renders matched keepers in place and clicking one toggles the selection', () => {
+  const { tree, toggled, navSearch } = render({ ...base, userNarrowing: userNarrowingState({
     narrowed: true, active: true, query: 'nova',
     rows: [{ id: 'u-9', title: 'Nova Keeper', subtitle: 'nova@example.com' }],
     total: 1, page: 1, loading: false }) });
-  const rows = elements(live.tree).filter((item) =>
-    item.props['aria-label'] === 'Select Nova Keeper');
-  assert.equal(rows.length, 1, 'matched keepers render as clickable rows in place');
-  assert.equal(String(rows[0].props.className).includes('hover:bg-[var(--hover)]'), true);
-  const chip = elements(live.tree).find((item) => item.props['data-testid'] === 'picker-count');
-  assert.equal(textOf(chip!), '1 keeper', 'the counter reflects the live match count');
-  assert.match(textOf(live.tree), /Nova Keeper/, 'matches render in place');
-  (rows[0].props.onClick as () => void)();
-  assert.deepEqual(live.nav, ['/admin/subscriptions?wizard=open&step=2&user=u-9'],
-    'picking a narrowed keeper auto-advances to the plan step, nothing else navigates');
+  const row = elements(tree).find((item) => item.props['aria-label'] === 'Toggle Nova Keeper');
+  assert.ok(row, 'matched keepers render as toggleable rows in place');
+  const rowLi = elements(tree).find((item) => item.props['data-row-id'] === 'u-9');
+  assert.equal(String(rowLi!.props.className).includes('hover:bg-[var(--hover)]'), true);
+  const counter = elements(tree).find((item) => item.props['data-testid'] === 'selected-count');
+  assert.equal(textOf(counter!), '0 of 1 selected', 'the counter reflects the live match count');
+  (rowLi!.props.onClick as (event: unknown) => void)({ target: { tagName: 'DIV' } });
+  assert.deepEqual(toggled, ['u-9'], 'picking a narrowed keeper toggles it');
   assert.deepEqual(navSearch, [], 'browsing never navigates');
-  void nav;
 });
 
 test('a narrowed set with no matches echoes the query', () => {
@@ -547,44 +378,351 @@ test('Enter falls back to the URL-param search (debounced); plain typing never n
   assert.deepEqual(nav, [], 'fallback only, never a pick');
 });
 
-test('the picker toolbar carries the gold count chip beside the search input', () => {
-  render(base);
-  const chip = elements(render().tree).find((item) => item.props['data-testid'] === 'picker-count');
-  assert.ok(chip, 'toolbar counter chip missing');
-  assert.equal(String(chip.props.className).includes('bg-[var(--gold)]'), true);
-  assert.equal(textOf(chip), '2 keepers', 'the chip shows the committed total when idle');
-});
-
-test('S13d: the picker search input hides when the picker holds less than a page; the counter stays', () => {
-  // The base pickers hold 2 rows against a pageSize of 20 — the real wizard
-  // shape (~4 plans, ~12 keepers): no search box on either step.
+test('S13d: the picker search input hides when the picker holds less than a page; the pair and counter stay', () => {
+  // The base picker holds 2 rows against a pageSize of 20 — the real wizard
+  // shape (~12 keepers): no search box, but the select pair and the counter
+  // stay (the mockup's toolbar anatomy).
   const step1 = render(base);
   assert.equal(lastLiveSearch.length, 0, 'no keeper search input below one page');
-  assert.ok(elements(step1.tree).some((item) => item.props['data-testid'] === 'picker-count'),
-    'the count chip stays');
-  const step2 = render({ ...base, step: 2 });
+  assert.equal(elements(step1.tree).some((item) => item.props['data-testid'] === 'select-all'), true,
+    'Select all stays');
+  assert.equal(elements(step1.tree).some((item) =>
+    item.props['data-testid'] === 'selected-count'), true, 'the counter stays');
+  const step2 = render({ ...base, step: 2, selectedKeepers: [selectedKeeper] });
   assert.equal(lastLiveSearch.length, 0, 'no plan search input below one page');
   assert.ok(elements(step2.tree).some((item) => item.props['data-testid'] === 'picker-count'),
-    'the count chip stays');
-  // Step 3's billing options are a couple of rows at most: the same rule
-  // keeps the options list search-free (the whole toolbar folds away in
-  // single mode).
-  const step3 = render({ ...base, step: 3, selectedUser,
+    'the plan count chip stays');
+  const step3 = render({ ...base, step: 3, selectedKeepers: [selectedKeeper],
     selectedPlan: planWithTwoOptions });
   assert.equal(lastLiveSearch.length, 0);
   assert.equal(elements(step3.tree).some((item) => item.props['data-testid'] === 'list-toolbar'), false,
     'no search toolbar on the options step');
 });
 
-test('step 2 plan search narrows in place and picking selects the plan', () => {
-  const { nav, tree } = render({ ...base, step: 2, planNarrowing: planNarrowingState({
-    narrowed: true, active: true, query: 'pro',
-    rows: [{ id: 'p-9', title: 'Pro', subtitle: 'STANDARD' }], total: 3, page: 1 }) });
-  const chip = elements(tree).find((item) => item.props['data-testid'] === 'picker-count');
-  assert.equal(textOf(chip!), '3 plans', 'the plan counter is truthful during narrowing');
-  const row = elements(tree).find((item) => item.props['aria-label'] === 'Select Pro');
-  assert.ok(row, 'matched plan row missing');
-  (row.props.onClick as () => void)();
-  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=3&plan=p-9'],
-    'picking a narrowed plan advances straight to the options step');
+// --- Step 2: plan + context bar ---
+
+test('step 2 shows the keeper context bar with the batch names and the active plan list', () => {
+  const { tree, nav, byLabel } = render({ step: 2, selectedKeepers: [selectedKeeper] });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Assigning to/);
+  assert.match(rendered, /1 keeper\s*:\s*Marta Keeper/);
+  assert.match(rendered, /Pro/);
+  const change = byLabel('Change keepers');
+  assert.ok(change, 'context bar change affordance missing');
+  (change.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1']);
+  const fresh = render({ step: 2, selectedKeepers: [selectedKeeper] });
+  (fresh.byLabel('Select Pro')!.props.onClick as () => void)();
+  assert.deepEqual(fresh.nav.slice(-1),
+    ['/admin/subscriptions?wizard=open&step=3&plan=p-1'],
+    'picking a plan advances straight to the options step (U6), keeper state stays client-owned');
 });
+
+test('plan rows show their included features read-only — nothing feature-editable anywhere', () => {
+  const { tree } = render({ step: 2, selectedKeepers: [selectedKeeper] });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Included features — read-only/);
+  assert.match(rendered, /View the collection, Log feeding/);
+  assert.match(rendered, /No enabled features yet/, 'a plan without features renders the fallback');
+  assert.equal(elements(tree).some((item) => item.type === 'form'), false,
+    'no editable feature affordance exists on the plan step');
+});
+
+test('narrowed plan rows carry the feature line too', () => {
+  const { tree } = render({ ...base, step: 2, selectedKeepers: [selectedKeeper],
+    planNarrowing: planNarrowingState({
+      narrowed: true, active: true, query: 'pro',
+      rows: [{ id: 'p-9', title: 'Pro', subtitle: 'STANDARD',
+        features: ['View the universe'] }], total: 3, page: 1 }) });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Included features — read-only/);
+  assert.match(rendered, /View the universe/);
+});
+
+test('picking a plan clears a stale option and lands on step 3', () => {
+  const { nav, byLabel } = render({ step: 2, selectedKeepers: [selectedKeeper],
+    selectedOptionId: 'o-monthly' });
+  (byLabel('Select Pro')!.props.onClick as () => void)();
+  const href = nav[0];
+  assert.ok(href.includes('step=3'), href);
+  assert.ok(href.includes('plan=p-1'), href);
+  assert.equal(href.includes('option='), false, 'stale option must be cleared');
+  const { navSearch } = render({ step: 2, selectedKeepers: [selectedKeeper],
+    planPicker: { ...basePlanPicker, total: 45 } });
+  assert.ok(live(), 'plan search missing');
+  (live()!.onEnter as (text: string) => void)('pro');
+  assert.deepEqual(navSearch, ['/admin/subscriptions?wizard=open&step=2&psearch=pro']);
+});
+
+test('a selected plan folds the plan list; back returns to the keeper step', () => {
+  const { tree, nav, links } = render({ step: 2, selectedKeepers: [selectedKeeper],
+    selectedPlan: planWithTwoOptions,
+    userPicker: { ...baseUserPicker, search: 'ma', page: 2 } });
+  const rendered = textOf(tree);
+  assert.match(rendered, /Pro/);
+  assert.doesNotMatch(rendered, /Basic/);
+  // The plan focused view's Change (not the context bar's, which carries an
+  // aria-label) unfolds the plan list again.
+  const change = elements(tree).find((item) => item.type === 'button' &&
+    textOf(item) === 'Change' && !item.props['aria-label']);
+  (change!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2'],
+    'the plan focused view restores the plan picker location');
+  const back = links().find((item) => textOf(item) === 'Back to keepers');
+  assert.equal(back?.props.href, '/admin/subscriptions?wizard=open&step=1&usearch=ma&upage=2');
+});
+
+// --- Step 3: options, summary, assign ---
+
+const step3: Partial<AssignPlanWizardViewProps> = {
+  step: 3, selectedKeepers: [selectedKeeper], selectedPlan: planWithTwoOptions,
+  selectedOptionId: '', effectiveAt: '', onEffectiveAtChange: () => {},
+  assignResult: undefined,
+};
+
+test('step 3 lists only the chosen plan\'s active billing options', () => {
+  const { tree } = render(step3);
+  const rendered = textOf(tree);
+  assert.match(rendered, /Monthly — \$4\.99/);
+  assert.match(rendered, /Annual — \$49\.99/);
+  assert.doesNotMatch(rendered, /\$9\.99/, 'inactive option must not render');
+  assert.doesNotMatch(rendered, /o-dead/);
+});
+
+test('picking an option folds the option list and updates the batch summary', () => {
+  const selected = render({ ...step3, selectedOptionId: 'o-monthly' });
+  const rendered = textOf(selected.tree);
+  assert.match(rendered, /Monthly — \$4\.99/);
+  assert.doesNotMatch(rendered, /Annual — \$49\.99/);
+  assert.match(rendered, /Assigning: Pro \(Monthly — \$4\.99\)/);
+  assert.match(rendered, /To 1 keeper\s*:\s*Marta Keeper/);
+  assert.match(rendered, /Effective: today/);
+  assert.match(rendered, /row locks/);
+  assert.match(rendered, /all-or-nothing/);
+  const change = elements(selected.tree).find((item) => item.type === 'button' &&
+    textOf(item) === 'Change' && !item.props['aria-label']);
+  (change!.props.onClick as () => void)();
+  assert.deepEqual(selected.nav, ['/admin/subscriptions?wizard=open&step=3&plan=p-1']);
+  const unfolded = render(step3);
+  (unfolded.byLabel('Select Annual — $49.99')!.props.onClick as () => void)();
+  assert.deepEqual(unfolded.nav,
+    ['/admin/subscriptions?wizard=open&step=3&plan=p-1&option=o-annual']);
+});
+
+test('the context bar names every keeper of the batch on step 3', () => {
+  const { tree } = render({ ...step3, selectedKeepers: [selectedKeeper, selectedKeeper2] });
+  const context = elements(tree).find((item) => item.props['data-testid'] === 'wizard-context');
+  assert.ok(context, 'context bar missing');
+  assert.match(textOf(context!), /2 keepers\s*:\s*Marta Keeper, Dan O\./);
+});
+
+test('the assign form carries the batch as hidden inputs and gates the submit', () => {
+  const batch = render({ ...step3, selectedKeepers: [selectedKeeper, selectedKeeper2],
+    selectedOptionId: 'o-monthly' });
+  const form = elements(batch.tree).find((item) => item.type === 'form');
+  assert.ok(form, 'assign form missing');
+  const hidden = elements(form).filter((item) => item.type === 'input');
+  assert.deepEqual(hidden.map((item) => ({ name: item.props.name, value: item.props.value })), [
+    { name: 'userIds', value: 'u-1,u-2' },
+    { name: 'planId', value: 'p-1' },
+    { name: 'planBillingOptionId', value: 'o-monthly' },
+    { name: 'effectiveAt', value: '' },
+  ]);
+  const submit = batch.buttons().find((item) => textOf(item) === 'Assign plan');
+  assert.equal(submit?.props.disabled, false);
+  const gated = render(step3);
+  const gatedSubmit = gated.buttons().find((item) => textOf(item) === 'Assign plan');
+  assert.equal(gatedSubmit?.props.disabled, true, 'no option yet → gated');
+  const emptyBatch = render({ ...step3, selectedKeepers: [], selectedOptionId: 'o-monthly' });
+  assert.equal(elements(emptyBatch.tree).find((item) =>
+    item.props['data-testid'] === 'wizard-context'), undefined,
+    'an empty batch folds the step back to 1 (no assign form at all)');
+});
+
+test('the effective date is a controlled date field and feeds the summary', () => {
+  let changed = '';
+  const { inputs } = render({ ...step3,
+    onEffectiveAtChange: (value: string) => { changed = value; } });
+  const field = inputs().find((item) => item.props.name === 'effectiveAt');
+  assert.ok(field, 'effective date field missing');
+  assert.equal(field?.props.type, 'date', 'the mockup uses a type="date" field');
+  (field.props.onChange as (event: unknown) => void)({ target: { value: '2026-10-01' } });
+  assert.equal(changed, '2026-10-01');
+  const withDate = render({ ...step3, selectedOptionId: 'o-monthly', effectiveAt: '2026-10-01' });
+  assert.match(textOf(withDate.tree), /Effective: 2026-10-01/);
+});
+
+test('the client wrapper prefills the effective date with today (mockup parity)', () => {
+  resetCaptures();
+  const { effectiveAt: _e, onEffectiveAtChange: _o, selectedKeepers: _k,
+    onToggleKeeper: _t, onSelectAllKeepers: _a, onSelectNoneKeepers: _n,
+    trayCollapsed: _c, onTrayCollapsedToggle: _tc,
+    navigate: _nav, navigateSearch: _s, assignDispatch: _d, assignResult: _r,
+    assignPending: _p, ...wrapperProps } = {
+    ...base, step: 3, selectedKeepers: [selectedKeeper], selectedPlan: planWithTwoOptions,
+    selectedOptionId: 'o-monthly' } as AssignPlanWizardViewProps;
+  const tree = AssignPlanWizard({ ...wrapperProps, prefilledKeepers: [selectedKeeper] }) as unknown;
+  elements(tree);
+  const field = elements(tree).find((item) => item.props.name === 'effectiveAt');
+  assert.ok(field, 'wrapper-rendered effective date field missing');
+  assert.match(String(field?.props.value), /^\d{4}-\d{2}-\d{2}$/,
+    'the effective date is prefilled with today');
+});
+
+test('step 3 navigates back to the plan step and cancel folds the wizard', () => {
+  const { nav, links, buttons } = render({ ...step3, selectedOptionId: 'o-monthly',
+    listSearch: 'x', listPage: 2 });
+  const back = links().find((item) => textOf(item) === 'Back to plan');
+  assert.equal(back?.props.href,
+    '/admin/subscriptions?search=x&page=2&wizard=open&step=2&plan=p-1');
+  const cancel = buttons().find((item) => textOf(item) === 'Cancel');
+  assert.ok(cancel, 'cancel affordance missing');
+  (cancel.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?search=x&page=2']);
+});
+
+test('a failed assign renders the named error and keeps the wizard open', () => {
+  const { tree } = render({ ...step3, selectedOptionId: 'o-monthly',
+    assignResult: { error: "Keeper u-9's account is being deleted — remove them from the selection." } });
+  const rendered = textOf(tree);
+  assert.match(rendered, /being deleted — remove them from the selection\./);
+  assert.match(rendered, /Assigning: Pro/);
+});
+
+test('the step chips mark the current step (1 · Keepers)', () => {
+  const { tree } = render(step3);
+  const chips = elements(tree).filter((item) => item.props['aria-current'] === 'step');
+  assert.equal(chips.length, 1);
+  assert.match(textOf(chips[0]), /3 · Options/);
+  assert.match(textOf(tree), /1 · Keepers/);
+  assert.match(textOf(tree), /2 · Plan/);
+});
+
+test('the step 3 hint carries the all-or-nothing constraints', () => {
+  const { tree } = render(step3);
+  const rendered = textOf(tree);
+  assert.match(rendered, /All-or-nothing/);
+  assert.match(rendered, /aborts the whole batch with a named error/);
+  assert.match(rendered, /never a partial assignment/);
+  assert.match(rendered, /audit reason is derived/);
+});
+
+// --- Wrapper: the keeper-selection state owner ------------------------------
+
+const shellBase = {
+  step: 1, listSearch: '', listPage: 1, selectedPlan: null, selectedOptionId: '',
+  userPicker: baseUserPicker, planPicker: basePlanPicker,
+  prefilledKeepers: [] as Array<{ id: string; name: string; email: string }>,
+};
+
+/** Renders the state-owning wrapper (its hooks stubbed so the initial state is
+ * visible and every setter call is recorded, like the plans accordion tests). */
+const renderShell = (overrides: Record<string, unknown> = {}) => {
+  lastLiveSearch = [];
+  resetCaptures();
+  const tree = AssignPlanWizard({ ...shellBase, ...overrides }) as unknown;
+  elements(tree);
+  return { tree,
+    buttons: () => elements(tree).filter((item) => item.type === 'button'),
+    rows: () => elements(tree).filter((item) => item.props['data-row-id']),
+  };
+};
+
+const isMap = (value: unknown) => Object.prototype.toString.call(value) === '[object Map]';
+
+const selectionSetter = () => {
+  const updaters = stateSetterCalls.filter((call) => typeof call === 'function');
+  return updaters.at(-1) as (previous: Map<string, { name: string; email: string }>) =>
+    Map<string, { name: string; email: string }>;
+};
+
+test('state owner: toggles accumulate in the keeper map, a re-toggle removes the id, paging never prunes', () => {
+  const shell = renderShell();
+  const row = shell.rows().find((item) => item.props['data-row-id'] === 'u-1');
+  (row!.props.onClick as (event: unknown) => void)({ target: { tagName: 'DIV' } });
+  const updater = selectionSetter();
+  const merged = updater(new Map([['u-9', { name: 'Existing', email: 'x@example.com' }]]));
+  assert.deepEqual(JSON.parse(JSON.stringify([...merged.entries()])), [
+    ['u-9', { name: 'Existing', email: 'x@example.com' }],
+    ['u-1', { name: 'Marta Keeper', email: 'marta@example.com' }],
+  ], 'picks merge with display data — page changes cannot lose them');
+  // Toggling the selected id again removes exactly that keeper.
+  const rowAgain = shell.rows().find((item) => item.props['data-row-id'] === 'u-1');
+  (rowAgain!.props.onClick as (event: unknown) => void)({ target: { tagName: 'DIV' } });
+  const removeUpdater = selectionSetter();
+  const removed = removeUpdater(new Map([['u-1', { name: 'Marta Keeper', email: 'm' }]]));
+  assert.equal(removed.size, 0, 'the re-toggle removes the keeper');
+});
+
+test('S13c: Select all fetches the users ids endpoint at the active query and merges full display data', async () => {
+  const shell = renderShell({ userPicker: { ...baseUserPicker, search: 'ma', total: 45 } });
+  selectableFixture = [{ id: 'u-5', title: 'Tom H.', subtitle: 'tom@example.com' }];
+  const all = shell.buttons().find((item) => textOf(item) === 'Select all');
+  assert.ok(all, 'the shell must wire Select all');
+  await (all!.props.onClick as () => Promise<void>)();
+  assert.deepEqual(idFetches, [{ entity: 'users', query: 'ma' }],
+    'the committed search scopes Select all; one fetch on click, never per keystroke');
+  const updater = selectionSetter();
+  const merged = updater(new Map([['u-9', { name: 'Kept', email: 'kept@example.com' }]]));
+  assert.deepEqual(JSON.parse(JSON.stringify(merged.get('u-5'))),
+    { name: 'Tom H.', email: 'tom@example.com' },
+    'tray chips carry the display triple, never a bare id');
+  assert.ok(merged.has('u-9'), 'existing picks survive');
+});
+
+test('S13c: Select none clears the whole keeper selection', () => {
+  const shell = renderShell({ selectedKeepers: [] });
+  const none = shell.buttons().find((item) => textOf(item) === 'Select none');
+  assert.ok(none, 'the shell must wire Select none');
+  (none!.props.onClick as () => void)();
+  const cleared = stateSetterCalls.find(isMap) as Map<string, unknown>;
+  assert.ok(cleared, 'the selection setter must receive a fresh map');
+  assert.equal(cleared.size, 0, 'Select none empties the tray; the counter returns to 0 of M');
+});
+
+test('a Reassign deep link preselects that keeper into the tray', () => {
+  const shell = renderShell({ step: 2,
+    prefilledKeepers: [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }] });
+  const rendered = textOf(shell.tree);
+  assert.match(rendered, /Assigning to/);
+  assert.match(rendered, /1 keeper\s*:\s*Marta Keeper/, 'the prefill seeds the selection map');
+});
+
+test('a successful assign clears the tray and returns to step 1 (the mockup\'s post-assign reset)', async () => {
+  const shell = renderShell({ step: 3, selectedPlan: planWithTwoOptions,
+    selectedOptionId: 'o-monthly',
+    prefilledKeepers: [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }] });
+  actionResult = { success: true };
+  const assign = shell.buttons().find((item) => textOf(item) === 'Assign plan');
+  assert.ok(assign, 'the assign submit missing');
+  const form = elements(shell.tree).find((item) => item.type === 'form');
+  (form!.props.onSubmit as (event: unknown) => void)({ preventDefault: () => {} });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(pushed, ['/admin/subscriptions?wizard=open&step=1'],
+    'back to step 1, not folded away');
+  const cleared = stateSetterCalls.find(isMap) as Map<string, unknown>;
+  assert.ok(cleared, 'the tray is cleared');
+  assert.equal(cleared.size, 0);
+});
+
+test('a failed assign keeps the batch and the step (no navigation, no reset)', async () => {
+  const shell = renderShell({ step: 3, selectedPlan: planWithTwoOptions,
+    selectedOptionId: 'o-monthly',
+    prefilledKeepers: [{ id: 'u-1', name: 'Marta Keeper', email: 'marta@example.com' }] });
+  actionResult = { error: 'Choose an active billing option.' };
+  const assign = shell.buttons().find((item) => textOf(item) === 'Assign plan');
+  const form = elements(shell.tree).find((item) => item.type === 'form');
+  (form!.props.onSubmit as (event: unknown) => void)({ preventDefault: () => {} });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(pushed, [], 'failure never navigates');
+  assert.equal(stateSetterCalls.filter((call) => isMap &&
+    isMap(call) && (call as Map<string, unknown>).size === 0).length, 0,
+    'failure never clears the tray');
+});
+
+type InputProps = Record<string, unknown> & {
+  id?: string; value?: string; placeholder?: string;
+  onEnter?: (text: string) => void;
+};
+
+const live = (): InputProps => lastLiveSearch.at(-1) as InputProps;

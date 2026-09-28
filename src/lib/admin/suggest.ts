@@ -141,9 +141,14 @@ export async function narrowUsers(tx: Pick<SuggestDb, 'user'>, search: string,
 }
 
 /** Active plans by name (case-insensitive contains), display order first —
- * listAssignablePlans' where-clause. */
-export async function narrowAssignablePlans(tx: Pick<SuggestDb, 'plan'>, search: string,
-  page: number, pageSize: number): Promise<NarrowingResult> {
+ * listAssignablePlans' where-shape. Task 10: the narrowed rows carry the same
+ * read-only enabled feature NAMES as the committed picker rows (one grouped
+ * translations query per pause), so the "Included features" line never
+ * disappears while narrowing. */
+export type NarrowAssignablePlanRow = Suggestion & { features: string[] };
+export async function narrowAssignablePlans(tx: Pick<SuggestDb,
+  'plan' | 'featurePlanTranslation'>, search: string, page: number,
+  pageSize: number): Promise<{ rows: NarrowAssignablePlanRow[]; total: number }> {
   const where: Prisma.PlanWhereInput = { active: true, name: { contains: search, mode: 'insensitive' } };
   const [total, rows] = await Promise.all([
     tx.plan.count({ where }),
@@ -151,7 +156,20 @@ export async function narrowAssignablePlans(tx: Pick<SuggestDb, 'plan'>, search:
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       skip: (page - 1) * pageSize, take: pageSize }),
   ]);
-  return { total, rows: rows.map(row => ({ id: row.id, title: row.name, subtitle: row.planType })) };
+  const translations = rows.length ? await tx.featurePlanTranslation.findMany({
+    where: { planId: { in: rows.map(row => row.id) }, enabled: true },
+    select: { planId: true, feature: { select: { name: true } } },
+  }) : [];
+  const featuresByPlan = new Map<string, string[]>();
+  for (const translation of translations) {
+    if (!translation.feature) continue;
+    const names = featuresByPlan.get(translation.planId) ?? [];
+    names.push(translation.feature.name);
+    featuresByPlan.set(translation.planId, names);
+  }
+  return { total, rows: rows.map(row => ({ id: row.id, title: row.name,
+    subtitle: row.planType,
+    features: (featuresByPlan.get(row.id) ?? []).sort((a, b) => a.localeCompare(b)) })) };
 }
 
 /** Effective subscriptions by keeper name/email, plan name, or status — the
@@ -208,9 +226,11 @@ export async function narrowRows(tx: SuggestDb, entity: NarrowEntity, search: st
 export const SELECT_ALL_CAP = 500;
 
 /** The multi-select surfaces (S13c): the feature matrix is registry-local and
- * needs no service; the two accordions fetch from here. The pickers are
- * single-mode and excluded by the owner's rule itself. */
-export const SELECTABLE_ENTITIES = ['features', 'plans'] as const;
+ * needs no service; the two accordions fetch from here. Task 10 adds the USER
+ * picker: its step 1 is multi-select now, so Select all spans every selectable
+ * keeper across all pages via the same ids endpoint (the plan picker stays
+ * single-mode and excluded). */
+export const SELECTABLE_ENTITIES = ['features', 'plans', 'users'] as const;
 export type SelectableEntity = (typeof SELECTABLE_ENTITIES)[number];
 
 /** The select-all wire row: the surface's selection identity plus the display
@@ -249,13 +269,32 @@ export async function selectablePlanRows(
   return rows.map(row => ({ id: row.id, title: row.name, subtitle: row.planType }));
 }
 
+/** Keepers matching the committed search (name OR email, case-insensitive —
+ * searchUsers' where-shape), name order, display columns only. Deleting
+ * accounts NEVER join: `deletingAt: null` guards the where-clause itself (they
+ * are greyed/unselectable everywhere in the picker). */
+export async function selectableUserRows(
+  tx: Pick<SuggestDb, 'user'>, search: string): Promise<SelectableIdRow[]> {
+  const trimmed = search.trim();
+  const where: Prisma.UserWhereInput = { deletingAt: null,
+    ...(trimmed ? { OR: [
+      { name: { contains: trimmed, mode: 'insensitive' } },
+      { email: { contains: trimmed, mode: 'insensitive' } },
+    ] } : {}) };
+  const rows = await tx.user.findMany({ where,
+    select: { id: true, name: true, email: true },
+    orderBy: [{ name: 'asc' }, { id: 'asc' }], take: SELECT_ALL_CAP });
+  return rows.map(row => ({ id: row.id, title: row.name ?? row.email, subtitle: row.email }));
+}
+
 /** Dispatch a selectable entity's ids query — one lean query per call,
  * nothing else. */
-export async function selectableRows(tx: Pick<SuggestDb, 'feature' | 'plan'>,
+export async function selectableRows(tx: Pick<SuggestDb, 'feature' | 'plan' | 'user'>,
   entity: SelectableEntity, search: string): Promise<SelectableIdRow[]> {
   switch (entity) {
     case 'features': return selectableFeatureRows(tx, search);
     case 'plans': return selectablePlanRows(tx, search);
+    case 'users': return selectableUserRows(tx, search);
     default: throw new Error(`Unknown selectable entity: ${String(entity)}`);
   }
 }

@@ -690,3 +690,31 @@ test('S13d: a full page keeps the search, and the committed listSize rules — n
   assert.equal(elements(narrowed).some((item) => item.type === 'input' &&
     item.props.type !== 'checkbox'), true, 'listSize (committed size) rules the visibility');
 });
+
+// --- Task 10: multi-select keeper rows + read-only per-row detail lines ------
+
+test('multi-mode rows render the leading avatar glyph when the host provides one', () => {
+  const tree = SelectionList({ ...baseProps,
+    rows: [{ id: 'alpha', title: 'Alpha', leading: 'AL' }], onToggle: () => {} }) as unknown;
+  const avatar = elements(tree).find((item) => item.props['data-row-avatar']);
+  assert.ok(avatar, 'multi-mode rows must render the leading glyph (keeper avatars)');
+  assert.equal(avatar?.props['data-row-avatar'], 'AL');
+  assert.equal(String(avatar.props.className).includes('bg-[var(--lavender)]'), true);
+});
+
+test('a host-provided rowDetail renders as a per-row line beneath the subtitle in both modes', () => {
+  const detail = (row: { id: string }) => row.id === 'alpha'
+    ? jsx.jsx('span', { 'data-testid': 'row-detail-alpha' },
+        'Included features — read-only') : null;
+  const multi = SelectionList({ ...baseProps, rows: baseRows, onToggle: () => {},
+    rowDetail: detail }) as unknown;
+  assert.ok(elements(multi).some((item) => item.props['data-testid'] === 'row-detail-alpha'),
+    'multi mode renders the per-row detail line');
+  const single = SelectionList({ rows: [{ id: 'alpha', title: 'Alpha' }, { id: 'beta', title: 'Beta' }],
+    total: 2, page: 1, pageSize: 20,
+    search: '', selectedCount: 0, onToggle: () => {}, onPageChange: () => {},
+    onSearchChange: () => {}, onRowSelect: () => {}, selectionMode: 'single',
+    rowDetail: detail }) as unknown;
+  assert.ok(elements(single).some((item) => item.props['data-testid'] === 'row-detail-alpha'),
+    'single mode renders the per-row detail line (plan picker features)');
+});
