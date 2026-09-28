@@ -155,23 +155,31 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
   const selectAllKeys = (selectedOnly
     ? filteredSelected.map(row => row.id)
     : filtered.map(definition => definition.key));
-  return <section className="space-y-3 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
-    <h3 className="font-semibold">Feature matrix</h3>
-    <p>Every registered feature has an explicit control. Disabling a feature removes that access from every account assigned to {planName} on its next gate check. Saves upsert the enabled state and never delete rows, so a disabled feature can be restored safely.</p>
+  return <section className="space-y-3 rounded-2xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
+    <h3 className="text-[13.5px] font-semibold">Features</h3>
+    <p className="text-[12.5px] opacity-60">Every registered feature has an explicit control. Disabling a feature removes that access from every account assigned to {planName} on its next gate check. Saves upsert the enabled state and never delete rows, so a disabled feature can be restored safely.</p>
     {saveState?.warning ? <p role="alert"
       className="rounded-2xl border border-dashed border-[var(--lavender-deep)] bg-[var(--hover)] p-3 text-sm text-[var(--plum)]">{saveState.warning}</p> : null}
-    <div className="grid gap-2 rounded-2xl border border-[var(--plum)]/15 p-3">
-      <h4 className="font-semibold">Pricing preview</h4>
-      <p className="text-sm">Monthly: {summary.monthlyCents === null ? 'No active monthly price' : price(summary.monthlyCents)} · Annual: {summary.annualCents === null ? 'No active annual price' : price(summary.annualCents)}</p>
-      {summary.enabledFeatures.length === 0
-        ? <p className="text-sm">No enabled features yet — public pricing would list nothing as included.</p>
-        : registryCategories().map(category => {
+    {/* Mockup #7 pricing preview: a compact labeled kv card, recomputed from
+        the enabled set + active billing rows. */}
+    <div data-detail-card className="rounded-2xl border border-[var(--hover)] bg-[var(--background)] p-3">
+      <dl data-kv-grid className="grid grid-cols-[minmax(80px,90px)_1fr] gap-x-2.5 gap-y-1 text-[12.5px]">
+        <dt className="font-bold opacity-60">Monthly</dt>
+        <dd className="min-w-0">{summary.monthlyCents === null ? 'No active monthly price' : price(summary.monthlyCents)}</dd>
+        <dt className="font-bold opacity-60">Annual</dt>
+        <dd className="min-w-0">{summary.annualCents === null ? 'No active annual price' : price(summary.annualCents)}</dd>
+        {registryCategories().flatMap(category => {
           const names = summary.enabledFeatures
             .filter(feature => feature.category === category).map(feature => feature.name);
           return names.length
-            ? <p key={category} className="text-sm"><span className="font-semibold">{categoryLabel(category)}</span>: {names.join(', ')}</p>
-            : null;
+            ? [<dt key={`${category}-dt`} className="font-bold opacity-60">{categoryLabel(category)}</dt>,
+              <dd key={`${category}-dd`} className="min-w-0">{names.join(', ')}</dd>]
+            : [];
         })}
+      </dl>
+      {summary.enabledFeatures.length === 0
+        ? <p className="mt-1.5 text-[12px] opacity-60">No enabled features yet — public pricing would list nothing as included.</p>
+        : null}
     </div>
     <SelectionList rows={rows} total={shownTotal} page={page} pageSize={PAGE_SIZE}
       listSize={FEATURE_REGISTRY.length}
@@ -193,7 +201,7 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
           {FEATURE_REGISTRY.filter(definition => enabledKeys.has(definition.key)).map(definition =>
             <input key={definition.key} type="hidden" name="feature" value={definition.key} />)}
           <Button type="submit" variant="primary" size="md" disabled={saving}>
-            {saving ? 'Saving…' : 'Save feature matrix'}
+            {saving ? 'Saving…' : 'Save matrix'}
           </Button>
           {saveState?.error ? <p role="alert" className="text-sm text-rose-700">{saveState.error}</p> : null}
         </MutationForm>} />

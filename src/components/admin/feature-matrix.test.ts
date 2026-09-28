@@ -211,11 +211,17 @@ test('SelectionList consumes selectedRows with group so Selected only groups by 
   assert.deepEqual(headers.sort(), ['care', 'photos', 'spoods']);
 });
 
-test('pricing preview is computed from the unsaved enabled set', () => {
+test('pricing preview is a mockup-style kv card computed from the unsaved enabled set', () => {
   const tree = render({ enabled: enabledMap(['spood.create', 'photo.upload']) });
+  const card = elements(tree).find(item => item.props['data-detail-card']);
+  assert.ok(card, 'the pricing preview renders as a labeled kv card');
+  const grid = elements(card).find(item => item.props['data-kv-grid']);
+  assert.ok(grid, 'the preview pairs labels and values in a kv grid');
+  const terms = elements(grid).filter(item => item.type === 'dt').map(item => textOf(item));
+  assert.deepEqual(terms.slice(0, 2), ['Monthly', 'Annual']);
   const body = textOf(tree);
-  assert.ok(body.includes('Monthly: $9.00'), body);
-  assert.ok(body.includes('Annual: No active annual price'), body);
+  assert.ok(body.includes('Monthly $9.00'), body);
+  assert.ok(body.includes('Annual No active annual price'), body);
   assert.ok(body.includes('Add a spood'), body);
 });
 
