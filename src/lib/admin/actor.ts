@@ -26,13 +26,18 @@ async function readActor(db: Database, identity: SessionIdentity, minimum: 'admi
   const configuredOwner = process.env.ADMIN_OWNER_ID;
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!configuredOwner || !secret) return deny();
+  // The two row reads are independent of each other, so they share one
+  // connection round trip; the binding and live-row checks below still run in
+  // the original order and each denies exactly as before.
   // Never bootstrap from an environment value during a request. It must match the
   // independently verified, immutable database binding in this environment.
-  const binding = await db.protectedOwner.findUnique({ where: { id: 1 }, include: { user: { select: actorSelect } } });
+  const [binding, user] = await Promise.all([
+    db.protectedOwner.findUnique({ where: { id: 1 }, include: { user: { select: actorSelect } } }),
+    db.user.findUnique({ where: { id: identity.id }, select: actorSelect }),
+  ]);
   if (!binding || binding.userId !== configuredOwner || !binding.user ||
       binding.user.role !== 'super_admin' || !binding.user.emailVerified || binding.user.isDemo ||
       binding.user.suspendedAt || binding.user.deletingAt) return deny();
-  const user = await db.user.findUnique({ where: { id: identity.id }, select: actorSelect });
   if (!user || !user.emailVerified || user.suspendedAt || user.deletingAt || user.isDemo ||
       !['admin', 'super_admin'].includes(user.role) ||
       (minimum === 'super_admin' && user.role !== 'super_admin') ||
@@ -46,8 +51,10 @@ async function readActor(db: Database, identity: SessionIdentity, minimum: 'admi
 /** Privileges come only from the current server-side row, never JWT role claims. */
 export async function requireAdminActor(minimum: 'admin' | 'super_admin'): Promise<Actor> {
   await denyTestContext();
-  const session = await getRequestSession();
-  await guardMaintenance('read');
+  // The session read (Auth.js jwt callback's live user row) and the maintenance
+  // guard share no data dependency; Promise.all keeps both checks and any
+  // failure still denies before readActor runs.
+  const [session] = await Promise.all([getRequestSession(), guardMaintenance('read')]);
   try { return (await readActor(prisma, session?.user, minimum)).actor; }
   catch(error) { if(error instanceof AdminAccessError) throw error; throw new MaintenanceError(); }
 }

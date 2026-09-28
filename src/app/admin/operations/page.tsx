@@ -10,10 +10,16 @@ import { listAdminOperations } from '@/lib/admin/accounts';
 import { Card } from '@/components/ui/card';
 
 export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ error?: string; completed?: string }> }) {
-  const actor = await requireAdminActor('admin');
+  // Each read authorizes itself (listAdminOperations and getAdminDateFormatter
+  // run requireAdminActor internally) and none consumes another's result, so
+  // the three waterfalls overlap instead of stacking ~17 sequential DB round
+  // trips. Fail-closed: every branch still denies.
+  const [actor, operations, { dates, timezone }] = await Promise.all([
+    requireAdminActor('admin'),
+    listAdminOperations(),
+    getAdminDateFormatter(),
+  ]);
   const feedback = await searchParams;
-  const operations = await listAdminOperations();
-  const { dates, timezone } = await getAdminDateFormatter();
   return <><div><h2 className="text-2xl font-semibold">Operations</h2><p>Provider-data requests and billing reconciliation failures requiring review. Times in {timezone}.</p></div>
     {feedback.error ? <p role="alert" className="rounded-xl bg-rose-100 p-3 text-rose-800">{feedback.error.slice(0, 500)}</p> : null}
     {feedback.completed ? <p role="status" className="rounded-xl bg-emerald-100 p-3 text-emerald-950">Facebook provider data removed and request completed.</p> : null}

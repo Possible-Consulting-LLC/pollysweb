@@ -39,14 +39,20 @@ const loadSessionUser = cache(async (): Promise<{
     return {
       user: null, stale: false, identity: null
     };
-  await guardMaintenance('read',identity);
-  const existing = await prisma.user.findUnique({
+  // The guard and the user-row read share no data dependency, so the read is
+  // issued while the guard is in flight (one fewer DB round trip per request).
+  // The guard is still awaited first: its failure always denies before the row
+  // is consumed, exactly as when the two were strictly sequential.
+  const userRead = prisma.user.findUnique({
     where: {
       id: identity.effectiveUserId
     }, select: {
       id: true, name: true, email: true, image: true, suspendedAt: true, deletingAt: true
     }
   });
+  userRead.catch(() => {});
+  await guardMaintenance('read',identity);
+  const existing = await userRead;
   if (!existing || existing.suspendedAt || existing.deletingAt) {
     if (identity.testSessionId)
       throw new TestContextError();
@@ -71,8 +77,14 @@ const loadSessionUser = cache(async (): Promise<{
  */
 async function getSessionContext(): Promise<{ user: SessionUser | null; identity: RequestIdentity | null }> {
   try {
+    // loadSessionUser is per-request cached; start it while the outer guard is
+    // in flight so identity and user reads overlap the maintenance read. The
+    // guard is awaited first and its failure always denies before the load is
+    // consumed — the same denial surface as when this was strictly sequential.
+    const load = loadSessionUser();
+    load.catch(() => {});
     await guardMaintenance('read');
-    const { user, stale, identity } = await loadSessionUser();
+    const { user, stale, identity } = await load;
     if (stale)
       redirect("/api/auth/clear-stale");
     return { user, identity };
@@ -103,8 +115,10 @@ export async function requireUserContext() {
 }
 /** For server actions: return null instead of redirecting (redirects break try/catch). */
 export async function getActionUser() {
+  const load = loadSessionUser();
+  load.catch(() => {});
   await guardMaintenance('read');
-  const { user, stale } = await loadSessionUser();
+  const { user, stale } = await load;
   if (stale) {
     // Server Actions may mutate cookies.
     await signOut({
