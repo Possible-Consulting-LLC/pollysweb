@@ -118,6 +118,12 @@ export type SelectionListProps = {
   /** When false the host renders the toolbar itself (picker surfaces whose
    * live search owns the toolbar row). Rows, tray, and pager still render. */
   toolbar?: boolean;
+  /** FINALE F3: a host-provided Clear affordance for a COMMITTED URL-owned
+   * search, rendered at the toolbar's end (subscriptions-list placement). It
+   * is NOT gated by the S13d search-hidden rule — a committed below-page
+   * search hides the input but must keep its in-place recovery. Absent →
+   * nothing renders. */
+  clearSlot?: ReactNode;
 };
 
 /** Shared, fully controlled selectable list for every admin surface. The parent
@@ -159,6 +165,7 @@ export function SelectionList({
   onSelectAll,
   onSelectNone,
   listSize,
+  clearSlot,
 }: SelectionListProps) {
   const single = selectionMode === 'single';
   // S13d: less than one page of rows → no search input (default input and a
@@ -342,6 +349,7 @@ export function SelectionList({
                 {`${selectedCount} of ${total} selected`}
               </span>
             : null}
+          {clearSlot}
         </div>
       ) : null}
       {trayItems.length > 0 ? (

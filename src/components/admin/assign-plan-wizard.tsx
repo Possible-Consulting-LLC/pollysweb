@@ -202,6 +202,19 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedKeepe
     : planPicker.rows;
   const featuresFor = (id: string) => planSource.find(row => row.id === id)?.features ?? [];
   const userPickerLocation = { usearch: userPicker.search, upage: userPicker.page };
+  // FINALE F3: the committed picker searches' in-place Clear (subscriptions-
+  // list placement) — rendered whenever a committed URL-owned search exists
+  // and the view is not live-narrowed, INCLUDING below-page catalogs where
+  // the S13d rule hides the search input itself (no stranded users). The
+  // soft navigation drops the committed search and resets the picker page.
+  const keeperClear = userPicker.search && !userLive
+    ? <Button type="button" variant="ghost" size="sm" data-testid="clear-committed-search"
+        onClick={() => navigate(wizardHref(list, { step: 1, upage: 1 }))}>Clear</Button>
+    : null;
+  const planClear = planPicker.search && !planLive
+    ? <Button type="button" variant="ghost" size="sm" data-testid="clear-committed-search"
+        onClick={() => navigate(wizardHref(list, { step: 2, ppage: 1 }))}>Clear</Button>
+    : null;
   return <section data-testid="assign-wizard" aria-label="Assign a plan"
     className="space-y-4 rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)] p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -246,11 +259,16 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedKeepe
         total={userLive ? userNarrowing.total : userPicker.total}
         page={userLive ? userNarrowing.page : userPicker.page}
         pageSize={userPicker.pageSize}
+        // S13d keys the input's visibility on the COMMITTED keeper count —
+        // never the narrowed match count, so a live query can't hide its own
+        // input (the same contract the feature matrix's listSize honors).
+        listSize={userPicker.total}
         search="" selectedCount={selectedKeepers.length}
         onToggle={onToggleKeeper}
         onSelectAll={onSelectAllKeepers} onSelectNone={onSelectNoneKeepers}
         selectedRows={selectedKeepers.map(keeperToSelection)}
         trayCollapsed={trayCollapsed} onTrayCollapsedToggle={onTrayCollapsedToggle}
+        clearSlot={keeperClear}
         emptyLabel={userLive
           ? `Nothing matches “${userNarrowing.query}”.`
           : 'No keepers match this search.'}
@@ -307,6 +325,9 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedKeepe
                 {`${planLive ? planNarrowing.total : planPicker.total} plan${
                   (planLive ? planNarrowing.total : planPicker.total) === 1 ? '' : 's'}`}
               </span>
+              {/* FINALE F3: the committed plan search's in-place Clear — it
+                  survives the S13d input-hiding (no stranded users). */}
+              {planClear}
             </div>
             <SelectionList selectionMode="single" toolbar={false}
               rows={planSource.map(row => ({ id: row.id, title: row.title,
@@ -366,7 +387,7 @@ export function AssignPlanWizardView({ step, listSearch, listPage, selectedKeepe
           <p><span className="font-semibold">
             {`To ${selectedKeepers.length} keeper${selectedKeepers.length === 1 ? '' : 's'}`}:
           </span> {keeperNames || '—'}</p>
-          <p><span className="font-semibold">Effective:</span> {effectiveAt ? effectiveAt.replace('T', ' ') : 'today'}</p>
+          <p suppressHydrationWarning><span className="font-semibold">Effective:</span> {effectiveAt ? effectiveAt.replace('T', ' ') : 'today'}</p>
           <p><span className="font-semibold">Execution:</span> one audited transaction, per-user row locks; each keeper&apos;s prior effective subscription is end-dated first; all-or-nothing.</p>
         </div>
         <p className="text-xs leading-relaxed opacity-60">

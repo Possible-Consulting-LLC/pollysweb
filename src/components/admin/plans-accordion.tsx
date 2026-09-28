@@ -138,6 +138,11 @@ export type PlansAccordionViewProps = {
    * selection. Optional — absent → no buttons. */
   onSelectAll?(): void;
   onSelectNone?(): void;
+  /** FINALE F3: clears the COMMITTED URL-owned search (a soft navigation to
+   * the unsearched first page). The Clear affordance renders whenever a
+   * committed search exists and the view is not live-narrowed — including
+   * below-page catalogs where the S13d rule hides the input itself. */
+  onClearSearch?(): void;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -327,7 +332,7 @@ const FEATURE_COUNT = FEATURE_REGISTRY.length;
 export function PlansAccordionView({ plans, total, search, page, pageSize, openId,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
   onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingId,
-  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone }: PlansAccordionViewProps) {
+  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone, onClearSearch }: PlansAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -354,6 +359,14 @@ export function PlansAccordionView({ plans, total, search, page, pageSize, openI
       <span className={counterChipClass} data-testid="selected-count">
         {`${selectedItems.length} of ${counterTotal} selected`}
       </span>
+      {/* FINALE F3: the committed search's in-place Clear (subscriptions-list
+          placement). It survives the S13d input-hiding — the real catalog is
+          below one page, so a committed search here MUST keep its in-place
+          recovery. While a live narrowing query owns the view, it hides. */}
+      {search && !narrowed && onClearSearch
+        ? <Button type="button" variant="ghost" size="sm" data-testid="clear-search"
+            onClick={onClearSearch}>Clear</Button>
+        : null}
     </div>
     <SelectionTray items={selectedItems} onDeselect={onToggleSelected}
       collapsed={trayCollapsed} onCollapsedToggle={onToggleTrayCollapsed} label="Selected">
@@ -500,5 +513,6 @@ export function PlansAccordion(props: Omit<PlansAccordionViewProps,
     onSaveEdit={saveEdit}
     onSelectAll={selectAll}
     onSelectNone={() => setSelection(new Map())}
-    onSearchSubmit={search => router.push(listHref(search, 1))} />;
+    onSearchSubmit={search => router.push(listHref(search, 1))}
+    onClearSearch={() => router.push(listHref('', 1))} />;
 }

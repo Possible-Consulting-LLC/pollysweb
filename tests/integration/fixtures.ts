@@ -22,6 +22,9 @@ type CapturedErrors = { console: string[]; pageErrors: string[]; failedResponses
  * error, or receives a failed (≥400) network response — on every surface and
  * during every interaction. */
 export const test = base.extend<{ trackErrors: void; cleanup: void; creds: E2eUser }>({
+  // Playwright's fixture `use`, not the React hook (a known rules-of-hooks
+  // false positive on this fixture API):
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   creds: async ({}, use) => use(readCreds()),
 
   trackErrors: [async ({ page }, use) => {
@@ -39,6 +42,14 @@ export const test = base.extend<{ trackErrors: void; cleanup: void; creds: E2eUs
       // failures still fail the test through the functional assertions (DB
       // polls, UI state) and the failed-response gate.
       if (error.message === 'Load failed') return;
+      // Sibling WebKit artifact (FINALE): the same stale keep-alive socket
+      // reuse (Keep-Alive: timeout=5) surfaces on idle-heavy tests as WebKit's
+      // CORS phrasing for a fetch that then succeeds on a fresh socket —
+      // verified: the instrumented endpoint returns 200 on every attempt and
+      // the poller's read rejections are caught app-side (onError). The
+      // failed-response gate still fails real HTTP failures; functional
+      // assertions still fail real breakage.
+      if (error.message.endsWith('due to access control checks.')) return;
       errors.pageErrors.push(error.message);
     };
     const onResponse = (response: { status(): number; url(): string; request(): { method(): string } }) => {
@@ -98,18 +109,45 @@ export async function setTheme(page: Page, creds: E2eUser, theme: AppTheme) {
  * tests/integration/artifacts/baselines/<project>/ (committed); later runs
  * fail on visual drift. ISO dates are frozen first: rows, stat lines, and
  * detail cards embed real timestamps, and unstabilized dates would drift the
- * baselines every day while saying nothing about rendering. */
+ * baselines every day while saying nothing about rendering.
+ *
+ * Scrollbar-free capture (FINALE F1): full-page capture in the engines that
+ * resize the viewport to the content height is nondeterministic about the
+ * classic vertical scrollbar — whether the page still overflows vertically at
+ * capture time (image decode timing, lazy content) decides if it appears,
+ * flipping the effective capture width between 1280px and 1265px between runs
+ * (and reflowing heights by 1px). Hiding scrollbars during capture pins every
+ * surface at the same effective width on every engine, so baselines are
+ * deterministic. Real users are unaffected: this is a capture-time style.
+ *
+ * E2e-actor emails are frozen the same way (FINALE F1): global-setup mints
+ * `zz-e2e-admin-<ms>-<hex>@…` per run, so any surface listing users (the
+ * wizard's keeper picker) embedded a fresh timestamp every run and drifted
+ * ~110px of email text against a day-old baseline while saying nothing about
+ * rendering. The timestamp+nonce suffix collapses to a stable form. */
 export async function screenshot(page: Page, name: string) {
   await page.evaluate(() => {
     const iso = /\b20\d{2}-\d{2}-\d{2}\b/;
+    // Detection regexes stay /g-free: a global regex's lastIndex persists
+    // across .test() calls and would skip matches on consecutive nodes.
+    const e2eActor = /\bzz-e2e-[a-z]+-\d+-[0-9a-f]+\b/i;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) {
       const node = walker.currentNode as Text;
-      if (iso.test(node.data)) nodes.push(node);
+      if (iso.test(node.data) || e2eActor.test(node.data)) nodes.push(node);
     }
-    for (const node of nodes) node.data = node.data.replace(/\b20\d{2}-\d{2}-\d{2}\b/g, '2066-01-01');
+    for (const node of nodes) {
+      node.data = node.data.replace(/\b20\d{2}-\d{2}-\d{2}\b/g, '2066-01-01')
+        .replace(/\b(zz-e2e-[a-z]+)-\d+-[0-9a-f]+\b/gi, '$1-fixed');
+    }
   });
+  await page.addStyleTag({ content: [
+    'html { scrollbar-width: none !important; }',
+    '::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }',
+  ].join('\n') });
+  // Settle the reflow the scrollbar removal causes before the capture.
+  await page.waitForTimeout(150);
   await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
 }
 

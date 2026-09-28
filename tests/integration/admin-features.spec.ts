@@ -9,12 +9,12 @@ import { FEATURE_REGISTRY } from '@/lib/features/registry';
  * registered feature's row is ever mutated here; selection tests never fire
  * bulk actions, so only ZZ-e2e- rows are created and removed. */
 
-const counter = (page: Page) => page.getByTestId('selection-counter');
+const counter = (page: Page) => page.getByTestId('selected-count');
 const tray = (page: Page) => page.getByRole('region', { name: 'Selected items' });
 /** Row links carry the unique key badge in their accessible name. */
 const rowLink = (page: Page, key: string) => page.getByRole('link', { name: new RegExp(escapeRegExp(key)) });
 
-const matrixSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { name: 'Feature matrix', level: 3 }) });
+const matrixSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { name: 'Features', level: 3 }) });
 const matrixAlerts = (page: Page) => matrixSection(page).getByRole('alert');
 
 test.describe('features catalog rendering', () => {
@@ -22,23 +22,22 @@ test.describe('features catalog rendering', () => {
     const orphan = await seedOrphanFeature();
     // Only the current page's rows can be opened: use the first catalog row.
     const first = await prisma.feature.findFirst({ orderBy: [{ category: 'asc' }, { key: 'asc' }], where: { key: { not: { startsWith: 'zz-e2e-' } } }, select: { key: true } });
-    const mobile = /mobile/.test(test.info().project.name);
     await page.goto('/admin/features');
-    await expect(page.getByRole('heading', { name: 'Feature catalog', level: 2 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Features', level: 2 })).toBeVisible();
     for (const theme of ['cosmic', 'midnight'] as const) {
       await setTheme(page, creds, theme);
-      // KNOWN DEFECT (mobile only): long key badges overflow the catalog row on
-      // narrow viewports — see the dedicated pinned test below and the task
-      // report. The rest of the layout is asserted strictly everywhere.
-      if (!mobile) await expectNoHorizontalOverflow(page);
+      // The former mobile-only exemption (long key badges overflowed the row)
+      // is gone: the KNOWN-DEFECT pin now fails with scrollWidth == clientWidth
+      // on both mobile projects, so the strict assertion covers every viewport.
+      await expectNoHorizontalOverflow(page);
       await screenshot(page, `features-collapsed-${theme}`);
             await page.goto(`/admin/features?open=${first!.key}`);
-      await expect(page.getByRole('heading', { name: 'Identity', level: 3 })).toBeVisible();
-      if (!mobile) await expectNoHorizontalOverflow(page);
+      await expect(page.getByRole('heading', { name: 'Detail', level: 3 })).toBeVisible();
+      await expectNoHorizontalOverflow(page);
       await screenshot(page, `features-expanded-${theme}`);
       await page.goto(`/admin/features?open=${orphan.key}`);
       await expect(page.getByText('This key is no longer in the code registry.')).toBeVisible();
-      if (!mobile) await expectNoHorizontalOverflow(page);
+      await expectNoHorizontalOverflow(page);
       await screenshot(page, `features-orphan-${theme}`);
     }
   });
@@ -46,13 +45,25 @@ test.describe('features catalog rendering', () => {
   test('search matches by name or key and reports empty results', async ({ page }) => {
     const orphan = await seedOrphanFeature();
     await page.goto('/admin/features');
-    await page.getByLabel('Search by name or key').fill(orphan.key);
-    await page.getByRole('button', { name: 'Search' }).click();
+    const search = page.getByLabel('Search features by name or key');
+    // Typing narrows the rendered catalog in place (no navigation, no button).
+    await search.fill(orphan.key);
+    await expect(page.getByTestId('narrowed-features')).toBeVisible();
     await expect(page.getByText(new RegExp(escapeRegExp(orphan.name)))).toBeVisible();
-    await expect(page.getByText('1 match', { exact: false })).toBeVisible();
-    await page.getByLabel('Search by name or key').fill('zz-e2e-nothing-matches-this');
-    await page.getByRole('button', { name: 'Search' }).click();
-    await expect(page.getByText('No features match this search.')).toBeVisible();
+    // Enter is the explicit full-page fallback (a committed URL search).
+    await search.press('Enter');
+    await expect(page).toHaveURL(/search=/);
+    await expect(page.getByText(new RegExp(escapeRegExp(orphan.name)))).toBeVisible();
+    // The gold counter stays in the mockup's "N of M selected" format,
+    // truthful for the committed search (the retired chip said "1 match").
+    await expect(page.getByTestId('selected-count')).toHaveText('0 of 1 selected');
+    // FINALE F3: the committed search keeps its in-place Clear.
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page).not.toHaveURL(/search=/);
+    // No matches → explicit empty state, page resets to 1.
+    await search.fill('zz-e2e-nothing-matches-this');
+    await search.press('Enter');
+    await expect(page.getByText('Nothing matches “zz-e2e-nothing-matches-this”.')).toBeVisible();
   });
 
   test('orphaned feature is greyed and its controls are inert', async ({ page }) => {
@@ -61,30 +72,13 @@ test.describe('features catalog rendering', () => {
     // The disabled fieldset makes every control inside it inert (the release
     // button, the metadata inputs); the row's select checkbox is disabled too.
     await expect(page.getByRole('button', { name: 'Release feature' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Save metadata' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Edit metadata' })).toBeDisabled();
     await expect(page.getByText('This key is no longer in the code registry.')).toBeVisible();
     await expect(page.getByRole('checkbox', { name: `Select ${orphan.name}` })).toBeDisabled();
   });
 });
 
 test.describe('features behavior pins', () => {
-  test('KNOWN DEFECT: long key badges overflow the catalog row on narrow viewports', async ({ page }) => {
-    // Report-only finding (see the task report): the row's badge row is
-    // `shrink-0`, so feature keys ≥ ~20 characters push the document ~12px
-    // wider than a 390px viewport — reproducible with real registry keys
-    // (e.g. settings.email.change), not just this suite's orphan row. This
-    // test PINS the defect so the run fails here once the product fix lands,
-    // prompting its removal.
-    test.skip(!/mobile/.test(test.info().project.name), 'mobile-only finding');
-    await seedOrphanFeature();
-    await page.goto('/admin/features');
-    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }));
-    expect(scrollWidth, 'features catalog no longer overflows on mobile — remove this known-defect pin and restore the strict overflow assertion in the render test').toBeGreaterThan(clientWidth);
-  });
-
   test('selection persists across pagination: counter and tray unchanged', async ({ page }) => {
     await seedOrphanFeature(); // 34 registry rows + 1 orphan → 2 pages of 20
     const total = await prisma.feature.count();
@@ -117,11 +111,11 @@ test.describe('features behavior pins', () => {
     await rowLink(page, second.key).click();
     await expect(rowLink(page, second.key)).toHaveAttribute('aria-expanded', 'true');
     await expect(rowLink(page, first.key)).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByRole('heading', { name: 'Identity', level: 3 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Detail', level: 3 })).toHaveCount(1);
     // Scroll pin: wheel down and back must not collapse the row.
     await scrollDownUp(page);
     await expect(rowLink(page, second.key)).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByRole('heading', { name: 'Identity', level: 3 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Detail', level: 3 })).toBeVisible();
   });
 
   test('catalog rows are keyboard operable: Tab reaches and Enter expands', async ({ page }) => {
@@ -131,7 +125,7 @@ test.describe('features behavior pins', () => {
     await tabTo(page, { role: 'link', name: new RegExp(escapeRegExp(first!.key)) });
     await page.keyboard.press('Enter');
     await expect(rowLink(page, first!.key)).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByRole('heading', { name: 'Identity', level: 3 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Detail', level: 3 })).toBeVisible();
   });
 });
 
@@ -140,8 +134,8 @@ test.describe('plan-editor feature matrix', () => {
     const plan = await seedPlan({ name: `${PREFIX}Matrix Plan` });
     const [first, , , , , , , , , , , , , , , , , , , , second] = FEATURE_REGISTRY; // rows 1 and 21 → pages 1 and 2
     await page.goto(`/admin/plans/${plan.id}/edit`);
-    await expect(page.getByRole('heading', { name: 'Feature matrix', level: 3 })).toBeVisible();
-    await expect(page.getByTestId('selected-count')).toHaveText('0 selected');
+    await expect(page.getByRole('heading', { name: 'Features', level: 3 })).toBeVisible();
+    await expect(page.getByTestId('selected-count')).toHaveText(`0 of ${FEATURE_REGISTRY.length} selected`);
     for (const theme of ['cosmic', 'midnight'] as const) {
       await setTheme(page, creds, theme);
       await expectNoHorizontalOverflow(page);
@@ -152,24 +146,27 @@ test.describe('plan-editor feature matrix', () => {
     await reauth(page, creds);
     await page.goto(`/admin/plans/${plan.id}/edit`);
     await page.getByRole('checkbox', { name: `Toggle ${first.name}` }).click();
-    await expect(page.getByTestId('selected-count')).toHaveText('1 selected');
+    await expect(page.getByTestId('selected-count')).toHaveText(`1 of ${FEATURE_REGISTRY.length} selected`);
     await page.getByRole('button', { name: 'Next page' }).click();
     await page.getByRole('checkbox', { name: `Toggle ${second.name}` }).click();
-    await expect(page.getByTestId('selected-count')).toHaveText('2 selected');
-    // Cross-page tray + selected-only filter.
+    await expect(page.getByTestId('selected-count')).toHaveText(`2 of ${FEATURE_REGISTRY.length} selected`);
+    // Cross-page tray + selected-only filter (a checkbox label, not a button).
     await expect(tray(page).getByText(second.name)).toBeVisible();
-    await page.getByRole('button', { name: 'Selected only' }).click();
-    await expect(page.getByTestId('selected-count')).toHaveText('2 selected');
+    await page.getByRole('checkbox', { name: 'Selected only' }).check();
+    // The counter's "N of M" is truthful for the ACTIVE view: selected-only
+    // shows 2 rows, so M is 2 (the same rule the committed search counter
+    // follows on the catalog surfaces).
+    await expect(page.getByTestId('selected-count')).toHaveText('2 of 2 selected');
     await expect(page.getByRole('checkbox', { name: `Toggle ${second.name}` })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: `Toggle ${first.name}` })).toBeVisible();
     await screenshot(page, 'matrix-selected-tray');
-    await page.getByRole('button', { name: 'Show all' }).click();
+    await page.getByRole('checkbox', { name: 'Selected only' }).uncheck();
     // We are still on matrix page 2 — save from here: the submit must
     // reconstruct the complete enabled set (the visual page is irrelevant).
     // The dispatch is asynchronous: synchronize on the action's POST response
     // (the transaction commits before it returns), then read the database.
     const firstSave = page.waitForResponse(response => response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Save feature matrix' }).click();
+    await page.getByRole('button', { name: 'Save matrix' }).click();
     expect((await firstSave).status()).toBe(200);
     // Scoped to the matrix section: Next.js's route announcer is an (empty)
     // body-level alert that is not ours to count.
@@ -185,15 +182,19 @@ test.describe('plan-editor feature matrix', () => {
     expect(await prisma.featurePlanTranslation.count({ where: { planId: plan.id } })).toBe(2);
   });
 
-  test('matrix is keyboard operable: Tab reaches a toggle and Enter flips it', async ({ page }) => {
+  test('matrix is keyboard operable: Tab reaches a toggle and Space flips it', async ({ page }) => {
     keyboardDesktopOnly();
     const plan = await seedPlan({ name: `${PREFIX}Matrix Keyboard` });
     await page.goto(`/admin/plans/${plan.id}/edit`);
-    // Target the first RENDERED toggle (groups render in category order).
-    const label = await page.locator('button[role="checkbox"]').first().getAttribute('aria-label');
+    // Target the first RENDERED matrix toggle (grouped category order): the
+    // matrix rows are the shared list's real checkboxes (input, not button),
+    // and the builder page's plan-details flags must not be mistaken for one.
+    const label = await page.getByRole('checkbox', { name: /^Toggle / }).first().getAttribute('aria-label');
     expect(label).toBeTruthy();
     await tabTo(page, { role: 'checkbox', name: label! }, 60);
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('selected-count')).toHaveText('1 selected');
+    // A native input checkbox flips on Space — Enter is inert on it by spec
+    // (buttons flip on Enter; form checkboxes flip on Space).
+    await page.keyboard.press(' ');
+    await expect(page.getByTestId('selected-count')).toHaveText(`1 of ${FEATURE_REGISTRY.length} selected`);
   });
 });

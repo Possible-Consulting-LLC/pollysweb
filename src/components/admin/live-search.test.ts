@@ -150,6 +150,12 @@ test('an external value change (fallback navigation) syncs the text and restores
   assert.equal(state.committed, 'new from url');
   assert.equal(state.query, '');
   assert.equal(state.page, 1);
+  // The commit's sync voids the pre-commit fetch: a response that lands after
+  // the navigation must not resurrect the narrowed view over the committed one.
+  state = narrowingReducer(state, { type: 'response', requestId: 8, query: 'new from url',
+    rows: [{ id: 'b', title: 'Beta' }], total: 1 });
+  assert.equal(state.query, '', 'a late response for the pre-commit fetch is stale');
+  assert.equal(state.rows.length, 0);
 });
 
 // --- hook-free input view: headless by construction, no dropdown anywhere ---

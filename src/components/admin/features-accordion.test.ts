@@ -180,6 +180,7 @@ const base = { features: features(3), total: 34, search: '', page: 1, pageSize: 
   trayCollapsed: false, onToggleTrayCollapsed: () => {},
   onSelectAll: undefined as (() => void) | undefined,
   onSelectNone: undefined as (() => void) | undefined,
+  onClearSearch: undefined as (() => void) | undefined,
   onSearchSubmit: (_search: string) => {},
   narrowedOpenId: '', onNarrowedOpenToggle: (_key: string) => {},
   editingKey: '', onStartEdit: (_key: string) => {}, onCancelEdit: () => {},
@@ -443,6 +444,38 @@ test('S13d: the search input hides when the catalog holds less than a page; coun
     'the counter stays');
   assert.equal(elements(tree).some((item) => item.props['data-testid'] === 'select-all'), true,
     'the S13c pair stays visible');
+});
+
+test('FINALE F3: a committed search keeps an in-place Clear; the idle toolbar has none', () => {
+  // Present only when a committed URL-owned search exists.
+  let cleared = false;
+  const withSearch = render({ search: 'feed', onClearSearch: () => { cleared = true; } });
+  const clear = elements(withSearch).find((item) => item.props['data-testid'] === 'clear-search');
+  assert.ok(clear, 'the committed search keeps its Clear affordance');
+  assert.equal(textOf(clear), 'Clear');
+  (clear!.props.onClick as () => void)();
+  assert.equal(cleared, true, 'the Clear affordance fires the host callback');
+  // No committed search → no Clear.
+  const idle = render({ onClearSearch: () => {} });
+  assert.equal(elements(idle).some((item) => item.props['data-testid'] === 'clear-search'), false,
+    'an idle toolbar renders no Clear');
+  // While the view is narrowed by live typing, the Clear hides (the live
+  // query owns the view; Escape reverts instead).
+  const narrowed = render({ search: 'feed', narrowing: liveNarrowing(), onClearSearch: () => {} });
+  assert.equal(elements(narrowed).some((item) => item.props['data-testid'] === 'clear-search'), false,
+    'no Clear while a live narrowing query owns the view');
+});
+
+test('FINALE F3: the shell wires Clear to a soft navigation that drops the committed search', () => {
+  pushed = [];
+  const tree = FeaturesAccordion({ features: features(2), total: 34, search: 'feed', page: 3,
+    pageSize: 20, openKey: '' });
+  elements(tree);
+  const clear = elements(tree).find((item) => item.props['data-testid'] === 'clear-search');
+  assert.ok(clear, 'the shell renders the Clear affordance for a committed search');
+  (clear!.props.onClick as () => void)();
+  assert.deepEqual(pushed, ['/admin/features?page=1'],
+    'Clear soft-navigates to the unsearched first page (the surface\'s canonical listHref)');
 });
 
 test('the shell wires the narrowing search to the features endpoint at the page size', () => {
@@ -795,8 +828,11 @@ test('S13c: the toolbar hosts Select all / Select none between the search input 
   const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
   const toolbar = elements(tree).find(item => item.props['data-testid'] === 'features-toolbar');
   assert.ok(toolbar, 'features toolbar missing');
-  const kids = (Array.isArray(toolbar!.props.children)
-    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  const kids = ((Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[])
+    // The optional clearSlot (FINALE F3) may occupy a child position; absent,
+    // the position is nullish and carries no element.
+    .filter(kid => kid != null);
   // The pair's search/counter kinds: the stubs are function components, so the
     // label decides — the search slot resolves to empty text.
   const kinds = kids.map(kid => {

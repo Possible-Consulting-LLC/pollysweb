@@ -114,6 +114,27 @@ test('renders every row with titles, subtitles, the selection counter and the pa
   assert.match(rendered, /Page 2 of 3/);
 });
 
+test('clearSlot: a host-provided Clear affordance renders in the toolbar — even when the search input hides', () => {
+  // FINALE F3: a committed below-page search must never strand the user — the
+  // Clear rides the toolbar row itself, NOT the searchHidden-gated slot.
+  let cleared = false;
+  const clear = jsx.jsx('button', { onClick: () => { cleared = true; }, children: 'Clear' });
+  const visible = SelectionList({ ...baseProps, clearSlot: clear });
+  assert.equal(elements(visible).some((item) => item.type === 'button' && textOf(item) === 'Clear'),
+    true, 'the Clear affordance renders in the toolbar');
+  // Below-page committed search: the input hides, the Clear stays.
+  const hidden = SelectionList({ ...baseProps, total: 3, page: 1, clearSlot: clear });
+  assert.equal(elements(hidden).some((item) => item.props['aria-label'] === 'Search rows'), false,
+    'the search input hides below one page');
+  assert.equal(elements(hidden).some((item) => item.type === 'button' && textOf(item) === 'Clear'),
+    true, 'the Clear survives the hidden input');
+  (elements(hidden).find((item) => item.type === 'button' && textOf(item) === 'Clear')!.props.onClick as () => void)();
+  assert.equal(cleared, true, 'the Clear affordance fires the host callback');
+  // Absent → nothing renders (single-mode pickers without a Clear are untouched).
+  assert.equal(elements(SelectionList(baseProps)).some((item) => item.type === 'button' && textOf(item) === 'Clear'),
+    false, 'no Clear renders without a clearSlot');
+});
+
 test('empty lists fall back to the empty label', () => {
   const rendered = textOf(SelectionList({ ...baseProps, rows: [], total: 0, page: 1, emptyLabel: 'No rows match.' }));
   assert.match(rendered, /No rows match\./);
@@ -628,8 +649,11 @@ test('S13c: Select all / Select none render between the search input and the cou
     onSelectNone: () => { fired.push('none'); } }) as unknown;
   const toolbar = elements(tree).find((item) => item.props['data-testid'] === 'list-toolbar');
   assert.ok(toolbar, 'toolbar row missing');
-  const kids = (Array.isArray(toolbar!.props.children)
-    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  const kids = ((Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[])
+    // The optional clearSlot (FINALE F3) may occupy a child position; absent,
+    // the position is nullish and carries no element.
+    .filter(kid => kid != null);
   const kinds = kids.map((kid) => kid.type === 'input' ? 'search'
     : textOf(kid) === 'Select all' || textOf(kid) === 'Select none' ? 'select'
     : kid.props['data-testid'] === 'selected-count' ? 'counter' : String(kid.type));

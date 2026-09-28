@@ -364,6 +364,19 @@ test('typing live-renders matched keepers in place and clicking one toggles the 
   assert.deepEqual(navSearch, [], 'browsing never navigates');
 });
 
+test('a live query narrowed below a page never hides its own input (S13d listSize contract)', () => {
+  // The committed catalog is above a page (total 45) but the live matches for
+  // the typed text hold ONE row: SelectionList must key the input's visibility
+  // on the COMMITTED size (listSize), never on the narrowed total — otherwise
+  // the input vanishes mid-typing and the query cannot be edited.
+  render({ userPicker: { ...baseUserPicker, total: 45 }, userNarrowing: userNarrowingState({
+    narrowed: true, active: true, query: 'nova',
+    rows: [{ id: 'u-9', title: 'Nova Keeper', subtitle: 'nova@example.com' }],
+    total: 1, page: 1, loading: false }) });
+  assert.equal(lastLiveSearch.length, 1,
+    'the keeper search input stays visible while the live matches own the view');
+});
+
 test('a narrowed set with no matches echoes the query', () => {
   const { tree } = render({ ...base, userNarrowing: userNarrowingState({
     narrowed: true, active: true, query: 'zzz', rows: [], total: 0 }) });
@@ -397,6 +410,46 @@ test('S13d: the picker search input hides when the picker holds less than a page
   assert.equal(lastLiveSearch.length, 0);
   assert.equal(elements(step3.tree).some((item) => item.props['data-testid'] === 'list-toolbar'), false,
     'no search toolbar on the options step');
+});
+
+// --- FINALE F3: the pickers' in-place Clear for a committed search ---
+
+test('FINALE F3: step 1 keeps an in-place Clear for a committed keeper search — even below one page', () => {
+  // Below-page committed search: the input hides (S13d) but the Clear stays —
+  // no stranded user.
+  const { tree, nav } = render({ userPicker: { ...baseUserPicker, total: 3, search: 'marta' } });
+  assert.equal(lastLiveSearch.length, 0, 'the committed search hides the input (S13d)');
+  const clear = elements(tree).find((item) => item.props['data-testid'] === 'clear-committed-search');
+  assert.ok(clear, 'the committed keeper search keeps its Clear affordance');
+  assert.equal(textOf(clear), 'Clear');
+  (clear!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=1'],
+    'Clear soft-navigates to the unsearched picker (usearch dropped, page reset)');
+  // No committed search → no Clear.
+  const idle = render(base);
+  assert.equal(elements(idle.tree).some((item) =>
+    item.props['data-testid'] === 'clear-committed-search'), false, 'an idle picker renders no Clear');
+  // While the narrowed view is live, the Clear hides (Escape reverts instead).
+  const live = render({ userPicker: { ...baseUserPicker, total: 3, search: 'marta' },
+    userNarrowing: userNarrowingState({ narrowed: true, active: true, query: 'marta' }) });
+  assert.equal(elements(live.tree).some((item) =>
+    item.props['data-testid'] === 'clear-committed-search'), false,
+    'no Clear while a live narrowing query owns the picker');
+});
+
+test('FINALE F3: step 2 keeps an in-place Clear for a committed plan search — even below one page', () => {
+  const { tree, nav } = render({ step: 2, selectedKeepers: [selectedKeeper],
+    planPicker: { ...basePlanPicker, search: 'pro' } });
+  assert.equal(lastLiveSearch.length, 0, 'the committed search hides the input (S13d)');
+  const clear = elements(tree).find((item) => item.props['data-testid'] === 'clear-committed-search');
+  assert.ok(clear, 'the committed plan search keeps its Clear affordance');
+  (clear!.props.onClick as () => void)();
+  assert.deepEqual(nav, ['/admin/subscriptions?wizard=open&step=2'],
+    'Clear soft-navigates to the unsearched plan picker (psearch dropped, page reset)');
+  // No committed search → no Clear.
+  const idle = render({ step: 2, selectedKeepers: [selectedKeeper] });
+  assert.equal(elements(idle.tree).some((item) =>
+    item.props['data-testid'] === 'clear-committed-search'), false, 'an idle picker renders no Clear');
 });
 
 // --- Step 2: plan + context bar ---

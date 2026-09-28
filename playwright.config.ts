@@ -61,7 +61,12 @@ export default defineConfig({
       name: 'chromium-mobile',
       dependencies: ['setup'],
       testIgnore: /perf\.spec\.ts/,
-      use: { ...devices['iPhone 13'], storageState: STATE },
+      // Explicit browserName: devices['iPhone 13'] carries
+      // defaultBrowserType: 'webkit', so without this the "chromium-mobile"
+      // project silently ran WebKit — its captures were byte-identical to
+      // webkit-mobile's and the engine matrix claimed by the plan (Chromium +
+      // WebKit) was half illusion.
+      use: { ...devices['iPhone 13'], browserName: 'chromium', storageState: STATE },
     },
     {
       name: 'webkit-desktop',

@@ -123,6 +123,11 @@ export type FeaturesAccordionViewProps = {
    * Select none clears the whole selection. Optional — absent → no buttons. */
   onSelectAll?(): void;
   onSelectNone?(): void;
+  /** FINALE F3: clears the COMMITTED URL-owned search (a soft navigation to
+   * the unsearched first page). The Clear affordance renders whenever a
+   * committed search exists and the view is not live-narrowed — including
+   * below-page catalogs where the S13d rule hides the input itself. */
+  onClearSearch?(): void;
 };
 
 /** Mockup detail card: soft-bordered card with a labeled kv grid. */
@@ -286,7 +291,7 @@ function FeatureRow({ row, checked, onToggle, href, expanded, onToggleExpand,
 export function FeaturesAccordionView({ features, total, search, page, pageSize, openKey,
   selectedItems, onToggleSelected, onPick, trayCollapsed, onToggleTrayCollapsed,
   onSearchSubmit, narrowing, narrowedOpenId, onNarrowedOpenToggle, editingKey,
-  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone }: FeaturesAccordionViewProps) {
+  onStartEdit, onCancelEdit, onSaveEdit, onSelectAll, onSelectNone, onClearSearch }: FeaturesAccordionViewProps) {
   const selected = new Set(selectedItems.map(item => item.id));
   const narrowed = narrowing.narrowed;
   const counterTotal = narrowed ? narrowing.total : total;
@@ -314,6 +319,14 @@ export function FeaturesAccordionView({ features, total, search, page, pageSize,
       <span className={counterChipClass} data-testid="selected-count">
         {`${selectedItems.length} of ${counterTotal} selected`}
       </span>
+      {/* FINALE F3: the committed search's in-place Clear (subscriptions-list
+          placement). It survives the S13d input-hiding — a committed
+          below-page search never strands the user. While a live narrowing
+          query owns the view, it hides (Escape reverts instead). */}
+      {search && !narrowed && onClearSearch
+        ? <Button type="button" variant="ghost" size="sm" data-testid="clear-search"
+            onClick={onClearSearch}>Clear</Button>
+        : null}
     </div>
     <SelectionTray items={selectedItems} onDeselect={onToggleSelected}
       collapsed={trayCollapsed} onCollapsedToggle={onToggleTrayCollapsed} label="Selected">
@@ -500,5 +513,6 @@ export function FeaturesAccordion(props: Omit<FeaturesAccordionViewProps,
     onSaveEdit={saveEdit}
     onSelectAll={selectAll}
     onSelectNone={() => dispatch({ type: 'clearSelection' })}
-    onSearchSubmit={search => router.push(listHrefFor(search, 1))} />;
+    onSearchSubmit={search => router.push(listHrefFor(search, 1))}
+    onClearSearch={() => router.push(listHrefFor('', 1))} />;
 }

@@ -203,7 +203,7 @@ export function FeatureMatrixView({ planId, planName, options, enabled, page, se
           <Button type="submit" variant="primary" size="md" disabled={saving}>
             {saving ? 'Saving…' : 'Save matrix'}
           </Button>
-          {saveState?.error ? <p role="alert" className="text-sm text-rose-700">{saveState.error}</p> : null}
+          {saveState?.error ? <p role="alert" className="text-sm text-[var(--rose)]">{saveState.error}</p> : null}
         </MutationForm>} />
   </section>;
 }

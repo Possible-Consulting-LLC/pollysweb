@@ -255,4 +255,21 @@ Method — surface by surface, interaction by interaction:
 - [ ] **Step 2–4: RED → implement → GREEN → full gates →** commit `feat: plan-builder page modernization per mockup #7`
 - [ ] **Step 5: Review** per subagent-driven development; ledger status updated
 
+---
+
+### Task 10: Bulk keeper assignment — wizard rework (owner-approved design 2026-09-27)
+
+**Binding spec:** the AMENDED `.superpowers/sdd/2026-09-26-plan-creator/user-picker-mockup.html` (multi-select keepers with tray + Select all/None, read-only feature lists on plan rows, batch summary). Owner-approved design (chat, 2026-09-27):
+
+1. **Step 1 — Keepers (multi-select)**: live-narrowing search (hidden below-page per S13d), click-to-select rows + checkboxes, tray (plum toggle, gold chips), gold counter "N of M selected", Select all/None (S13c machinery — all selectable, deleting accounts never join). Building a LIST replaces the single fold-away; Continue is explicit (enabled at N ≥ 1).
+2. **Step 2 — Plan (single)**: one plan, auto-advance on pick (U6 continues to apply to single-pick steps); each plan row shows its **included features READ-ONLY** (the only feature content on the page — owner guard: nothing feature-editable here, ever).
+3. **Step 3 — Options + assign for the batch**: one billing option + one effective date for all selected keepers; summary "Assigning ⟨plan⟩ to ⟨N⟩ keepers: ⟨names⟩"; **all-or-nothing** — one transaction, per-user row locks, each keeper's prior effective subscription end-dated first, any ineligible keeper aborts the whole batch with a named error, never a partial assignment.
+4. **Constraints**: plans exist ahead of time (picker over existing active plans only; no create affordance anywhere in the flow); deleting accounts greyed/unselectable; audit reasons derived per user.
+
+**Files:** `src/components/admin/assign-plan-wizard.tsx` (+ test), `src/lib/admin/plan-assignment.ts` (+ test — a bulk `assignPlanToUsers` variant wrapping the per-user service in ONE transaction with all-or-nothing semantics + derived per-user audit reasons), the subscriptions page wiring if needed.
+
+**Steps:** failing tests per item → implement → green → full gates → commit `feat: bulk keeper assignment — wizard rework per amended picker mockup` → review (folded into the post-Task-9 review pass or its own scoped review per controller call).
+
+(Sequenced AFTER Task 9; before the finale.)
+
 (Sequenced AFTER Task 8 fix rounds land — shared files, sequential per context-budget rule; BEFORE the Task 6-finale baseline re-capture so pixel changes are captured once; BEFORE the GLM 5.3 final review per owner directive.)

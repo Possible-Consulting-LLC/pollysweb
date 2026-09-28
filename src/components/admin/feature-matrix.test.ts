@@ -347,8 +347,11 @@ test('S13c: Select all / Select none sit between the search input and the gold c
   const tree = render({ onSelectAll: () => {}, onSelectNone: () => {} });
   const toolbar = elements(tree).find(item => item.props['data-testid'] === 'list-toolbar');
   assert.ok(toolbar, 'the shared toolbar must host the pair');
-  const kids = (Array.isArray(toolbar!.props.children)
-    ? toolbar!.props.children : [toolbar!.props.children]) as Element[];
+  const kids = ((Array.isArray(toolbar!.props.children)
+    ? toolbar!.props.children : [toolbar!.props.children]) as Element[])
+    // The optional clearSlot (FINALE F3) may occupy a child position; absent,
+    // the position is nullish and carries no element.
+    .filter(kid => kid != null);
   const kinds = kids.map(kid => kid.type === 'input' ? 'search'
     : text(kid) === 'Select all' || text(kid) === 'Select none' ? 'select'
     : kid.props['data-testid'] === 'selected-count' ? 'counter' : String(kid.type));

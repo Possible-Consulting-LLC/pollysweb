@@ -39,8 +39,8 @@ test.describe('plans surface rendering', () => {
     await expectNoHorizontalOverflow(page);
     await screenshot(page, 'plan-create');
     // Keyboard-only navigation reaches the first field and the submit control.
-    const nameInput = page.getByLabel(/Name \(1–80 characters/);
-    await tabTo(page, { role: 'textbox', name: /Name \(1–80 characters/ });
+    const nameInput = page.getByLabel('Name', { exact: true });
+    await tabTo(page, { role: 'textbox', name: 'Name' });
     await expect(nameInput).toBeFocused();
     await tabTo(page, { role: 'button', name: 'Create plan' });
     await expect(page.getByRole('button', { name: 'Create plan' })).toBeFocused();
@@ -51,16 +51,27 @@ test.describe('plans behavior pins', () => {
   test('search filters the list and reports empty results', async ({ page }) => {
     const alpha = await seedPlan({ name: `${PREFIX}Search Alpha` });
     await seedPlan({ name: `${PREFIX}Search Beta` });
+    // S13d: the search input renders only on an above-page catalog (the real
+    // one is ~4 plans) — seed fillers so the pin is live regardless.
+    for (let index = 1; index <= 20; index++)
+      await seedPlan({ name: `${PREFIX}Search Filler ${String(index).padStart(2, '0')}` });
     await page.goto('/admin/plans');
-    await page.getByLabel('Search by name').fill(`${PREFIX}Search Alpha`);
-    await page.getByRole('button', { name: 'Search' }).click();
+    const search = page.getByLabel('Search plans by name');
+    await expect(search).toBeVisible();
+    // Enter is the explicit full-page fallback (plain typing never navigates).
+    await search.fill(`${PREFIX}Search Alpha`);
+    await search.press('Enter');
     await expect(page).toHaveURL(/search=/);
     await expect(page.getByRole('link', { name: new RegExp(alpha.name) })).toBeVisible();
     await expect(page.getByText(`${PREFIX}Search Beta`)).toHaveCount(0);
+    // FINALE F3: the committed search keeps its in-place Clear.
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(page.getByText(`${PREFIX}Search Beta`)).toBeVisible();
     // No matches → explicit empty state, page resets to 1.
-    await page.getByLabel('Search by name').fill(`${PREFIX}No Such Plan`);
-    await page.getByRole('button', { name: 'Search' }).click();
-    await expect(page.getByText('No plans match this search.')).toBeVisible();
+    await search.fill(`${PREFIX}No Such Plan`);
+    await search.press('Enter');
+    await expect(page.getByText(`Nothing matches “${PREFIX}No Such Plan”.`)).toBeVisible();
   });
 
   test('pagination preserves selection: counter and tray persist across pages', async ({ page }) => {
@@ -142,7 +153,7 @@ test.describe('plans behavior pins', () => {
   test('creating a plan through the creator UI stores it (description round-trips)', async ({ page, creds }) => {
     await reauth(page, creds);
     await page.goto('/admin/plans/new');
-    await page.getByLabel(/Name \(1–80 characters/).fill(`${PREFIX}Created Plan`);
+    await page.getByLabel('Name', { exact: true }).fill(`${PREFIX}Created Plan`);
     // NOTE: the form's description textarea carries `required`, so an empty
     // description cannot be submitted through the UI even though the service
     // accepts empty (ratified "descriptions optional" constraint) — recorded

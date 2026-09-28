@@ -67,12 +67,20 @@ export function narrowingReducer(state: NarrowingState, event: NarrowingEvent):
     case 'page':
       return { ...state, page: event.page };
     case 'escape':
-      return { ...state, text: event.committed, query: '', page: 1, loading: false };
+      // Same stale-response rule as 'sync': the revert voids any fetch that was
+      // in flight for the reverted text. A fresh id (from the same counter the
+      // hook issues fetch ids from) guarantees the late response is stale.
+      return { ...state, text: event.committed, query: '', page: 1, loading: false,
+        rows: [], total: 0, requestId: nextRequestId++ };
     case 'sync': {
       if (state.text === event.text && state.committed === event.text &&
         state.query === '' && !state.loading) return state;
+      // A fresh id (from the same counter the hook issues fetch ids from)
+      // voids any fetch that was in flight at commit time: a response landing
+      // after the fallback navigation must not resurrect the narrowed view
+      // over the restored committed view.
       return { ...state, text: event.text, committed: event.text, query: '', page: 1,
-        loading: false };
+        rows: [], total: 0, loading: false, requestId: nextRequestId++ };
     }
   }
 }
@@ -157,8 +165,10 @@ export function useNarrowing({ value, source }: {
     dispatch({ type: 'escape', committed: state.committed });
   };
   // External value changes (fallback navigation) sync the text and restore
-  // the committed view.
-  useEffect(() => { dispatch({ type: 'sync', text: value }); }, [value]);
+  // the committed view — and void the pending/in-flight narrowing fetch, so a
+  // late response for the just-committed text can never win the race against
+  // the sync and resurrect the narrowed view.
+  useEffect(() => { cancelPending(); dispatch({ type: 'sync', text: value }); }, [value]);
   useEffect(() => () => cancelPending(), []);
   const query = state.text.trim();
   return {
