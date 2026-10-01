@@ -26,15 +26,15 @@ test("dedicated staging verification email key requires a recipient allowlist an
 });
 
 test("staging feedback recipient must be explicitly allowed", () => {
-  const env = { ...valid, EMAIL_RESEND_API_KEY: "test-key", EMAIL_ALLOWED_RECIPIENTS: "support@spoodlyspace.com", EMAIL_FROM_EMAIL: "hello@spoodlyspace.com", AUTH_URL: "https://staging.spoodlyspace.com" };
-  assert.doesNotThrow(() => assertStagingEnvironment({ ...env, FEEDBACK_TO_EMAIL: "support@spoodlyspace.com" }));
+  const env = { ...valid, EMAIL_RESEND_API_KEY: "test-key", EMAIL_ALLOWED_RECIPIENTS: "support@example.com", EMAIL_FROM_EMAIL: "hello@example.com", AUTH_URL: "https://staging.example" };
+  assert.doesNotThrow(() => assertStagingEnvironment({ ...env, FEEDBACK_TO_EMAIL: "support@example.com" }));
   assert.throws(() => assertStagingEnvironment({ ...env, FEEDBACK_TO_EMAIL: "outsider@example.com" }), /FEEDBACK_TO_EMAIL/);
 });
 
 test("staging build rejects an unsafe email verification origin", () => {
   const env = { ...valid, EMAIL_RESEND_API_KEY: "test-key", EMAIL_ALLOWED_RECIPIENTS: "keeper@example.com", EMAIL_FROM_EMAIL: "hello@example.com", AUTH_URL: "https://long-project.vercel.app" };
-  assert.doesNotThrow(() => assertStagingEnvironment({ ...env, EMAIL_VERIFICATION_ORIGIN: "https://staging.spoodlyspace.com" }));
-  for (const origin of ["http://staging.spoodlyspace.com", "https://staging.spoodlyspace.com/path", "https://user:pass@staging.spoodlyspace.com"]) {
+  assert.doesNotThrow(() => assertStagingEnvironment({ ...env, EMAIL_VERIFICATION_ORIGIN: "https://staging.example" }));
+  for (const origin of ["http://staging.example", "https://staging.example/path", "https://user:pass@staging.example"]) {
     assert.throws(() => assertStagingEnvironment({ ...env, EMAIL_VERIFICATION_ORIGIN: origin }), /EMAIL_VERIFICATION_ORIGIN/);
   }
 });

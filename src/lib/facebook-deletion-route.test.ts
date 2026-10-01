@@ -13,7 +13,7 @@ function fixture(providers=['facebook'], fail=false, maintenance=false) {
   const receipts=new Map<string,{confirmationCode:string;status:string}>();
   const routeModule={exports:{} as {POST:(request:Request)=>Promise<Response>}};
   const source=ts.transpileModule(readFileSync(new URL('../app/api/facebook/data-deletion/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  runInNewContext(source,{module:routeModule,exports:routeModule.exports,Request,Response,Buffer,URLSearchParams,URL,console:{error(){}},process:{env:{AUTH_FACEBOOK_SECRET:'test',EMAIL_VERIFICATION_ORIGIN:'https://staging.spoodlyspace.com'}},require:(id:string)=>{
+  runInNewContext(source,{module:routeModule,exports:routeModule.exports,Request,Response,Buffer,URLSearchParams,URL,console:{error(){}},process:{env:{AUTH_FACEBOOK_SECRET:'test',EMAIL_VERIFICATION_ORIGIN:'https://staging.example'}},require:(id:string)=>{
       if(id==='@/lib/admin/maintenance-access') return {guardServiceMaintenance:async()=>{if(maintenance)throw new maintenancePolicy.MaintenanceError();}};
       if(id==='@/lib/admin/maintenance-policy') return maintenancePolicy;
     if(id==='node:crypto')return {randomBytes};
@@ -32,7 +32,7 @@ function fixture(providers=['facebook'], fail=false, maintenance=false) {
 test('forged callbacks never write receipts',async()=>{const f=fixture();assert.equal((await f.post(f.request(true))).status,400);assert.equal(f.writes(),0);});
 test('callback retries return the same receipt without claiming completion',async()=>{
  const f=fixture();const req=f.request();const a=await (await f.post(req.clone())).json();const b=await (await f.post(req.clone())).json();
- assert.deepEqual(a,b);assert.match(a.url,/^https:\/\/staging\.spoodlyspace\.com\/data-deletion\?code=[a-f0-9]{48}$/);assert.deepEqual(Object.keys(a).sort(),['confirmation_code','url']);assert.equal(f.receipts.size,1);assert.equal([...f.receipts.values()][0].status,'needs_sign_in_method');
+ assert.deepEqual(a,b);assert.match(a.url,/^https:\/\/staging\.example\/data-deletion\?code=[a-f0-9]{48}$/);assert.deepEqual(Object.keys(a).sort(),['confirmation_code','url']);assert.equal(f.receipts.size,1);assert.equal([...f.receipts.values()][0].status,'needs_sign_in_method');
 });
 test('request with another method awaits provider-data review',async()=>{const f=fixture(['facebook','google']);assert.equal((await f.post(f.request())).status,200);assert.equal([...f.receipts.values()][0].status,'pending_review');});
 test('database failure returns retryable error without a false confirmation',async()=>{const f=fixture(undefined,true);const response=await f.post(f.request());assert.equal(response.status,503);assert.equal((await response.text()).includes('private database'),false);});

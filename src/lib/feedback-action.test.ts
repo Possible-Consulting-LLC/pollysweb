@@ -22,10 +22,10 @@ test("staging feedback sends through its dedicated key to the approved inbox", a
   }
   const env = {
     SPOODLY_ENV: "staging", AUTH_URL: "https://long-project.vercel.app",
-    EMAIL_VERIFICATION_ORIGIN: "https://staging.spoodlyspace.com",
-    EMAIL_RESEND_API_KEY: "staging-key", EMAIL_FROM_EMAIL: "hello@spoodlyspace.com",
-    EMAIL_ALLOWED_RECIPIENTS: "support@spoodlyspace.com",
-    FEEDBACK_TO_EMAIL: "support@spoodlyspace.com", RESEND_API_KEY: "live-key-must-not-be-used",
+    EMAIL_VERIFICATION_ORIGIN: "https://staging.example",
+    EMAIL_RESEND_API_KEY: "staging-key", EMAIL_FROM_EMAIL: "hello@example.com",
+    EMAIL_ALLOWED_RECIPIENTS: "support@example.com",
+    FEEDBACK_TO_EMAIL: "support@example.com", RESEND_API_KEY: "live-key-must-not-be-used",
   };
   const dependencies: Record<string, unknown> = {
     '@/lib/admin/maintenance-policy':maintenancePolicy, '@/lib/admin/maintenance-access':{guardMaintenance:async()=>{},prepareCredentialChange:async()=>{}}, '@/lib/maintenance-write':{},
@@ -50,8 +50,8 @@ test("staging feedback sends through its dedicated key to the approved inbox", a
   assert.match(result.success ?? "", /on its way/);
   assert.deepEqual(keys, ["staging-key"]);
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].from, "hello@spoodlyspace.com");
-  assert.deepEqual(Array.from(sent[0].to), ["support@spoodlyspace.com"]);
+  assert.equal(sent[0].from, "hello@example.com");
+  assert.deepEqual(Array.from(sent[0].to), ["support@example.com"]);
   assert.equal(sent[0].replyTo, "keeper@example.com");
   assert.match(sent[0].text, /Please test this feedback email/);
 });

@@ -58,8 +58,8 @@ Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set thes
 | Variable | Value |
 |----------|--------|
 | `AUTH_SECRET` | Long random string (`openssl rand -base64 32`) |
-| `AUTH_URL` | `https://spoodly-space.vercel.app` |
-| `NEXTAUTH_URL` | `https://spoodly-space.vercel.app` |
+| `AUTH_URL` | `https://www.your-public-domain.com` — MUST be the public custom origin |
+| `NEXTAUTH_URL` | `https://www.your-public-domain.com` — MUST be the public custom origin |
 | `DATABASE_URL` | Supabase **Transaction** pooler URI (port `6543`, `?pgbouncer=true`) |
 | `DIRECT_URL` | Supabase **Session** URI (port `5432`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://jfutawxwjqekerugbqzt.supabase.co` |
@@ -70,6 +70,8 @@ Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set thes
 | `STRIPE_PRICE_MONTHLY` | Price ID for $1.99/month |
 | `STRIPE_PRICE_YEARLY` | Price ID for $19.99/year |
 | `STRIPE_PRO_LEGACY_PRICE_IDS` | Optional comma-separated Pro Price IDs still used by existing subscriptions or open checkouts |
+
+robots.txt follows the AUTH_URL/NEXTAUTH_URL hostname — it must be the public custom origin, never a Vercel alias.
 
 Then **Redeploy** (Deployments → ⋮ → Redeploy). Env changes do not apply to an already-running deployment until you redeploy.
 

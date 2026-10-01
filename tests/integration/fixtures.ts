@@ -241,7 +241,7 @@ export async function seedOrphanFeature() {
 }
 
 export async function seedKeeper(input: { name?: string; email?: string } = {}) {
-  const email = input.email ?? `zz-e2e-keeper-${Date.now()}-${Math.floor(Math.random() * 1e6)}@e2e.spoodlyspace.test`;
+  const email = input.email ?? `zz-e2e-keeper-${Date.now()}-${Math.floor(Math.random() * 1e6)}@e2e.example.test`;
   return prisma.user.create({ data: {
     email, name: input.name ?? `${PREFIX}Keeper`, emailVerified: new Date(),
   }, select: { id: true, email: true, name: true } });
