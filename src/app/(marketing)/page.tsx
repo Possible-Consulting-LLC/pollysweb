@@ -212,12 +212,6 @@ export default async function MarketingHomePage() {
           ) : (
             <ArtPlaceholder label="Hero illustration" />
           )}
-          <p
-            aria-hidden
-            className="absolute -right-2 top-2 rotate-6 font-[family-name:var(--font-display)] text-lg italic text-[var(--plum)]/80 sm:right-4"
-          >
-            Small Creatures, Big Joy ♡
-          </p>
         </div>
       </section>
 
