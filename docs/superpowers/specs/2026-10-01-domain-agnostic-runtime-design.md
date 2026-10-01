@@ -69,7 +69,7 @@ Stays `force-dynamic`. `GET` delegates to `isPublicSiteHost(process.env, new URL
 
 ### 3. `scripts/staging-social-disconnect-check.ts`
 
-Derives its origin from `EMAIL_VERIFICATION_ORIGIN ?? AUTH_URL` by reusing the existing `facebookDeletionOrigin()` helper from `src/lib/facebook-deletion.ts` (it validates the HTTPS origin form and throws a clear error when unset, matching the script's existing failure mode). Both hardcoded `staging.spoodlyspace.com` occurrences are removed.
+Derives its origin from `EMAIL_VERIFICATION_ORIGIN ?? AUTH_URL` by reusing the existing `facebookDeletionOrigin()` helper from `src/lib/facebook-deletion.ts`. The helper fails closed — throws when the origin is missing or malformed (generic `Invalid URL`) or is not a bare HTTPS origin (`'Deletion origin is not configured'`). Both hardcoded staging-origin occurrences are removed.
 
 ### 4. Test fixture swaps (mechanical)
 
@@ -101,7 +101,7 @@ Covers, with neutral domains: staging env → Disallow-all even when request hos
 ## Error handling
 
 - `public-site.ts` never throws: every failure path returns `false` (Disallow).
-- The staging script fails with the existing `facebookDeletionOrigin()` error message when the origin env is unset/malformed — same class of failure the script already had for bad config, no new error taxonomy.
+- The staging script's `facebookDeletionOrigin()` helper fails closed — throws when the origin is missing or malformed (generic `Invalid URL`) or is not a bare HTTPS origin (`'Deletion origin is not configured'`).
 
 ## Testing & verification
 
@@ -111,6 +111,8 @@ Covers, with neutral domains: staging env → Disallow-all even when request hos
 4. Grep gate: `rg -i "spoodlyspace\.com"` over tracked files returns only (a) the deferred support-email refs listed above, (b) `docs/` historical records, (c) build artifacts. Any other hit fails the review.
 
 ## Ops notes (outside this repo's code)
+
+Precondition: the production project's `AUTH_URL`/`NEXTAUTH_URL` must already point at the public custom origin (not a Vercel alias) before this change deploys — otherwise robots.txt disallows the real domain and allows the alias. Verify the live values at deploy time.
 
 - At deploy time, set the production Vercel project's `AUTH_URL` and `NEXTAUTH_URL` to the new public origin (e.g. `https://pollysweb.com`). The robots derivation follows that value; nothing in code needs to know the domain.
 - Staging keeps its existing env; its robots.txt stays Disallow-all through `isStaging()`.

@@ -18,7 +18,8 @@ Disallow: /uploads/
 export const dynamic = "force-dynamic";
 
 export function GET(request: Request) {
-  // Staging deploys as VERCEL_ENV=production; public-ness is not staging and request host matches the configured canonical origin or its www twin.
+  // Staging deploys as VERCEL_ENV=production; public-ness is not staging and request host
+  // matches the configured canonical origin or its www twin.
   const isPublicSite = isPublicSiteHost(process.env, new URL(request.url).hostname);
   return new Response(isPublicSite ? publicRules : "User-agent: *\nDisallow: /\n", {
     headers: {

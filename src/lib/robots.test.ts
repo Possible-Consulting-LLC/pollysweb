@@ -90,6 +90,22 @@ it("allows public crawling for canonical apex and www twin", async () => {
   );
 });
 
+it("allows public crawling for canonical www and apex twin", async () => {
+  await withEnv(
+    {
+      SPOODLY_ENV: "production",
+      VERCEL_PROJECT_ID: undefined,
+      AUTH_URL: "https://www.example.com",
+    },
+    async () => {
+      for (const host of ["www.example.com", "example.com"]) {
+        const response = GET(new Request(`https://${host}/robots.txt`));
+        await assertPublicRules(response);
+      }
+    },
+  );
+});
+
 it("allows public crawling when origin is configured via NEXTAUTH_URL fallback", async () => {
   await withEnv(
     {
