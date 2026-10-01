@@ -16,7 +16,7 @@ test('rejects forged, malformed, unsupported, future and oversized requests',()=
  assert.throws(()=>parseFacebookDeletionRequest(signed(payload),'',now));
 });
 test('callback links use a configured HTTPS origin rather than the request host',()=>{
- assert.equal(facebookDeletionOrigin({EMAIL_VERIFICATION_ORIGIN:'https://staging.spoodlyspace.com'}),'https://staging.spoodlyspace.com');
+ assert.equal(facebookDeletionOrigin({EMAIL_VERIFICATION_ORIGIN:'https://staging.example'}),'https://staging.example');
  for(const origin of ['http://evil.test','https://evil.test/path','https://user:pass@evil.test']) assert.throws(()=>facebookDeletionOrigin({AUTH_URL:origin}));
  assert.throws(()=>facebookDeletionOrigin({}));
 });

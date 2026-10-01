@@ -40,7 +40,7 @@ export default async function globalSetup() {
   await cleanupE2eData({ includeUsers: true });
 
   const password = randomBytes(24).toString('base64url'); // ≥ 6 chars (login schema), suite-only
-  const email = `zz-e2e-admin-${Date.now()}-${randomBytes(3).toString('hex')}@e2e.spoodlyspace.test`;
+  const email = `zz-e2e-admin-${Date.now()}-${randomBytes(3).toString('hex')}@e2e.example.test`;
   const user = await prisma.user.create({
     data: {
       email,

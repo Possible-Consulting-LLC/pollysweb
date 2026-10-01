@@ -46,16 +46,16 @@ test("staging recipient allowlist is exact and verification link stays on canoni
 
 test("verification links use the public email origin without changing the authentication origin", () => {
   const env = {
-    EMAIL_RESEND_API_KEY: "key", EMAIL_FROM_EMAIL: "hello@spoodlyspace.com",
+    EMAIL_RESEND_API_KEY: "key", EMAIL_FROM_EMAIL: "hello@example.com",
     AUTH_URL: "https://long-project.vercel.app",
-    EMAIL_VERIFICATION_ORIGIN: "https://staging.spoodlyspace.com",
+    EMAIL_VERIFICATION_ORIGIN: "https://staging.example",
     SPOODLY_ENV: "staging", EMAIL_ALLOWED_RECIPIENTS: "keeper@example.com",
   };
   const config = verificationMailConfig(env);
   assert.ok(config);
-  assert.equal(verificationLink(config.origin, "raw-token"), "https://staging.spoodlyspace.com/verify-email?token=raw-token");
+  assert.equal(verificationLink(config.origin, "raw-token"), "https://staging.example/verify-email?token=raw-token");
   assert.equal(env.AUTH_URL, "https://long-project.vercel.app");
-  for (const unsafe of ["http://staging.spoodlyspace.com", "https://staging.spoodlyspace.com/path", "https://user:pass@staging.spoodlyspace.com"]) {
+  for (const unsafe of ["http://staging.example", "https://staging.example/path", "https://user:pass@staging.example"]) {
     assert.equal(verificationMailConfig({ ...env, EMAIL_VERIFICATION_ORIGIN: unsafe }), null);
   }
 });

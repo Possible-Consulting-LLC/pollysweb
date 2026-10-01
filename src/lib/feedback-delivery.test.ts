@@ -5,19 +5,19 @@ import { feedbackMailConfig } from "./feedback-delivery";
 const staging = {
   SPOODLY_ENV: "staging",
   AUTH_URL: "https://long-project.vercel.app",
-  EMAIL_VERIFICATION_ORIGIN: "https://staging.spoodlyspace.com",
+  EMAIL_VERIFICATION_ORIGIN: "https://staging.example",
   EMAIL_RESEND_API_KEY: "staging-key",
-  EMAIL_FROM_EMAIL: "hello@spoodlyspace.com",
-  EMAIL_ALLOWED_RECIPIENTS: "keeper@example.com,support@spoodlyspace.com",
-  FEEDBACK_TO_EMAIL: "support@spoodlyspace.com",
+  EMAIL_FROM_EMAIL: "hello@example.com",
+  EMAIL_ALLOWED_RECIPIENTS: "keeper@example.com,support@example.com",
+  FEEDBACK_TO_EMAIL: "support@example.com",
   RESEND_API_KEY: "live-key-must-not-be-used",
 };
 
 test("staging feedback uses the dedicated key and only an allowed explicit recipient", () => {
   assert.deepEqual(feedbackMailConfig(staging), {
     key: "staging-key",
-    from: "hello@spoodlyspace.com",
-    to: "support@spoodlyspace.com",
+    from: "hello@example.com",
+    to: "support@example.com",
   });
   assert.equal(feedbackMailConfig({ ...staging, FEEDBACK_TO_EMAIL: "outsider@example.com" }), null);
   assert.equal(feedbackMailConfig({ ...staging, FEEDBACK_TO_EMAIL: "" }), null);

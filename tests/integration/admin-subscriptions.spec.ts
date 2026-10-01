@@ -16,7 +16,7 @@ const rows = (page: Page) => page.locator('[data-subscription-row]');
 
 test.describe('subscriptions rendering', () => {
   test('list + wizard steps render cleanly in both themes', async ({ page, creds }) => {
-    const keeper = await seedKeeper({ name: `${PREFIX}Render Keeper`, email: 'zz-e2e-render-keeper@e2e.spoodlyspace.test' });
+    const keeper = await seedKeeper({ name: `${PREFIX}Render Keeper`, email: 'zz-e2e-render-keeper@e2e.example.test' });
     const plan = await seedPlan({ name: `${PREFIX}Render Sub Plan`, active: true, public: false,
       billingOptions: [{ interval: 'MONTHLY', basePriceCents: 1000, active: true }] });
     const option = plan.billingOptions.find(candidate => candidate.interval === 'MONTHLY')!;
