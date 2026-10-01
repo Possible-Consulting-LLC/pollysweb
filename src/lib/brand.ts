@@ -20,6 +20,8 @@ export const BRAND = {
 } as const;
 
 export const BRAND_LOGO_SRC = "/brand/pollys-logo-mark.png";
+// White-text variant for the dark footer (purple recolored, art preserved).
+export const BRAND_LOGO_WHITE_SRC = "/brand/pollys-logo-white.png";
 
 // Use a small optimized raster for browser/home-screen icons as well.
 export const BRAND_ICON_SRC = `/_next/image?url=${encodeURIComponent(BRAND_LOGO_SRC)}&w=256&q=75`;
