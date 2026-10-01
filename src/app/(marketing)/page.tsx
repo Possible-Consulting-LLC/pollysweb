@@ -281,7 +281,7 @@ export default async function MarketingHomePage() {
               href="/register"
               className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-[#3b2166] transition hover:bg-white/90"
             >
-              Join the Community
+              Get Started
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
           </div>
