@@ -91,10 +91,6 @@ function slugTitle(slug: string): string {
     "cookie-policy": "Cookie Policy",
     "community-guidelines": "Community Guidelines",
     "acceptable-use": "Acceptable Use Policy",
-    copyright: "Copyright & IP",
-    disclaimer: "Disclaimer",
-    "data-deletion": "Data Deletion",
-    accessibility: "Accessibility",
   };
   return titles[slug as (typeof FOOTER_LEGAL_SLUGS)[number]];
 }

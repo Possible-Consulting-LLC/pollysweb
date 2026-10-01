@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import {
   ArrowRight,
   BarChart3,
@@ -8,12 +7,13 @@ import {
   CalendarDays,
   Camera,
   Heart,
+  Icon,
   Leaf,
   Megaphone,
-  PawPrint,
   Star,
   Users,
 } from "lucide-react";
+import { spider } from "@lucide/lab";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
@@ -71,7 +71,7 @@ const valueProps = [
     body: "Spood lovers from around the world",
   },
   {
-    icon: Heart,
+    icon: Star,
     iconClass: "text-[var(--plum)] fill-[var(--plum)]",
     title: "Happier, Healthier Spoods",
     body: "Better care. Brighter days.",
@@ -83,7 +83,7 @@ const valueProps = [
     body: "Easy, reliable, and beginner-friendly",
   },
   {
-    icon: Star,
+    icon: Heart,
     iconClass: "text-orange-400 fill-orange-400",
     title: "Built with Love",
     body: "For spood keepers, by spood keepers",
@@ -109,6 +109,10 @@ function ArtPlaceholder({ label }: { label: string }) {
       </span>
     </div>
   );
+}
+
+function SpiderGlyph(props: { className?: string; "aria-hidden"?: boolean }) {
+  return <Icon iconNode={spider} {...props} />;
 }
 
 export default async function MarketingHomePage() {
@@ -174,10 +178,10 @@ export default async function MarketingHomePage() {
           </div>
           <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-[var(--midnight)]/70">
             <li className="inline-flex items-center gap-2">
-              <PawPrint className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Easy to use
+              <Heart className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Easy to use
             </li>
             <li className="inline-flex items-center gap-2">
-              <Heart className="h-4 w-4 fill-[var(--plum)] text-[var(--plum)]" aria-hidden /> Built by spood lovers
+              <SpiderGlyph className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Built by spood lovers
             </li>
             <li className="inline-flex items-center gap-2">
               <Leaf className="h-4 w-4 text-green-600" aria-hidden /> Thoughtful care guides

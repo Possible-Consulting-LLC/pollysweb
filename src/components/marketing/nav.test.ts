@@ -34,16 +34,12 @@ test("home has no nav key and unknown paths resolve to none", () => {
   assert.equal(activeNavKey("/login"), null);
 });
 
-test("footer legal column lists exactly the nine approved slugs", () => {
+test("footer legal column lists the five approved slugs", () => {
   assert.deepEqual([...FOOTER_LEGAL_SLUGS], [
     "terms-of-service",
     "privacy-policy",
     "cookie-policy",
     "community-guidelines",
     "acceptable-use",
-    "copyright",
-    "disclaimer",
-    "data-deletion",
-    "accessibility",
   ]);
 });

@@ -14,18 +14,14 @@ export const NAV_ITEMS: Array<{ key: NavKey; label: string; href: string }> = [
   { key: "contact", label: "Contact", href: "/contact" },
 ];
 
-// The nine documents shown in the footer's Legal column (Overview is reachable
-// from the legal hub itself, not the footer).
+// The five documents shown in the footer's Legal column (per review: the full
+// set lives on the legal hub; the footer carries the essentials only).
 export const FOOTER_LEGAL_SLUGS = [
   "terms-of-service",
   "privacy-policy",
   "cookie-policy",
   "community-guidelines",
   "acceptable-use",
-  "copyright",
-  "disclaimer",
-  "data-deletion",
-  "accessibility",
 ] as const;
 
 /** Resolves a pathname to the nav item that owns it: exact href or a path
