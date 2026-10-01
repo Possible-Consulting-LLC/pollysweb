@@ -61,6 +61,7 @@ const nextConfig: NextConfig = {
       { pathname: "/uploads/**" },
       { pathname: "/brand/**" },
       { pathname: "/api/brand/**" },
+      { pathname: "/images/**" },
     ],
   },
 };
