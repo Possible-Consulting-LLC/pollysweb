@@ -549,3 +549,11 @@ model FeaturePlanTranslation {
   @@unique([planId, featureId])
   @@index([featureId])
 }
+
+// Public "Join Our Spood Community" newsletter interest list. No email sending
+// is wired to this table yet — it records who opted in from the site footer.
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}

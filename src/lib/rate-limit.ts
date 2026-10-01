@@ -4,7 +4,7 @@ import { consumeRateLimits, requestIp, type RateRule } from "./rate-limit-core";
 
 export const RATE_LIMIT_MESSAGE = "Too many attempts, or this service is temporarily unavailable. Please try again later.";
 
-type Action = "admin-delete" | "login" | "register" | "verify-email" | "email-change" | "feedback" | "upload" | "password" | "care";
+type Action = "admin-delete" | "login" | "register" | "verify-email" | "email-change" | "feedback" | "upload" | "password" | "care" | "newsletter" | "contact";
 const QUOTAS: Record<Action, { account: number; ip: number; windowMs: number }> = {
   "admin-delete": { account: 20, ip: 60, windowMs: 15 * 60_000 },
   login: { account: 10, ip: 60, windowMs: 15 * 60_000 },
@@ -15,6 +15,8 @@ const QUOTAS: Record<Action, { account: number; ip: number; windowMs: number }> 
   upload: { account: 50, ip: 150, windowMs: 24 * 60 * 60_000 },
   password: { account: 5, ip: 20, windowMs: 15 * 60_000 },
   care: { account: 120, ip: 400, windowMs: 24 * 60 * 60_000 },
+  newsletter: { account: 5, ip: 20, windowMs: 60 * 60_000 },
+  contact: { account: 5, ip: 20, windowMs: 60 * 60_000 },
 };
 
 export async function allowAction(action: Action, identity: string, requestHeaders?: Pick<Headers, "get">): Promise<boolean> {

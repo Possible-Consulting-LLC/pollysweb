@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { BRAND, BRAND_LOGO_WHITE_SRC } from "@/lib/brand";
 import { NAV_ITEMS, FOOTER_LEGAL_SLUGS } from "./nav";
+import { NewsletterForm } from "./newsletter-form";
 
 type SocialKey = keyof typeof BRAND.social;
 
@@ -72,6 +73,7 @@ export function SiteFooter() {
         <div data-slot="newsletter">
           <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--on-panel)]/60">Join Our Spood Community</h3>
           <p className="mt-4 text-sm text-[var(--on-panel)]/70">Tips, photos, and friendly spood lovers!</p>
+          <NewsletterForm />
         </div>
       </div>
 
