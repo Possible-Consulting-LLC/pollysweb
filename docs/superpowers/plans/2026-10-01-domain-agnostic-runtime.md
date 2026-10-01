@@ -233,7 +233,7 @@ Expected: all pass; test count ≈ 1164 (baseline 1153 − 2 replaced robots tes
 
 Run: `rg -l 'spoodlyspace\.com' -g '!.next' -g '!node_modules' .`
 Expected — the ONLY tracked files remaining:
-`src/lib/feedback-delivery.ts`, `src/app/terms/page.tsx`, `src/app/privacy/page.tsx`, `src/app/data-deletion/page.tsx`, `legal-site/index.html`, `legal-site/privacy/index.html`, `legal-site/terms/index.html`, `README.md`, `.env.example`, `docs/**` historical records, and the spec/plan documents themselves. Any other file is a failure.
+`src/lib/feedback-delivery.ts`, `src/lib/feedback-delivery.test.ts` (the deferred lines 29–32 only, per the Task 4 exception), `src/app/terms/page.tsx`, `src/app/privacy/page.tsx`, `src/app/data-deletion/page.tsx`, `legal-site/index.html`, `legal-site/privacy/index.html`, `legal-site/terms/index.html`, `README.md`, `.env.example`, and files under `docs/` (historical records including `docs/staging/environment.example`, plus the spec and this plan). Any other file is a failure.
 
 - [ ] **Step 3: Commit any stragglers and report the board to the owner**
 
