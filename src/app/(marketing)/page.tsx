@@ -15,9 +15,20 @@ import {
 } from "lucide-react";
 import { spider } from "@lucide/lab";
 import { redirect } from "next/navigation";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import Image from "next/image";
 import { getSessionUser } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { LandingAppPreview } from "@/components/landing/app-preview";
+
+// Fixed asset path — dropping the real file into public/images/ replaces the
+// placeholder with no code change (existence checked per render).
+const HOME_HERO_SRC = "/images/home-hero.png";
+
+function hasHeroArt(): boolean {
+  return existsSync(path.join(process.cwd(), "public", "images", "home-hero.png"));
+}
 
 export const metadata: Metadata = {
   title: "Polly's Web — Jumping spider care, all in one place",
@@ -189,7 +200,18 @@ export default async function MarketingHomePage() {
           </ul>
         </div>
         <div className="relative">
-          <ArtPlaceholder label="Hero illustration" />
+          {hasHeroArt() ? (
+            <Image
+              src={HOME_HERO_SRC}
+              alt="Polly the mascot caring for her jumping spiders"
+              width={1200}
+              height={900}
+              priority
+              className="w-full rounded-[2rem]"
+            />
+          ) : (
+            <ArtPlaceholder label="Hero illustration" />
+          )}
           <p
             aria-hidden
             className="absolute -right-2 top-2 rotate-6 font-[family-name:var(--font-display)] text-lg italic text-[var(--plum)]/80 sm:right-4"
