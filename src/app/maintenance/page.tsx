@@ -6,6 +6,6 @@ export default function MaintenancePage() {
     <p>Spoodly Space is temporarily unavailable. Please leave any unsaved entries open and try again after the site reopens.</p>
     <Link href="/" className="underline">Check again</Link>
     <Link href="/login" className="underline">Administrator sign in</Link>
-    <nav className="flex gap-4 text-sm"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/data-deletion">Data deletion</Link></nav>
+    <nav className="flex gap-4 text-sm"><Link href="/legal/privacy-policy">Privacy</Link><Link href="/legal/terms-of-service">Terms</Link><Link href="/legal/data-deletion">Data deletion</Link></nav>
   </main>;
 }

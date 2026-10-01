@@ -173,7 +173,7 @@ export default async function SettingsPage({
           </ul>
         ) : null}
         <SocialButtons providers={connectableProviders} mode="link" action={linkSocialProvider} />
-        <p className="text-sm text-[var(--midnight)]/75">Disconnecting removes the sign-in link in Spoodly Space. You can also revoke consent in your Google or Facebook account settings. For Facebook-provided data removal, see <Link href="/data-deletion" className="underline">data deletion</Link>.</p>
+        <p className="text-sm text-[var(--midnight)]/75">Disconnecting removes the sign-in link in Spoodly Space. You can also revoke consent in your Google or Facebook account settings. For Facebook-provided data removal, see <Link href="/legal/data-deletion" className="underline">data deletion</Link>.</p>
       </Card>
 
       <Card>

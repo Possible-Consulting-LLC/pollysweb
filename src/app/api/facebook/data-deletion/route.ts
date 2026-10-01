@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       update: {},
       select: { confirmationCode: true },
     });
-    const url = new URL('/data-deletion', origin);
+    const url = new URL('/legal/data-deletion', origin);
     url.searchParams.set('code', receipt.confirmationCode);
     return Response.json({ url: url.toString(), confirmation_code: receipt.confirmationCode }, { headers });
   } catch {
