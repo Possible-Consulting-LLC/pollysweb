@@ -1,3 +1,5 @@
+import { isPublicSiteHost } from "@/lib/public-site";
+
 const publicRules = `User-agent: *
 Allow: /
 Allow: /api/brand/
@@ -16,10 +18,8 @@ Disallow: /uploads/
 export const dynamic = "force-dynamic";
 
 export function GET(request: Request) {
-  // Staging is a separate Vercel project whose stable deployment also has
-  // VERCEL_ENV=production. Only the public site's domains permit crawling.
-  const hostname = new URL(request.url).hostname;
-  const isPublicSite = hostname === "spoodlyspace.com" || hostname === "www.spoodlyspace.com";
+  // Staging deploys as VERCEL_ENV=production; public-ness is not staging and request host matches the configured canonical origin or its www twin.
+  const isPublicSite = isPublicSiteHost(process.env, new URL(request.url).hostname);
   return new Response(isPublicSite ? publicRules : "User-agent: *\nDisallow: /\n", {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
