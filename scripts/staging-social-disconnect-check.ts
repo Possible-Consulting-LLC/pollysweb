@@ -2,6 +2,7 @@
 import dotenv from 'dotenv';
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
+import { facebookDeletionOrigin } from '../src/lib/facebook-deletion';
 import { assertStagingEnvironment } from '../src/lib/staging-guard';
 import { credentialFingerprint, matchesCredentialFingerprint, userCredentialSource } from '../src/lib/credential-version';
 
@@ -9,7 +10,7 @@ async function main() {
   dotenv.config({ path: '.env.local', override: true, quiet: true });
   assert.equal(process.env.SPOODLY_ENV, 'staging');
   assertStagingEnvironment();
-  process.env.EMAIL_VERIFICATION_ORIGIN = "https://staging.spoodlyspace.com";
+  const origin = facebookDeletionOrigin(process.env);
   // No OAuth calls occur. These fixture credentials only mark the two providers available.
   process.env.AUTH_GOOGLE_ID ||= 'fixture'; process.env.AUTH_GOOGLE_SECRET ||= 'fixture';
   process.env.AUTH_FACEBOOK_ID ||= 'fixture'; process.env.AUTH_FACEBOOK_SECRET ||= 'fixture';
@@ -28,7 +29,7 @@ async function main() {
     const { POST } = await import('../src/app/api/facebook/data-deletion/route');
     const payload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: facebookId, issued_at: Math.floor(Date.now()/1000) })).toString('base64url');
     const signed = createHmac('sha256', process.env.AUTH_FACEBOOK_SECRET!).update(payload).digest('base64url') + '.' + payload;
-    const callback = new Request('https://staging.spoodlyspace.com/api/facebook/data-deletion', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ signed_request: signed }) });
+    const callback = new Request(`${origin}/api/facebook/data-deletion`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ signed_request: signed }) });
     const first = await POST(callback.clone()); assert.equal(first.status, 200);
     const receipt = await first.json();
     assert.deepEqual(await (await POST(callback.clone())).json(), receipt);
