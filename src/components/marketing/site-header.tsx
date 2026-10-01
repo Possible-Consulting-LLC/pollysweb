@@ -50,7 +50,7 @@ export function SiteHeader() {
             href="/register"
             className="rounded-full bg-[var(--plum)] px-4 py-2 text-sm font-semibold text-[var(--on-accent)] shadow-sm transition hover:bg-[var(--plum-deep)]"
           >
-            Sign Up
+            Get Started
           </Link>
         </div>
 
@@ -98,7 +98,7 @@ export function SiteHeader() {
               onClick={() => setOpen(false)}
               className="flex-1 rounded-full bg-[var(--plum)] px-4 py-2 text-center text-sm font-semibold text-[var(--on-accent)]"
             >
-              Sign Up
+              Get Started
             </Link>
           </div>
         </nav>
