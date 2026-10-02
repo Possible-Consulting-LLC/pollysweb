@@ -62,7 +62,9 @@ export function createContentLoader<Frontmatter extends { slug: string; draft?: 
         .map(({ frontmatter }) => {
           const { draft: _draft, ...meta } = frontmatter;
           void _draft;
-          return meta;
+          // TS cannot distribute Omit over an unresolved generic; the runtime
+          // shape (frontmatter minus draft) is exactly ContentMeta.
+          return meta as ContentMeta<Frontmatter>;
         });
     },
     get(slug: string, root?: string): ContentDoc<Frontmatter> | null {
@@ -70,7 +72,7 @@ export function createContentLoader<Frontmatter extends { slug: string; draft?: 
       if (!entry) return null;
       const { draft: _draft, ...frontmatter } = entry.frontmatter;
       void _draft;
-      return { ...frontmatter, html: entry.html, toc: entry.toc };
+      return { ...frontmatter, html: entry.html, toc: entry.toc } as ContentDoc<Frontmatter>;
     },
   };
 }

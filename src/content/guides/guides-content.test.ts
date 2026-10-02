@@ -21,19 +21,20 @@ test("guide slugs are unique and match their category domain", () => {
 });
 
 test("every guide has a reading time, excerpt, and rendered TOC", () => {
-  for (const guide of listGuides()) {
-    const full = getGuide(guide.slug);
-    assert.ok(full, `missing: ${guide.slug}`);
+  for (const meta of listGuides()) {
+    const full = getGuide(meta.slug);
+    assert.ok(full, `missing: ${meta.slug}`);
     assert.ok(full.readingTime >= 1);
     assert.ok(full.excerpt.length > 0);
-    assert.ok(full.toc.length >= 2, `guide lacks structure: ${guide.slug}`);
+    assert.ok(full.toc.length >= 2, `guide lacks structure: ${meta.slug}`);
     assert.ok(full.html.includes("<h2 id="));
   }
 });
 
 test("species profiles covers the three species from the mockup book spines", () => {
   const guide = getGuide("species-profiles");
-  assert.ok(guide?.html.includes("Phidippus"));
+  assert.ok(guide);
+  assert.ok(guide.html.includes("Phidippus"));
   assert.ok(guide.html.includes("Salticus"));
   assert.ok(guide.html.includes("Habronattus"));
 });

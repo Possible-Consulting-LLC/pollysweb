@@ -1,24 +1,14 @@
 import path from "node:path";
 import { z } from "zod";
 import { createContentLoader, CONTENT_ROOT } from "./loader";
+import { GUIDE_CATEGORIES as GUIDE_CATEGORY_DATA, type GuideCategory } from "./guide-categories";
 import type { TocEntry } from "./markdown";
 
 export { CONTENT_ROOT };
+export { GUIDE_CATEGORY_DATA as GUIDE_CATEGORIES };
+export type { GuideCategory };
 
-export const GUIDE_CATEGORIES = [
-  { key: "feeding", label: "Feeding" },
-  { key: "water", label: "Water" },
-  { key: "molting", label: "Molting" },
-  { key: "handling", label: "Handling" },
-  { key: "cleaning", label: "Cleaning" },
-  { key: "life-stages", label: "Life Stages" },
-  { key: "health", label: "Health" },
-  { key: "species-profiles", label: "Species Profiles" },
-] as const;
-
-export type GuideCategory = (typeof GUIDE_CATEGORIES)[number]["key"];
-
-const guideCategoryKeys = GUIDE_CATEGORIES.map((category) => category.key) as [GuideCategory, ...GuideCategory[]];
+const guideCategoryKeys = GUIDE_CATEGORY_DATA.map((category) => category.key) as [GuideCategory, ...GuideCategory[]];
 
 const guideFrontmatterSchema = z.object({
   title: z.string().min(1),
