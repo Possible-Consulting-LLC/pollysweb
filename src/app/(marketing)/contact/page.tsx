@@ -11,6 +11,7 @@ import {
   MessageSquareHeart,
   Users,
 } from "lucide-react";
+import { SpiderWebGlyph } from "@/components/marketing/spider-glyph";
 import { ContactForm } from "@/components/marketing/contact-form";
 
 export const metadata: Metadata = {
@@ -79,7 +80,7 @@ export default function ContactPage() {
                 <MessageSquareHeart className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Real People, Real Answers
               </li>
               <li className="inline-flex items-center gap-2">
-                <Heart className="h-4 w-4 fill-orange-400 text-orange-400" aria-hidden /> Spood Friendly Support
+                <SpiderWebGlyph className="h-4 w-4 text-orange-400" aria-hidden /> Spood Friendly Support
               </li>
               <li className="inline-flex items-center gap-2">
                 <Leaf className="h-4 w-4 text-green-600" aria-hidden /> Helping the Spood Community Grow
