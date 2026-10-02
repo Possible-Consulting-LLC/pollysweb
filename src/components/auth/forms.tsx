@@ -11,7 +11,6 @@ import {
   Users,
 } from "lucide-react";import { completeRegistrationAction, loginAction, registerAction, resendVerificationAction, verifyExistingEmailAction } from "@/app/actions/auth";
 import { confirmEmailChangeAction } from "@/app/actions/email-change";
-import { BrandLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { SocialButtons } from "@/components/auth/social-buttons";
@@ -87,44 +86,13 @@ function AuthShell({
   footer: ReactNode;
 }) {
   return (
-    <div className="theme-light mx-auto flex min-h-dvh w-full flex-col bg-gradient-to-br from-[var(--lavender)]/30 via-[var(--cream)] to-orange-100/25">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-8">
-        <BrandLogo href="/" size="hero" priority className="max-w-52" />
-        <nav aria-label="Sign in or create an account" className="flex items-center gap-2">
-          <Link
-            href="/login"
-            className={`rounded-full px-4 py-2 text-sm font-bold transition ${variant === "login" ? "text-[var(--plum)] underline decoration-2 underline-offset-4" : "text-[var(--midnight)]/70 hover:bg-[var(--hover)]"}`}
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/register"
-            className={`rounded-full px-4 py-2 text-sm font-bold transition ${variant === "register" ? "bg-[var(--plum)] text-[var(--on-accent)]" : "bg-[var(--plum)] text-[var(--on-accent)] opacity-90 hover:opacity-100"}`}
-          >
-            Sign Up
-          </Link>
-        </nav>
-      </header>
-
-      <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 px-4 pb-16 pt-6 sm:px-8 lg:grid-cols-[1fr_26rem]">
-        <AuthPanel variant={variant} />
-        <div>
-          {/* Mobile brand header (panel is hidden below lg) */}
-          <div className="mb-6 text-center lg:hidden">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--plum)]/70">
-              {variant === "login" ? "Welcome back" : "Welcome to"}
-            </p>
-          </div>
-          {children}
-          {footer}
-          <nav className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-[var(--midnight)]/65" aria-label="Legal information">
-            <Link href="/legal/privacy-policy" className="hover:text-[var(--plum)]">Privacy Policy</Link>
-            <Link href="/legal/terms-of-service" className="hover:text-[var(--plum)]">Terms &amp; Conditions</Link>
-            <Link href="/contact" className="hover:text-[var(--plum)]">Contact</Link>
-          </nav>
-        </div>
+    <section className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 px-4 py-12 sm:px-8 lg:grid-cols-[1fr_26rem]">
+      <AuthPanel variant={variant} />
+      <div>
+        {children}
+        {footer}
       </div>
-    </div>
+    </section>
   );
 }
 
