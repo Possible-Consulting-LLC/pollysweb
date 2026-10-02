@@ -7,13 +7,11 @@ import {
   CalendarDays,
   Camera,
   Heart,
-  Icon,
   Leaf,
   Megaphone,
   Star,
   Users,
 } from "lucide-react";
-import { spider } from "@lucide/lab";
 import { redirect } from "next/navigation";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -21,6 +19,7 @@ import Image from "next/image";
 import { getSessionUser } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { LandingAppPreview } from "@/components/landing/app-preview";
+import { SpiderGlyph } from "@/components/marketing/spider-glyph";
 
 // Fixed asset path — dropping the real file into public/images/ replaces the
 // placeholder with no code change (existence checked per render).
@@ -120,10 +119,6 @@ function ArtPlaceholder({ label }: { label: string }) {
       </span>
     </div>
   );
-}
-
-function SpiderGlyph(props: { className?: string; "aria-hidden"?: boolean }) {
-  return <Icon iconNode={spider} {...props} />;
 }
 
 export default async function MarketingHomePage() {

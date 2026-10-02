@@ -12,13 +12,13 @@ import {
   House,
   Leaf,
   Moon,
-  PawPrint,
   Sparkles,
   Sprout,
   Users,
   Utensils,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { SpiderGlyph } from "@/components/marketing/spider-glyph";
 
 export const metadata: Metadata = {
   title: "Features | Polly's Web",
@@ -173,7 +173,7 @@ export default function FeaturesPage() {
       <section aria-label="Why keepers choose Polly's Web" className="border-y border-[var(--plum)]/10 bg-[var(--card)]">
         <ul className="mx-auto grid w-full max-w-4xl gap-4 px-5 py-6 text-center text-sm font-semibold text-[var(--midnight)]/75 sm:grid-cols-4 sm:px-8">
           <li className="inline-flex items-center justify-center gap-2">
-            <PawPrint className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Easy to use
+            <SpiderGlyph className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Easy to use
           </li>
           <li className="inline-flex items-center justify-center gap-2">
             <Heart className="h-4 w-4 fill-[var(--plum)] text-[var(--plum)]" aria-hidden /> Built by spood lovers

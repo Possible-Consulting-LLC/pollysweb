@@ -7,11 +7,11 @@ import {
   Check,
   Heart,
   Leaf,
-  PawPrint,
   Star,
   Users,
 } from "lucide-react";
 import { BRAND, BRAND_LOGO_SRC } from "@/lib/brand";
+import { SpiderGlyph } from "@/components/marketing/spider-glyph";
 import { LandingAppPreview } from "@/components/landing/app-preview";
 
 export const metadata: Metadata = {
@@ -112,7 +112,7 @@ export default function AboutPage() {
             </div>
             <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-[var(--midnight)]/70">
               <li className="inline-flex items-center gap-2">
-                <PawPrint className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Built by spood lovers
+                <SpiderGlyph className="h-4 w-4 text-[var(--plum)]" aria-hidden /> Built by spood lovers
               </li>
               <li className="inline-flex items-center gap-2">
                 <Leaf className="h-4 w-4 text-green-600" aria-hidden /> Trusted care information
