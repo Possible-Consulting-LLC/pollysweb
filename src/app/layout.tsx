@@ -26,16 +26,16 @@ const body = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Spoodly Space",
+  title: "Polly's Web",
   description: "Your little corner of the web. Track. Care. Celebrate.",
-  applicationName: "Spoodly Space",
+  applicationName: "Polly's Web",
   icons: {
     icon: [{ url: BRAND_ICON_SRC }],
     apple: [{ url: BRAND_ICON_SRC }],
   },
   appleWebApp: {
     capable: true,
-    title: "Spoodly Space",
+    title: "Polly's Web",
     statusBarStyle: "default",
   },
 };

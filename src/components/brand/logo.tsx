@@ -17,7 +17,7 @@ export function BrandLogo({
   const image = (
     <Image
       src={BRAND_LOGO_SRC}
-      alt="Spoodly Space"
+      alt="Polly's Web"
       width={240}
       height={240}
       sizes={size === "hero" ? "(min-width: 640px) 864px, 100vw" : "120px"}
@@ -46,7 +46,7 @@ export function BrandLogo({
         "inline-flex shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--cream)]",
         size === "hero" && "mx-auto",
       )}
-      aria-label="Spoodly Space home"
+      aria-label="Polly's Web home"
     >
       {image}
     </Link>

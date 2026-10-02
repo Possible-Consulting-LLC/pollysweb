@@ -41,7 +41,7 @@ export function RecentCareMeter({
             {streak.current}-day streak
           </h2>
           <p className="text-sm text-[var(--midnight)]/85">
-            {daysTogether} day{daysTogether === 1 ? "" : "s"} on Spoodly Space
+            {daysTogether} day{daysTogether === 1 ? "" : "s"} on Polly&apos;s Web
           </p>
         </div>
       </div>

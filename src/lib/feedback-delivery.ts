@@ -15,7 +15,7 @@ export function feedbackMailConfig(env: Environment): { key: string; from: strin
   if (!key) return null;
   return {
     key,
-    from: env.RESEND_FROM_EMAIL || "Spoodly Space <onboarding@resend.dev>",
-    to: env.FEEDBACK_TO_EMAIL || "support@spoodlyspace.com",
+    from: env.RESEND_FROM_EMAIL || "Polly's Web <onboarding@resend.dev>",
+    to: env.FEEDBACK_TO_EMAIL || "support@pollysweb.com",
   };
 }

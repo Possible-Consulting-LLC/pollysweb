@@ -1,9 +1,9 @@
-# Spoodly Space
+# Polly's Web
 
 **Your little corner of the web.**  
 Track. Care. Celebrate.
 
-Spoodly Space is a cute, beginner-friendly jumping spider care and tracking app. Open it, see who needs attention today, log care in seconds, and keep a scrapbook-style life story for each spood.
+Polly's Web is a cute, beginner-friendly jumping spider care and tracking app. Open it, see who needs attention today, log care in seconds, and keep a scrapbook-style life story for each spood.
 
 ## Stack
 
@@ -44,7 +44,7 @@ App runs at [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 ### Demo account
 
-- Email: `demo@spoodly.space`
+- Email: `demo@pollysweb.com`
 - Password: `spoodly123`
 
 ## Deploy on Vercel
@@ -64,7 +64,7 @@ Auth.js is missing `AUTH_SECRET` (or the DB URL) in the Vercel project. Set thes
 | `DIRECT_URL` | Supabase **Session** URI (port `5432`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://jfutawxwjqekerugbqzt.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase secret/service-role key used only by the server for the private `spoods` bucket |
-| `RESEND_API_KEY` | Resend API key for feedback emails to `support@spoodlyspace.com` |
+| `RESEND_API_KEY` | Resend API key for feedback emails to `support@pollysweb.com` |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Webhook signing secret for `/api/stripe/webhook` |
 | `STRIPE_PRICE_MONTHLY` | Price ID for $1.99/month |
@@ -75,13 +75,13 @@ robots.txt follows the AUTH_URL/NEXTAUTH_URL hostname — it must be the public 
 
 Then **Redeploy** (Deployments → ⋮ → Redeploy). Env changes do not apply to an already-running deployment until you redeploy.
 
-**Plans:** Free includes 1 active spood (memorialized / passed spiders don’t count). Spoodly Pro is $1.99/month or $19.99/year (Stripe Checkout).
+**Plans:** Free includes 1 active spood (memorialized / passed spiders don’t count). The Pro plan is $1.99/month or $19.99/year (Stripe Checkout).
 
 Before changing either current Pro Price ID, add the old ID to `STRIPE_PRO_LEGACY_PRICE_IDS` and redeploy. Keep it allowlisted while subscriptions or open checkouts still use it. An unknown price on an app-created subscription pauses new checkout for review to avoid duplicate charges.
 
-Check [https://spoodly-space.vercel.app/api/health](https://spoodly-space.vercel.app/api/health). It returns only `{ "ok": true }` when authentication, database configuration, private photo storage, and service maintenance readiness pass.
+Check [https://pollysweb.vercel.app/api/health](https://pollysweb.vercel.app/api/health). It returns only `{ "ok": true }` when authentication, database configuration, private photo storage, and service maintenance readiness pass.
 
-**Where accounts live:** Spoodly uses Prisma tables in Postgres, not Supabase Auth. Look in **Table Editor → `User`**, not **Authentication → Users**.
+**Where accounts live:** Polly's Web uses Prisma tables in Postgres, not Supabase Auth. Look in **Table Editor → `User`**, not **Authentication → Users**.
 
 ## Scripts
 

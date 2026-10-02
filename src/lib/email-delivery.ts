@@ -10,18 +10,18 @@ export async function sendVerificationEmail(email: string, token: string): Promi
   const config = verificationMailConfig(process.env);
   if (!config) throw new Error("Email verification delivery is unavailable.");
   const url = verificationLink(config.origin, token);
-  await deliver(email, "Verify your Spoodly Space email", `Use this link to verify your email. It expires in 30 minutes:\n\n${url}\n\nIf you did not request this, you can ignore this email.`);
+  await deliver(email, "Verify your Polly's Web email", `Use this link to verify your email. It expires in 30 minutes:\n\n${url}\n\nIf you did not request this, you can ignore this email.`);
 }
 
 export async function sendEmailChangeConfirmation(email: string, token: string): Promise<void> {
   const config = verificationMailConfig(process.env);
   if (!config) throw new Error("Email change delivery is unavailable.");
   const url = verificationLink(config.origin, token);
-  await deliver(email, "Confirm your new Spoodly Space email", `Confirm this as your new Spoodly Space email within 30 minutes:\n\n${url}\n\nYour current login email stays active until you confirm. If you did not request this, ignore this email.`);
+  await deliver(email, "Confirm your new Polly's Web email", `Confirm this as your new Polly's Web email within 30 minutes:\n\n${url}\n\nYour current login email stays active until you confirm. If you did not request this, ignore this email.`);
 }
 
 export async function sendEmailChangeNotice(oldEmail: string, newEmail: string): Promise<void> {
-  await deliver(oldEmail, "Spoodly Space email change requested", `Someone requested to change the email on your Spoodly Space account to ${newEmail}. Your current address remains active unless the new inbox confirms the change. If this was not you, change your password or contact support.`);
+  await deliver(oldEmail, "Polly's Web email change requested", `Someone requested to change the email on your Polly's Web account to ${newEmail}. Your current address remains active unless the new inbox confirms the change. If this was not you, change your password or contact support.`);
 }
 
 async function deliver(email: string, subject: string, text: string): Promise<void> {

@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   assertDemoSeedTarget();
-  const email = "demo@spoodly.space";
+  const email = "demo@pollysweb.com";
   const passwordHash = await bcrypt.hash("spoodly123", 10);
 
   await prisma.$transaction(async (tx) => {

@@ -140,7 +140,7 @@ export default async function MarketingHomePage() {
           <span aria-hidden className="hidden h-8 w-px bg-[var(--plum)]/20 sm:block" />
           <div>
             <p className="text-sm font-bold text-[var(--midnight)]">
-              Spoodly Space is joining the Proservability family!
+              Polly&apos;s Web is joining the Proservability family!
             </p>
             <p className="text-sm text-[var(--midnight)]/70">
               A new name, the same spood-tacular care, and an even brighter future.

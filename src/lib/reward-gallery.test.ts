@@ -44,7 +44,7 @@ test("earned streak badges survive a reset and locked badges show current progre
 const { RecentCareMeter } = loadComponent("../components/constellation/recent-care-meter.tsx", {
   "@/components/constellation/reward-art": art, "@/lib/constellation": rewards,
 });
-for (const [daysTogether, label] of [[0, "0 days on Spoodly Space"], [1, "1 day on Spoodly Space"], [10, "10 days on Spoodly Space"]] as const) {
+for (const [daysTogether, label] of [[0, "0 days on Polly&#x27;s Web"], [1, "1 day on Polly&#x27;s Web"], [10, "10 days on Polly&#x27;s Web"]] as const) {
   test(`care meter shows account age separately from streak: ${daysTogether}`, () => {
     const html = renderToStaticMarkup(RecentCareMeter({
       todayKey: "2026-09-25", completedDayKeys: [], daysTogether,

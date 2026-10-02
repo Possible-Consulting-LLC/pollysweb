@@ -158,7 +158,7 @@ export function VerifyEmailForm({ token, purpose }: { token?: string; purpose?: 
       {verifyState?.success ? <p role="status" className="text-sm text-[var(--plum)]">{verifyState.success}</p> : null}
       <Button type="submit" className="w-full" disabled={verifyPending}>{verifyPending ? "Verifying…" : "Verify email"}</Button>
     </MutationForm> : token && purpose === "email-change" ? <MutationForm action={changeAction} result={changeState} className="space-y-4 rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] p-5"><MutationContextInput />
-      <p className="text-sm">Confirm this as the new email for your Spoodly Space account. You will sign in again afterward.</p>
+      <p className="text-sm">Confirm this as the new email for your Polly&apos;s Web account. You will sign in again afterward.</p>
       <input type="hidden" name="token" value={token} />
       {changeState?.error ? <p role="alert" className="text-sm text-rose-700">{changeState.error}</p> : null}
       <Button type="submit" className="w-full" disabled={changePending}>{changePending ? "Confirming…" : "Confirm new email"}</Button>

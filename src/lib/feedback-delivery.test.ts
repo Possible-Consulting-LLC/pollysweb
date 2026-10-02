@@ -26,9 +26,9 @@ test("staging feedback uses the dedicated key and only an allowed explicit recip
 
 test("live feedback keeps its existing key, sender, and recipient settings", () => {
   assert.deepEqual(feedbackMailConfig({
-    RESEND_API_KEY: "live-key", RESEND_FROM_EMAIL: "Spoodly Space <feedback@spoodlyspace.com>",
-    FEEDBACK_TO_EMAIL: "support@spoodlyspace.com",
+    RESEND_API_KEY: "live-key", RESEND_FROM_EMAIL: "Polly's Web <feedback@example.com>",
+    FEEDBACK_TO_EMAIL: "support@pollysweb.com",
   }), {
-    key: "live-key", from: "Spoodly Space <feedback@spoodlyspace.com>", to: "support@spoodlyspace.com",
+    key: "live-key", from: "Polly's Web <feedback@example.com>", to: "support@pollysweb.com",
   });
 });

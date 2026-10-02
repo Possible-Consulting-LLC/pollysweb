@@ -19,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <a href="#admin-content" className="sr-only focus:not-sr-only">Skip to administration content</a>
     <header className="mb-6 space-y-2 border-b border-[var(--plum)]/20 pb-4">
       <p className="inline-block rounded-lg bg-[var(--plum)] px-3 py-1 font-semibold text-[var(--on-accent)]">{adminEnvironment(process.env)}</p>
-      <h1 className="text-3xl font-semibold">Spoodly Space administration</h1>
+      <h1 className="text-3xl font-semibold">Polly&apos;s Web administration</h1>
       <p className="text-sm">Reporting timezone: {timezone}{fallback ? ' (UTC fallback — preference not set)' : ''} · <Link href="/settings" className="underline">Change my timezone</Link></p>
       {fallback ? <section className="max-w-xl space-y-3 rounded-xl border border-[var(--plum)]/25 p-3" aria-label="Choose your reporting timezone">
         <p role="status" className="text-sm">Choose your reporting timezone. Your browser’s timezone is preselected; save it to apply it to all administrative dates.</p>

@@ -4,7 +4,7 @@ export default function TodayHubPage() {
   return (
     <main className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[var(--cream)]">
       <p className="sr-only">
-        Spoodly Space sketch hub. Choose Home, My Spoods, Activities, or Add a
+        Polly&apos;s Web sketch hub. Choose Home, My Spoods, Activities, or Add a
         Spood. Settings is the gear in the Home corner.
       </p>
       <div className="min-h-0 flex-1">
