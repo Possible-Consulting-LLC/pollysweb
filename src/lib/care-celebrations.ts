@@ -6,6 +6,7 @@ import { calendarDayKey } from './constellation';
 import { reconcileCareDays } from './care-revalidation-data';
 import { getCareReviewState, getConstellationData } from './constellation-data';
 import { earnedCelebrations, type Celebration } from './care-progress';
+import { resolveUserGates } from './features/gate';
 
 /** Baseline existing awards before a mutation so old badges do not flood the screen. */
 export async function baselineCelebrations(userId: string): Promise<boolean> {
@@ -46,18 +47,30 @@ export async function awardCareDay(userId: string, data: Awaited<ReturnType<type
   return inserted.length > 0;
 }
 
+const CELEBRATION_GATE_KEYS = ['journey.check_in', 'journey.streaks.view', 'journey.badges.view'] as const;
+
+/** Gated streak/badge content is dropped from the payload; any unresolved gate counts as not entitled. */
+async function celebrationEntitlements(userId: string) {
+  try {
+    const gates = await resolveUserGates(userId, CELEBRATION_GATE_KEYS);
+    return { star: gates['journey.check_in'] === 'entitled' || gates['journey.streaks.view'] === 'entitled', badge: gates['journey.badges.view'] === 'entitled' };
+  } catch { return { star: false, badge: false }; }
+}
+
 /** A celebration failure must never turn a saved care record into a failed save/retry. */
 export async function finishCareCelebrations(userId: string, baselineReady: boolean, activityDate?: Date, manual = false, affectedSince = activityDate ?? new Date()): Promise<Celebration[]> {
   return drainCareCompletion(async () => {
   try {
+    const entitlements = celebrationEntitlements(userId);
     const reconciled = await reconcileCareDays(userId, new Date(), affectedSince);
     const state = await getCareReviewState(userId);
     const qualifiesToday = manual || (activityDate && calendarDayKey(activityDate, state.timeZone) === state.todayKey);
     const star = qualifiesToday ? reconciled.restored.includes(state.todayKey) || await awardCareDay(userId, state) : false;
     const { data, badges } = await syncRewardClaims(userId, baselineReady);
     const result: Celebration[] = [];
-    if (star) result.push({ key: `care-day:${state.todayKey}`, kind: 'star', title: 'Today’s care star earned!', symbol: 'stars', message: `You’ve checked on all your spoods. Your streak is now ${data.streak.current} day${data.streak.current === 1 ? '' : 's'}!` });
-    result.push(...badges);
+    const allowed = await entitlements;
+    if (star && allowed.star) result.push({ key: `care-day:${state.todayKey}`, kind: 'star', title: 'Today’s care star earned!', symbol: 'stars', message: `You’ve checked on all your spoods. Your streak is now ${data.streak.current} day${data.streak.current === 1 ? '' : 's'}!` });
+    if (allowed.badge) result.push(...badges);
     return result;
   } catch (error) { console.error('Could not finish care celebrations', error); return []; }
   });

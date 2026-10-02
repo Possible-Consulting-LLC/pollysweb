@@ -744,3 +744,75 @@ test("spoods list page starts gate resolution before search params resolve (no w
   await rendered;
   assert.equal(started, CARE_KEYS.length);
 });
+
+// ---------------------------------------------------------------- celebration payload suppression
+
+type CelebrationItem = { key: string; kind: string; message: string };
+
+function loadCelebrations(gate: unknown) {
+  const badge = { key: "streak:7", title: "Week", message: "7 care days in a row!", symbol: "x", kind: "badge" };
+  const tx = {
+    $executeRaw: async () => 1,
+    celebratedReward: { deleteMany: async () => ({ count: 0 }), createMany: async () => ({ count: 1 }) },
+  };
+  const dependencies: Record<string, unknown> = {
+    "./maintenance-write": {
+      drainCareCompletion: (work: () => Promise<unknown>) => work(),
+      guardDerivedMaintenance: async () => {},
+    },
+    "./reward-data": { readRewardState: async () => ({ streak: { current: 7 }, stories: {} }) },
+    "node:crypto": { randomUUID: () => "id" },
+    "./db": { prisma: { $transaction: async (work: (t: unknown) => unknown) => work(tx) } },
+    "./constellation": { calendarDayKey: () => "2026-10-02" },
+    "./care-revalidation-data": { reconcileCareDays: async () => ({ restored: ["2026-10-02"] }) },
+    "./constellation-data": { getCareReviewState: async () => ({ timeZone: "UTC", todayKey: "2026-10-02" }), getConstellationData: async () => ({}) },
+    "./care-progress": { earnedCelebrations: () => [badge] },
+    "./features/gate": gate,
+  };
+  return loadModule<{
+    finishCareCelebrations: (userId: string, baseline: boolean, date?: Date, manual?: boolean) => Promise<CelebrationItem[]>;
+  }>("lib/care-celebrations.ts", dependencies);
+}
+
+const celebrate = async (gate: unknown) => {
+  const result = await loadCelebrations(gate).finishCareCelebrations("user-1", true, undefined, true);
+  return Array.from(result).map((item) => item.key);
+};
+const gatesFor = (states: Record<string, FeatureGateState>) => gateStub(makeDb(states), sessionFor("entitled"), newCapture());
+const NO_JOURNEY = { "journey.check_in": "upsell", "journey.streaks.view": "upsell", "journey.badges.view": "upsell" } as const;
+
+test("entitled user keeps the full celebration payload (star and badge)", async () => {
+  assert.deepEqual(await celebrate(gatesFor({})), ["care-day:2026-10-02", "streak:7"]);
+});
+
+for (const state of ["upsell", "coming-soon"] as const) {
+  test(`user without journey keys (${state}) gets an empty celebration payload`, async () => {
+    const all = { "journey.check_in": state, "journey.streaks.view": state, "journey.badges.view": state };
+    assert.deepEqual(await celebrate(gatesFor(all)), []);
+  });
+}
+
+test("badge toasts are dropped without journey.badges.view but the star stays", async () => {
+  assert.deepEqual(await celebrate(gatesFor({ ...NO_JOURNEY, "journey.check_in": "entitled", "journey.badges.view": "upsell" })), ["care-day:2026-10-02"]);
+});
+
+test("star copy needs journey.check_in or journey.streaks.view; badges need journey.badges.view", async () => {
+  assert.deepEqual(await celebrate(gatesFor({ ...NO_JOURNEY, "journey.streaks.view": "entitled" })), ["care-day:2026-10-02"]);
+  assert.deepEqual(await celebrate(gatesFor({ ...NO_JOURNEY, "journey.badges.view": "entitled" })), ["streak:7"]);
+});
+
+test("celebration suppression resolves the three journey keys once per invocation", async () => {
+  const capture = newCapture();
+  await celebrate(gateStub(makeDb({}), sessionFor("entitled"), capture));
+  assert.deepEqual(capture.allGateCalls.map(([, key]) => key).sort(), ["journey.badges.view", "journey.check_in", "journey.streaks.view"]);
+});
+
+test("celebration suppression fails safe when gate resolution throws or rejects", async () => {
+  assert.deepEqual(await celebrate({ resolveUserGates: () => { throw new Error("gate down"); } }), []);
+  assert.deepEqual(await celebrate({ resolveUserGates: async () => { throw new Error("gate down"); } }), []);
+});
+
+test("celebration suppression fails safe when every gate lookup errors inside the resolver", async () => {
+  const db = new Proxy({}, { get: () => { throw new Error("db down"); } }) as unknown as FeatureGateDb;
+  assert.deepEqual(await celebrate(gateStub(db, sessionFor("entitled"), newCapture())), []);
+});
