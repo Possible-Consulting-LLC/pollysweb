@@ -394,3 +394,37 @@ body {
   padding-left: 0.9rem;
   color: color-mix(in srgb, var(--midnight) 80%, transparent);
 }
+
+/* Public marketing pages always render the light (cosmic cream) theme,
+ * regardless of the signed-in keeper's data-theme choice — the current
+ * logo and assets are tuned for light backgrounds. The dark theme code
+ * above stays intact for the app; this block simply re-declares the light
+ * tokens for the .theme-light subtree (later source order wins the
+ * equal-specificity cascade). */
+.theme-light {
+  color-scheme: light;
+  --cream: #f7f1e8;
+  --cream-deep: #ebe3d6;
+  --midnight: #1e2442;
+  --plum: #6b4c7a;
+  --plum-deep: #523860;
+  --rose: #be123c;
+  --lavender: #d8c8ea;
+  --lavender-deep: #c4b5d9;
+  --gold: #e8c56a;
+  --background: var(--cream);
+  --foreground: var(--midnight);
+  --panel: #1e2442;
+  --on-panel: #f7f1e8;
+  --on-accent: #f7f1e8;
+  --star: #d8c8ea;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #fffaf3;
+  --input: rgba(255, 255, 255, 0.84);
+  --hover: rgba(107, 76, 122, 0.12);
+  --hover-strong: #ebe3d6;
+  --shadow: rgba(30, 36, 66, 0.06);
+  --body-glow-1: rgba(232, 197, 106, 0.28);
+  --body-glow-2: rgba(184, 169, 212, 0.45);
+  --body-glow-3: rgba(107, 76, 122, 0.12);
+}

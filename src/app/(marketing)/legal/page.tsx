@@ -9,7 +9,6 @@ import {
   Cookie,
   FileText,
   Gavel,
-  Heart,
   LifeBuoy,
   Scale,
   ScrollText,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { listLegalDocs } from "@/lib/content/legal";
 import { BRAND } from "@/lib/brand";
+import { SpiderWebGlyph } from "@/components/marketing/spider-glyph";
 
 export const metadata: Metadata = {
   title: "Legal | Polly's Web",
@@ -66,36 +66,33 @@ export default function LegalHubPage() {
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-[var(--plum)]">Legal</p>
             <h1 className="mt-3 font-[family-name:var(--font-display)] text-4xl font-bold leading-tight tracking-[-0.02em] text-[var(--plum-deep)] sm:text-5xl">
               Transparency Builds a Brighter Web
-              <Heart className="ml-2 inline h-7 w-7 text-orange-500" aria-hidden />
+              <SpiderWebGlyph className="ml-2 inline h-7 w-7 text-orange-500" aria-hidden />
             </h1>
             <p className="mt-4 text-lg text-[var(--midnight)]/70">
               Our policies, terms, and legal information — all in one place.
             </p>
           </div>
-          <div className="relative">
-            {heroArt ? (
-              <Image
-                src="/images/legal-hero.png"
-                alt="Illustration of a jumping spider resting near a web"
-                width={1200}
-                height={750}
-                className="w-full rounded-[1.5rem]"
-              />
-            ) : (
-              <div
-                role="img"
-                aria-label="Illustration of a jumping spider resting on a leaf"
-                className="flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-[var(--lavender)]/50 to-orange-100/70"
-              >
-                <span className="text-5xl" aria-hidden>
-                  🕷️
-                </span>
-                <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-                  Legal hero illustration
-                </span>
-              </div>
-            )}
-          </div>
+          <div aria-hidden className="hidden lg:block" />
+        </div>
+        {/* Art bleeds to the band's bottom-right corner, ignoring band padding. */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] lg:block">
+          {heroArt ? (
+            <Image
+              src="/images/legal-hero.png"
+              alt=""
+              fill
+              sizes="(min-width: 1152px) 42vw, 0px"
+              className="object-cover object-bottom"
+            />
+          ) : (
+            <div
+              role="img"
+              aria-label="Illustration of a jumping spider resting on a leaf"
+              className="flex h-full items-center justify-center bg-gradient-to-br from-[var(--lavender)]/50 to-orange-100/70"
+            >
+              <span className="text-5xl" aria-hidden>🕷️</span>
+            </div>
+          )}
         </div>
       </div>
 

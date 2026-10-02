@@ -87,7 +87,7 @@ function AuthShell({
   footer: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex min-h-dvh w-full flex-col bg-gradient-to-br from-[var(--lavender)]/30 via-[var(--cream)] to-orange-100/25">
+    <div className="theme-light mx-auto flex min-h-dvh w-full flex-col bg-gradient-to-br from-[var(--lavender)]/30 via-[var(--cream)] to-orange-100/25">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-8">
         <BrandLogo href="/" size="hero" priority className="max-w-52" />
         <nav aria-label="Sign in or create an account" className="flex items-center gap-2">
