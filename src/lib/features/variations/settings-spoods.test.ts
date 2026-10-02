@@ -588,6 +588,8 @@ function loadSpoodCard() {
     "@/lib/utils": { parseHydrationMethods: () => [] },
   };
   return loadModule<{
+    CARE_FEATURE_KEYS: readonly string[];
+    SpoodCareCard: (props: Record<string, unknown>) => unknown;
     SpoodCareDetails: (props: Record<string, unknown>) => unknown;
     SpoodIdentity: (props: Record<string, unknown>) => unknown;
   }>("components/spoods/spood-card.tsx", dependencies);
@@ -675,6 +677,62 @@ test("spood identity hides sex, species and life stage unless the profile detail
   assert.doesNotMatch(hidden, /Female|Tarantula|I3/);
   assert.match(hidden, /Webster/);
 });
+
+function loadHomePage(states: Record<string, FeatureGateState>) {
+  const capture: Capture = newCapture();
+  const db = makeDb(states);
+  const dependencies: Record<string, unknown> = {
+    "react/jsx-runtime": jsx,
+    "next/link": link,
+    "@/components/features/feature-gate": { FeatureGate },
+    "@/components/layout/nav": { AppHeader: ({ title }: { title: string }) => el("h1", { children: title }) },
+    "@/components/spoods/spood-card": loadSpoodCard(),
+    "@/components/spoods/spood-image": { SpoodImage: () => el("img") },
+    "@/components/ui/button": { buttonVariants: () => "btn" },
+    "@/components/ui/card": {
+      Card: passthrough,
+      StatusPill: ({ status }: { status: string }) => el("span", { children: status }),
+      EmptyState: ({ title }: { title: string }) => el("div", { children: title }),
+      SectionHeader: ({ title }: { title: string }) => el("h2", { children: title }),
+    },
+    "@/components/constellation/streak-card": { StreakCard: () => el("div") },
+    "@/components/auth/email-verification-notice": { EmailVerificationNotice: () => el("div") },
+    "@/lib/email-verification": { legacyVerificationDeadline: () => null },
+    "@/lib/care-progress-data": { withCareProgress: async (_u: string, _d: string, _z: string, items: unknown) => items },
+    "@/lib/constellation": { calendarDayKey: () => "2026-10-02" },
+    "@/lib/constellation-data": { getStreakPreview: async () => ({ completedToday: false }), reviewItemsFor: () => [] },
+    "@/lib/spiders": {
+      getRecentActivity: async () => [],
+      getUserDefaults: async () => ({ timezone: "UTC", name: "Ada", createdAt: new Date(), feedDefaultDays: 7 }),
+      listSpidersForUser: async () => [VIEW],
+    },
+    "@/lib/utils": {
+      daysBetween: () => 3,
+      formatDateTimeInZone: () => "now",
+      resolveDisplayTimeZone: () => "UTC",
+    },
+    "@/lib/spider-write-policy": { getSpiderWriteState: async () => ({ proAccess: true, firstSpiderId: "spider-1" }) },
+    "@/lib/session": { requireUser: async () => ({ id: "user-1" }) },
+    "@/lib/db": { prisma: {} },
+    "@/lib/features/gate": gateStub(db, sessionFor("entitled"), capture),
+  };
+  const page = loadModule<{ default: () => Promise<unknown> }>("app/(app)/home/page.tsx", dependencies);
+  return { capture, render: async () => markup(await page.default()) };
+}
+
+for (const state of STATES) {
+  test(`home page card: spood.about.view is ${state}`, async () => {
+    const page = loadHomePage({ ...gatesWith("spood.about.view", state), ...careGates(), "journey.streaks.view": "entitled" });
+    const html = await page.render();
+    const entitled = state === "entitled";
+    assert.match(html, /Needs attention/);
+    assert.match(html, /href="\/spoods\/spider-1">Profile</, "the home care card itself renders");
+    assert.ok(page.capture.allGateCalls.some(([user, key]) => user === "user-1" && key === "spood.about.view"));
+    assert.match(html, /Webster/, "the spood stays listed on the home card");
+    assert.equal(/Female · Tarantula · I3/.test(html), entitled);
+    if (!entitled) assert.doesNotMatch(html, /Female|Tarantula|I3/);
+  });
+}
 
 // ---------------------------------------------------------------- spood profile page
 

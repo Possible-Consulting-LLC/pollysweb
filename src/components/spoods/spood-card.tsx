@@ -246,11 +246,13 @@ export function SpoodCareCard({
   gates,
   showQuickActions = true,
   readOnly = false,
+  showProfileDetails = true,
 }: {
   view: SpiderCareView;
   gates: CareGates;
   showQuickActions?: boolean;
   readOnly?: boolean;
+  showProfileDetails?: boolean;
 }) {
   return (
     <Card className="relative space-y-4">
@@ -265,6 +267,7 @@ export function SpoodCareCard({
           view={view}
           readOnly={readOnly}
           showCareCopy={false}
+          showProfileDetails={showProfileDetails}
         />
       </div>
       <SpoodCareDetails

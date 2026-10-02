@@ -19,6 +19,7 @@ import { legacyVerificationDeadline } from "@/lib/email-verification";
 import { prisma } from "@/lib/db";
 
 const JOURNEY_HOME_KEYS = ["journey.streaks.view"] as const;
+const SPOOD_HOME_KEYS = ["spood.about.view"] as const;
 
 function greeting(timeZone: string) {
   let hour = 12;
@@ -39,7 +40,7 @@ function greeting(timeZone: string) {
 
 export default async function HomePage() {
   const user = await requireUser();
-  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...JOURNEY_HOME_KEYS]);
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...JOURNEY_HOME_KEYS, ...SPOOD_HOME_KEYS]);
   const defaultsPromise = getUserDefaults(user.id!);
   const zonePromise = defaultsPromise.then((defaults) => resolveDisplayTimeZone(defaults.timezone));
   const [defaults, views, activity, zone, constellation, writeState, verificationAccount, gates] = await Promise.all([
@@ -126,7 +127,7 @@ export default async function HomePage() {
             ) : (
               <div className="space-y-3">
                 {needing.map((view) => (
-                  <SpoodCareCard key={view.spider.id} view={view} gates={careGates} readOnly={isReadOnly(view.spider.id)} />
+                  <SpoodCareCard key={view.spider.id} view={view} gates={careGates} readOnly={isReadOnly(view.spider.id)} showProfileDetails={gates["spood.about.view"] === "entitled"} />
                 ))}
               </div>
             )}
