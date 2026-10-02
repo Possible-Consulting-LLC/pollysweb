@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import { SpiderGlyph, SpiderWebGlyph } from "@/components/marketing/spider-glyph";
+import { HeroArtPanel } from "@/components/marketing/hero-art";
 
 type Topic = {
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
@@ -122,7 +123,7 @@ const faqs = [
 
 const popularSearches = ["feeding", "molting", "habitat", "billing", "QR codes"];
 
-export function HelpCenter() {
+export function HelpCenter({ heroArt }: { heroArt: boolean }) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
 
@@ -188,25 +189,8 @@ export function HelpCenter() {
             </div>
           </div>
           <div className="relative">
-            <div
-              role="img"
-              aria-label="Illustration of a friendly jumping spider on a leaf"
-              className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[2rem] bg-gradient-to-br from-[var(--lavender)]/50 via-[var(--cream)] to-green-100/70"
-            >
-              <span className="text-6xl" aria-hidden>
-                🕷️
-              </span>
-              <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-                Help hero illustration
-              </span>
-            </div>
-            <p
-              aria-hidden
-              className="absolute -left-1 top-2 -rotate-6 font-[family-name:var(--font-display)] text-lg italic text-[var(--plum)]/80 sm:left-3"
-            >
-              Tiny Questions, Big Answers! ♡
-            </p>
-          </div>
+          <HeroArtPanel artExists={heroArt} label="Help hero illustration" />
+        </div>
         </div>
       </section>
 

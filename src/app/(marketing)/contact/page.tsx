@@ -12,6 +12,9 @@ import {
   Users,
 } from "lucide-react";
 import { SpiderWebGlyph } from "@/components/marketing/spider-glyph";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { HeroArtPanel } from "@/components/marketing/hero-art";
 import { ContactForm } from "@/components/marketing/contact-form";
 
 export const metadata: Metadata = {
@@ -59,6 +62,7 @@ const channels = [
 ];
 
 export default function ContactPage() {
+  const heroArt = existsSync(path.join(process.cwd(), "public", "images", "home-hero.png"));
   return (
     <>
       {/* Hero */}
@@ -88,25 +92,8 @@ export default function ContactPage() {
             </ul>
           </div>
           <div className="relative">
-            <div
-              role="img"
-              aria-label="Illustration of a friendly jumping spider"
-              className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[2rem] bg-gradient-to-br from-[var(--lavender)]/60 via-[var(--cream)] to-green-100/60"
-            >
-              <span className="text-6xl" aria-hidden>
-                🕷️
-              </span>
-              <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-                Contact hero illustration
-              </span>
-            </div>
-            <p
-              aria-hidden
-              className="absolute -right-1 top-2 rotate-6 font-[family-name:var(--font-display)] text-lg italic text-[var(--plum)]/80 sm:right-3"
-            >
-              Small Spoods, Brighter Days ♡
-            </p>
-          </div>
+          <HeroArtPanel artExists={heroArt} label="Contact hero illustration" />
+        </div>
         </div>
       </section>
 

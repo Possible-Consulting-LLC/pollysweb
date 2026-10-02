@@ -15,15 +15,11 @@ import {
 import { redirect } from "next/navigation";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import Image from "next/image";
 import { getSessionUser } from "@/lib/session";
 import { BRAND } from "@/lib/brand";
 import { LandingAppPreview } from "@/components/landing/app-preview";
+import { HeroArtPanel } from "@/components/marketing/hero-art";
 import { SpiderGlyph } from "@/components/marketing/spider-glyph";
-
-// Fixed asset path — dropping the real file into public/images/ replaces the
-// placeholder with no code change (existence checked per render).
-const HOME_HERO_SRC = "/images/home-hero.png";
 
 function hasHeroArt(): boolean {
   return existsSync(path.join(process.cwd(), "public", "images", "home-hero.png"));
@@ -100,27 +96,6 @@ const valueProps = [
   },
 ];
 
-/** Stands in for the hand-drawn hero art until the asset export lands —
- * swap the file into public/images/ to replace it, no code change. */
-function ArtPlaceholder({ label }: { label: string }) {
-  return (
-    <div
-      role="img"
-      aria-label={label}
-      className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[2rem] bg-gradient-to-br from-[var(--lavender)]/70 via-[var(--cream)] to-orange-100/80"
-    >
-      <span aria-hidden className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-[var(--lavender)]/50 blur-2xl" />
-      <span aria-hidden className="absolute -bottom-12 -right-8 h-44 w-44 rounded-full bg-orange-200/60 blur-2xl" />
-      <span className="text-6xl" aria-hidden>
-        🕷️
-      </span>
-      <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-        {label}
-      </span>
-    </div>
-  );
-}
-
 export default async function MarketingHomePage() {
   const user = await getSessionUser();
   if (user) redirect("/home");
@@ -195,18 +170,7 @@ export default async function MarketingHomePage() {
           </ul>
         </div>
         <div className="relative">
-          {hasHeroArt() ? (
-            <Image
-              src={HOME_HERO_SRC}
-              alt="Polly the mascot caring for her jumping spiders"
-              width={1200}
-              height={900}
-              priority
-              className="w-full rounded-[2rem]"
-            />
-          ) : (
-            <ArtPlaceholder label="Hero illustration" />
-          )}
+          <HeroArtPanel artExists={hasHeroArt()} />
         </div>
       </section>
 

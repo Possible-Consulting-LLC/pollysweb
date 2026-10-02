@@ -18,6 +18,9 @@ import {
   Utensils,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { HeroArtPanel } from "@/components/marketing/hero-art";
 import { SpiderGlyph } from "@/components/marketing/spider-glyph";
 
 export const metadata: Metadata = {
@@ -101,6 +104,8 @@ const features = [
 ];
 
 export default function FeaturesPage() {
+  const heroArt = existsSync(path.join(process.cwd(), "public", "images", "home-hero.png"));
+
   return (
     <>
       {/* Hero */}
@@ -145,26 +150,8 @@ export default function FeaturesPage() {
               </Link>
             </div>
           </div>
-          <div className="relative">
-            <div
-              role="img"
-              aria-label="Illustration of the Polly's Web mascot with jumping spiders"
-              className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[2rem] bg-gradient-to-br from-[var(--lavender)]/60 via-[var(--cream)] to-orange-100/70"
-            >
-              <span aria-hidden className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-[var(--lavender)]/50 blur-2xl" />
-              <span className="text-6xl" aria-hidden>
-                🕷️
-              </span>
-              <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-                Features hero illustration
-              </span>
-            </div>
-            <p
-              aria-hidden
-              className="absolute -right-1 top-2 rotate-6 font-[family-name:var(--font-display)] text-lg italic text-[var(--plum)]/80 sm:right-3"
-            >
-              Small Creatures, Big Joy ♡
-            </p>
+          <div>
+            <HeroArtPanel artExists={heroArt} label="Features hero illustration" />
           </div>
         </div>
       </section>
