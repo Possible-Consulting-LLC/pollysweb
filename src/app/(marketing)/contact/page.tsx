@@ -62,8 +62,8 @@ export default function ContactPage() {
   return (
     <>
       {/* Hero */}
-      <section className="bg-gradient-to-br from-[var(--lavender)]/55 via-[var(--cream)] to-orange-100/40">
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-5 py-12 sm:px-8 lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="mb-10 bg-gradient-to-br from-[var(--lavender)]/55 via-[var(--cream)] to-orange-100/40 pb-10">
+        <div className="mx-auto grid w-full max-w-6xl items-center gap-8 px-5 pt-12 sm:px-8 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-[var(--plum)]">Get in touch</p>
             <h1 className="mt-3 font-[family-name:var(--font-display)] text-5xl font-bold leading-[1.05] tracking-[-0.03em] text-[var(--plum-deep)] sm:text-6xl">

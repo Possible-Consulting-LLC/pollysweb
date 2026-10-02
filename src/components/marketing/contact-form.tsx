@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { ChevronDown } from "lucide-react";
 import { MutationContextInput } from "@/components/mutation-context";
 import { sendContactMessage } from "@/app/actions/contact";
 import { CONTACT_TOPICS, TOPIC_LABELS } from "@/lib/contact";
@@ -33,16 +34,25 @@ export function ContactForm() {
         <label htmlFor="contact-topic" className="block text-sm font-bold text-[var(--midnight)]">
           Subject <span className="text-[var(--rose)]" aria-hidden>*</span>
         </label>
-        <select id="contact-topic" name="topic" required defaultValue="" className={`mt-1.5 ${fieldClasses}`}>
-          <option value="" disabled>
-            Select a topic
-          </option>
-          {CONTACT_TOPICS.map((topic) => (
-            <option key={topic} value={topic}>
-              {TOPIC_LABELS[topic]}
+        <div className="relative mt-1.5">
+          <select
+            id="contact-topic"
+            name="topic"
+            required
+            defaultValue=""
+            className={`appearance-none min-h-12 pr-10 w-full ${fieldClasses}`}
+          >
+            <option value="" disabled>
+              Select a topic
             </option>
-          ))}
-        </select>
+            {CONTACT_TOPICS.map((topic) => (
+              <option key={topic} value={topic}>
+                {TOPIC_LABELS[topic]}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--plum)]" aria-hidden />
+        </div>
       </div>
       <div>
         <label htmlFor="contact-message" className="block text-sm font-bold text-[var(--midnight)]">
