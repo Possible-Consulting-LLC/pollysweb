@@ -65,3 +65,23 @@ export async function setAnnouncement(actor: {
     throw Error('Enter a plain text announcement of 1–500 characters.');
   await change(actor, version, () => ({ announcementEnabled: enabled, announcement: message.trim() }), 'maintenance.announcement');
 }
+export async function setFeatureTelemetrySink(sink: 'off' | 'posthog'): Promise<void> {
+  if (sink !== 'off' && sink !== 'posthog')
+    throw Error('Invalid feature telemetry sink.');
+  await withAdminControl(async (tx, live) => {
+    const current = await tx.siteSettings.findUnique({ where: { id: 1 } });
+    if (!current)
+      throw new MaintenanceError();
+    const version = current.version;
+    const changed = await tx.siteSettings.updateMany({
+      where: { id: 1, version },
+      data: { featureTelemetrySink: sink, version: { increment: 1 }, updatedBy: live.id }
+    });
+    if (changed.count !== 1)
+      throw Error('Maintenance settings changed. Reload before trying again.');
+    await appendAudit(tx, {
+      actorId: live.id, targetId: null, action: 'feature_telemetry_sink', reason: 'Feature telemetry sink control',
+      changes: { version: version + 1 }
+    });
+  });
+}
