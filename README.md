@@ -25,7 +25,7 @@ Database is hosted on Supabase. Copy `.env.example` to `.env` and fill in your S
 - Premolt mode that pauses feeding reminders
 - Body condition observations
 - Enclosure + maintenance
-- Spoodly Story timeline
+- Story timeline — a scrapbook-style "{name}'s Story" for each spood
 - Activity history
 - Settings + reminder defaults (push-ready architecture)
 - Demo seed data (Star and friends)

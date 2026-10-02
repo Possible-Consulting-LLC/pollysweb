@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import {
   ArrowRight,
   BookLock,
@@ -50,6 +53,9 @@ const GRID_ICONS: Record<string, typeof Scale> = {
 export default function LegalHubPage() {
   const docs = listLegalDocs();
   const gridDocs = docs.filter((doc) => doc.slug !== "overview");
+  // Fixed asset path — dropping the real file into public/images/ replaces
+  // the placeholder with no code change.
+  const heroArt = existsSync(path.join(process.cwd(), "public", "images", "legal-hero.png"));
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-8">
@@ -67,18 +73,28 @@ export default function LegalHubPage() {
             </p>
           </div>
           <div className="relative">
-            <div
-              role="img"
-              aria-label="Illustration of a jumping spider resting on a leaf"
-              className="flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-[var(--lavender)]/50 to-orange-100/70"
-            >
-              <span className="text-5xl" aria-hidden>
-                🕷️
-              </span>
-              <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
-                Legal hero illustration
-              </span>
-            </div>
+            {heroArt ? (
+              <Image
+                src="/images/legal-hero.png"
+                alt="Illustration of a jumping spider resting near a web"
+                width={1200}
+                height={750}
+                className="w-full rounded-[1.5rem]"
+              />
+            ) : (
+              <div
+                role="img"
+                aria-label="Illustration of a jumping spider resting on a leaf"
+                className="flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-[var(--lavender)]/50 to-orange-100/70"
+              >
+                <span className="text-5xl" aria-hidden>
+                  🕷️
+                </span>
+                <span className="absolute bottom-3 right-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--midnight)]/40">
+                  Legal hero illustration
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>

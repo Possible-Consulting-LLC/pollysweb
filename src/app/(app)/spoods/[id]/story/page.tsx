@@ -233,7 +233,7 @@ export default async function StoryPage({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--plum)]/70">
-            Spoodly Story
+            {spider.name}&apos;s Story
           </p>
         </div>
         <Link href={`/spoods/${spider.id}`} className={buttonVariants({ variant: "soft", size: "sm" })}>Profile</Link>
