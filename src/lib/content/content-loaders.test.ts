@@ -54,12 +54,13 @@ test("renderMarkdown produces heading ids and toc entries", () => {
   assert.deepEqual(toc, [{ id: "hello", text: "Hello", level: 2 }]);
 });
 
-test("guide categories are the eight approved keys", () => {
+test("guide categories are the nine approved keys", () => {
   assert.deepEqual(GUIDE_CATEGORIES.map((category) => category.key), [
     "feeding",
     "water",
     "molting",
     "handling",
+    "habitat",
     "cleaning",
     "life-stages",
     "health",

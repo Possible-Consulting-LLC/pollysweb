@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { listGuides, getGuide, GUIDE_CATEGORIES } from "../../lib/content/care-guides";
 
-test("all eight care guides exist, one per category, in category order coverage", () => {
+test("all nine care guides exist, one per category, in category order coverage", () => {
   const guides = listGuides();
-  assert.equal(guides.length, 8);
+  assert.equal(guides.length, 9);
   const covered = new Set(guides.map((guide) => guide.category));
   for (const category of GUIDE_CATEGORIES) {
     assert.ok(covered.has(category.key), `no guide for category: ${category.key}`);

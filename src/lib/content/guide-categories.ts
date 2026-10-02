@@ -5,6 +5,7 @@ export const GUIDE_CATEGORIES = [
   { key: "water", label: "Water" },
   { key: "molting", label: "Molting" },
   { key: "handling", label: "Handling" },
+  { key: "habitat", label: "Habitat" },
   { key: "cleaning", label: "Cleaning" },
   { key: "life-stages", label: "Life Stages" },
   { key: "health", label: "Health" },
