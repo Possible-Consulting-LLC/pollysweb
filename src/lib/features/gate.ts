@@ -95,6 +95,37 @@ export async function resolveUserFeatureGate(
   }
 }
 
+export async function resolveUserGates<K extends string>(
+  db: FeatureGateDb,
+  userId: string | null | undefined,
+  keys: readonly K[],
+): Promise<Record<K, FeatureGateState>>;
+export async function resolveUserGates<K extends string>(
+  userId: string | null | undefined,
+  keys: readonly K[],
+): Promise<Record<K, FeatureGateState>>;
+export async function resolveUserGates<K extends string>(
+  dbOrUserId: FeatureGateDb | string | null | undefined,
+  userIdOrKeys: string | null | undefined | readonly K[],
+  maybeKeys?: readonly K[],
+): Promise<Record<K, FeatureGateState>> {
+  const [db, userId, keys] = Array.isArray(userIdOrKeys)
+    ? [prisma as FeatureGateDb, dbOrUserId as string | null | undefined, userIdOrKeys as readonly K[]]
+    : [dbOrUserId as FeatureGateDb, userIdOrKeys as string | null | undefined, maybeKeys!];
+
+  const entries = await Promise.all(
+    keys.map(async (key) => {
+      if (!userId) return [key, "upsell"] as const;
+      try {
+        return [key, await resolveUserFeatureGate(db, userId, key)] as const;
+      } catch {
+        return [key, "coming-soon"] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries) as Record<K, FeatureGateState>;
+}
+
 export async function emitGateEvent(
   db: Pick<Prisma.TransactionClient, "feature" | "user" | "plan" | "siteSettings">,
   event: GateEvent,

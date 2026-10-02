@@ -17,7 +17,7 @@ function loadHome(dependencies: Record<string, unknown>, now?: Date) {
     require: (name: string) => {
       if (name === "react/jsx-runtime") return jsx;
       if (name in dependencies) return dependencies[name];
-      if (name === "@/lib/features/gate") return { resolveUserFeatureGate: async () => "entitled" };
+      if (name === "@/lib/features/gate") return { resolveUserGates: async (_userId: string, keys: string[]) => Object.fromEntries(keys.map((key) => [key, "entitled"])) };
       if (name === "@/components/spoods/spood-card") return { CARE_FEATURE_KEYS: ["care.status.view"], SpoodCareCard: () => null };
       if (name.startsWith("@/components/") || name === "next/link") return new Proxy({}, { get: () => () => null });
       throw new Error(`Unexpected dependency ${name}`);
@@ -81,8 +81,9 @@ for (const [label, createdAt, zone, expected, now = "2026-09-25T12:00:00Z"] of [
       "@/lib/email-verification": { legacyVerificationDeadline: () => null },
       "@/lib/db": { prisma: {} },
     }, new Date(now));
-    const tree = await home() as { props: { children: { props?: { compact?: boolean; daysTogether?: number } }[] } };
-    const teaser = tree.props.children.find(child => child?.props?.compact);
+    type Node = { props?: { compact?: boolean; daysTogether?: number; children?: Node } };
+    const tree = await home() as { props: { children: Node[] } };
+    const teaser = tree.props.children.map(child => (child?.props?.compact ? child : child?.props?.children)).find(child => child?.props?.compact);
     assert.equal(teaser?.props?.daysTogether, expected);
   });
 }

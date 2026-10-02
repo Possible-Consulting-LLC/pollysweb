@@ -215,12 +215,16 @@ export function PhotoGallery({
   emptyLabel = "No photos yet — add one above.",
   className,
   allowManage = true,
+  allowSetProfile = true,
+  allowDelete = true,
 }: {
   photos: GalleryPhoto[];
   profilePhotoUrl?: string | null;
   emptyLabel?: string;
   className?: string;
   allowManage?: boolean;
+  allowSetProfile?: boolean;
+  allowDelete?: boolean;
 }) {
   const mutationContext = useMutationContext();
   const router = useRouter();
@@ -335,7 +339,7 @@ export function PhotoGallery({
                 Profile
               </span>
             ) : null}
-            {allowManage ? (
+            {allowManage && allowDelete ? (
               <button
                 type="button"
                 disabled={pending}
@@ -360,8 +364,8 @@ export function PhotoGallery({
           index={openIndex}
           onClose={() => setOpenIndex(null)}
           onChangeIndex={setOpenIndex}
-          onDelete={allowManage ? remove : undefined}
-          onSetProfile={allowManage ? setAsProfile : undefined}
+          onDelete={allowManage && allowDelete ? remove : undefined}
+          onSetProfile={allowManage && allowSetProfile ? setAsProfile : undefined}
           profilePhotoUrl={currentProfileUrl}
           busy={pending}
           actionError={error}

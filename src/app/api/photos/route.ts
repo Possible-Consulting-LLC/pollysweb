@@ -2,6 +2,7 @@ import { guardMaintenance } from '@/lib/admin/maintenance-access';
 import { maintenanceResponse } from '@/lib/admin/maintenance-policy';
 import { resolveRequestIdentity } from "@/lib/admin/test-session-store";
 import { prisma } from "@/lib/db";
+import { resolveUserFeatureGate } from "@/lib/features/gate";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { servePrivatePhoto } from "@/lib/photo-media-route";
 import { SPOODS_BUCKET } from "@/lib/photo-media";
@@ -12,8 +13,12 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request): Promise<Response> {
   let identity;
   try { identity = await resolveRequestIdentity(); await guardMaintenance('read', identity); } catch { return maintenanceResponse(); }
+  const userId = identity?.effectiveUserId ?? null;
+  if (userId && (await resolveUserFeatureGate(userId, "photo.gallery.view")) !== "entitled") {
+    return new Response(null, { status: 403, headers: { "Cache-Control": "private, no-store" } });
+  }
   const response = await servePrivatePhoto(request, {
-    userId: identity?.effectiveUserId ?? null,
+    userId,
     storageOrigin: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "",
     ownsReference: (reference, userId) => ownsPhotoReference(reference, userId, prisma),
     download: async (path) => {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CARE_FEATURE_KEYS, GatedQuickLogButtons, type CareGates } from "@/components/spoods/spood-card";
+import { CARE_FEATURE_KEYS, GatedQuickLogButtons } from "@/components/spoods/spood-card";
 import { FeatureGate } from "@/components/features/feature-gate";
 import { PremoltToggle } from "@/components/spoods/premolt-toggle";
 import { AboutForm } from "@/components/spoods/about-form";
@@ -19,11 +19,18 @@ import { DisclosureCard } from "@/components/ui/disclosure-card";
 import { Field } from "@/components/ui/field";
 import { formatCareWhen, parseHydrationMethods } from "@/lib/utils";
 import { getSpiderCare } from "@/lib/spiders";
-import { resolveUserFeatureGate } from "@/lib/features/gate";
+import { resolveUserGates } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { formatShortDate } from "@/lib/utils";
 import { isPremoltLike } from "@/lib/care";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
+
+const PHOTO_FEATURE_KEYS = [
+  "photo.upload",
+  "photo.gallery.view",
+  "photo.profile.set",
+  "photo.delete",
+] as const;
 
 export default async function SpiderProfilePage({
   params,
@@ -33,16 +40,16 @@ export default async function SpiderProfilePage({
   searchParams: Promise<{ photo?: string }>;
 }) {
   const user = await requireUser();
-  const careGates = Object.fromEntries(
-    await Promise.all(
-      CARE_FEATURE_KEYS.map(async (key) => [key, user.id ? await resolveUserFeatureGate(user.id, key) : "upsell"] as const),
-    ),
-  ) as CareGates;
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...PHOTO_FEATURE_KEYS]);
   const { id } = await params;
   const { photo: photoFlag } = await searchParams;
-  const view = await getSpiderCare(user.id!, id);
+  const [view, writeState, gates] = await Promise.all([
+    getSpiderCare(user.id!, id),
+    getSpiderWriteState(user.id!),
+    gatesPromise,
+  ]);
+  const careGates = gates;
   if (!view) notFound();
-  const writeState = await getSpiderWriteState(user.id!);
   const writable = writeState.proAccess || writeState.firstSpiderId === id;
 
   const { spider, careStatus } = view;
@@ -308,22 +315,36 @@ export default async function SpiderProfilePage({
         }
         defaultOpen={false}
       >
-        {memorialized || !writable ? null : <PhotoUploadForm spiderId={spider.id} />}
-        <PhotoGallery
-          photos={spider.photos.map((photo) => ({
-            id: photo.id,
-            url: photo.url,
-            caption: photo.caption,
-            takenAt: photo.takenAt.toISOString(),
-          }))}
-          profilePhotoUrl={spider.profilePhoto}
-          allowManage={writable}
-          emptyLabel={
-            memorialized
-              ? "No photos in this memorial yet."
-              : !writable ? "No photos yet." : "No photos yet — add one above."
-          }
-        />
+        {memorialized || !writable ? null : (
+          <FeatureGate state={gates["photo.upload"]} featureKey="photo.upload" name="Photo uploads">
+            <PhotoUploadForm spiderId={spider.id} allowSetAsProfile={gates["photo.profile.set"] === "entitled"} />
+          </FeatureGate>
+        )}
+        <FeatureGate state={gates["photo.gallery.view"]} featureKey="photo.gallery.view" name="Photo gallery">
+          <PhotoGallery
+            photos={spider.photos.map((photo) => ({
+              id: photo.id,
+              url: photo.url,
+              caption: photo.caption,
+              takenAt: photo.takenAt.toISOString(),
+            }))}
+            profilePhotoUrl={spider.profilePhoto}
+            allowManage={writable}
+            allowSetProfile={gates["photo.profile.set"] === "entitled"}
+            allowDelete={gates["photo.delete"] === "entitled"}
+            emptyLabel={
+              memorialized
+                ? "No photos in this memorial yet."
+                : !writable ? "No photos yet." : "No photos yet — add one above."
+            }
+          />
+          {writable ? (
+            <>
+              <FeatureGate state={gates["photo.profile.set"]} featureKey="photo.profile.set" name="Choosing a profile photo">{null}</FeatureGate>
+              <FeatureGate state={gates["photo.delete"]} featureKey="photo.delete" name="Deleting photos">{null}</FeatureGate>
+            </>
+          ) : null}
+        </FeatureGate>
       </DisclosureCard>
 
       {!memorialized && writable ? (

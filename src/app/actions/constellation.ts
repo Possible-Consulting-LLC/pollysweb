@@ -10,7 +10,8 @@ import { getCareReviewState } from '@/lib/constellation-data';
 import { baselineCelebrations, finishCareCelebrations } from '@/lib/care-celebrations';
 
 export async function completeCareDay(formData: FormData): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'completecareday', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('journey.check_in', () => withMutation(formData, 'data', 'completecareday', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user?.id) return { ok: false, error: 'Please sign in again.' };
@@ -50,5 +51,5 @@ export async function completeCareDay(formData: FormData): Promise<ActionResult>
       return { ok: false, error: 'Could not save your check-in. Please try again.' };
     }
 
-  });
+  }));
 }

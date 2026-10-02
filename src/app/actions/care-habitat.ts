@@ -134,7 +134,8 @@ export async function addSpiderPhoto(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'addspiderphoto', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('photo.upload', () => withMutation(formData, 'data', 'addspiderphoto', async () => {
     let unattached: { url: string; userId: string; } | null = null;
     try {
       const user = await getCareWriteUser();
@@ -155,7 +156,10 @@ export async function addSpiderPhoto(
       const url = saved.url;
       unattached = { url, userId: user.id! };
 
-      const setAsProfile = formData.get("setAsProfile") === "on";
+      const { resolveUserFeatureGate } = await import("@/lib/features/gate");
+      const setAsProfile =
+        formData.get("setAsProfile") === "on" &&
+        (await resolveUserFeatureGate(user.id!, "photo.profile.set")) === "entitled";
       const takenAt = formData.get("date")
         ? await resolveActivityDateTime(user.id!, formData)
         : new Date();
@@ -193,13 +197,14 @@ export async function addSpiderPhoto(
       };
     }
 
-  });
+  }));
 }
 
 export async function setSpiderProfilePhoto(
   photoId: string, submittedContext: string
 ): Promise<ActionResult> {
-  return withMutation(submittedContext, 'data', 'setspiderprofilephoto', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('photo.profile.set', () => withMutation(submittedContext, 'data', 'setspiderprofilephoto', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -242,11 +247,12 @@ export async function setSpiderProfilePhoto(
       };
     }
 
-  });
+  }));
 }
 
 export async function deleteSpiderPhoto(photoId: string, submittedContext: string): Promise<ActionResult> {
-  return withMutation(submittedContext, 'data', 'deletespiderphoto', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('photo.delete', () => withMutation(submittedContext, 'data', 'deletespiderphoto', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -289,7 +295,7 @@ export async function deleteSpiderPhoto(photoId: string, submittedContext: strin
       };
     }
 
-  });
+  }));
 }
 
 export async function memorializeSpider(

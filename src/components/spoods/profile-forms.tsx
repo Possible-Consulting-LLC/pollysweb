@@ -289,7 +289,7 @@ export function MaintenanceForm({ spiderId }: { spiderId: string }) {
   );
 }
 
-export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
+export function PhotoUploadForm({ spiderId, allowSetAsProfile = true }: { spiderId: string; allowSetAsProfile?: boolean }) {
   const { pending, message, error, run } = useActionFeedback();
   const [photoError, setPhotoError] = useState<string | null>(null);
 
@@ -315,10 +315,12 @@ export function PhotoUploadForm({ spiderId }: { spiderId: string }) {
         <Input id="caption" name="caption" placeholder="Fresh hammock view" />
       </Field>
       <DateTimeField id="photo-taken" name="date" label="Taken at" />
-      <label className="flex items-center gap-2 text-sm text-[var(--midnight)]/80">
-        <input type="checkbox" name="setAsProfile" className="rounded" />
-        Set as profile photo
-      </label>
+      {allowSetAsProfile ? (
+        <label className="flex items-center gap-2 text-sm text-[var(--midnight)]/80">
+          <input type="checkbox" name="setAsProfile" className="rounded" />
+          Set as profile photo
+        </label>
+      ) : null}
       <Feedback message={photoError ? null : message} error={photoError || error} />
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Uploading…" : "Add photo"}

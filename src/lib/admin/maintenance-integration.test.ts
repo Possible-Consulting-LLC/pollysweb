@@ -49,7 +49,7 @@ test('photos fail closed without download when maintenance starts after ownershi
       }
     }, '@/lib/admin/maintenance-policy': policy,
     '@/lib/admin/test-session-store': { resolveRequestIdentity: async () => ({ effectiveUserId: 'demo' }) }, '@/lib/db': { prisma: { photo: { findFirst: async () => ({ id: 'photo' }) } } },
-    '@/lib/photo-reference-owner': { ownsPhotoReference: async () => true },
+    '@/lib/photo-reference-owner': { ownsPhotoReference: async () => true }, '@/lib/features/gate': { resolveUserFeatureGate: async () => 'entitled' },
     '@/lib/supabase': { getSupabaseAdmin: () => { downloads++; throw Error(); } }, '@/lib/photo-media-route': { servePrivatePhoto }, '@/lib/photo-media': photoMedia,
   });
   const response = await api.GET(new Request('https://example.test/api/photos?ref=' + encodeURIComponent('spood-storage:demo/image.png')));
@@ -99,7 +99,7 @@ test('photo action whose remote upload finishes after cutoff returns typed failu
   const writes = load<typeof import('../maintenance-write')>('../maintenance-write.ts', { 'server-only': {}, './mutation-context': { mutationIdentity }, './admin/maintenance-access': { guardMaintenance: guard, guardMaintenanceAfterWrite: guard }, './spider-write-policy': { assertSpiderWritableInTransaction: async () => {} }, './db': { prisma: { $transaction: async (work: (tx: unknown) => Promise<unknown>) => work({ photo: { create: async () => attachments++ } }) } } });
   const boundary = load<typeof import('../mutation-boundary')>('../mutation-boundary.ts', { 'server-only': {}, './admin/maintenance-policy': policy, './admin/maintenance-access': { guardMaintenance: guard }, './mutation-failure': failure, './mutation-context': { mutationIdentity }, './admin/test-session': session, './admin/test-session-store': { resolveRequestIdentity: async () => ({ actorId: 'keeper', effectiveUserId: 'keeper', testSessionId: null, contextVersion: 'a'.repeat(64) }), auditTestMutation: async () => { } } });
   const action = load<typeof import('../../app/actions/care-habitat')>('../../app/actions/care-habitat.ts', {
-    '@/lib/admin/maintenance-policy': policy, '@/lib/maintenance-write': writes, '@/lib/mutation-boundary': boundary,
+    '@/lib/admin/maintenance-policy': policy, '@/lib/maintenance-write': writes, '@/lib/mutation-boundary': boundary, '@/lib/features/gate': { withFeatureGate: (_key: string, work: () => unknown) => work(), resolveUserFeatureGate: async () => 'entitled' },
     '@/lib/care-celebrations': { baselineCelebrations: async () => true, finishCareCelebrations: async () => assert.fail('Cannot celebrate a rejected attachment') }, 'fs/promises': {}, path: {}, 'next/cache': {}, '@/lib/utils': {}, '@/lib/history-mutations': {}, '@/lib/db': {}, '@/lib/spider-slots': {}, '@/lib/spider-write-policy': {}, '@/lib/write-validation': {},
     '@/lib/uploads': { saveImageUpload: async () => { active = true; return { url: 'spood-storage:keeper/new.png' }; }, cleanupUnattachedUpload: async (url: string, id: string) => { assert.equal(url, 'spood-storage:keeper/new.png'); assert.equal(id, 'keeper'); cleaned++; } },
     '@/app/actions/care-shared': { getCareWriteUser: async () => ({ id: 'keeper' }), ownedSpider: async () => ({ id: 'spider', name: 'spider' }), asOptionalString: () => '', revalidateSpider: () => assert.fail('Cannot refresh a rejected attachment') },

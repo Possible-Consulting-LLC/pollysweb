@@ -5,6 +5,7 @@ import ts from "typescript";
 import * as maintenancePolicy from "../../admin/maintenance-policy";
 import {
   resolveUserFeatureGate,
+  resolveUserGates,
   withFeatureGate,
   type FeatureGateDb,
   type FeatureGateState,
@@ -14,12 +15,27 @@ export type Scenario = FeatureGateState | "unauthenticated";
 
 export type Dependencies = Record<string, unknown>;
 
+// Page tests for one category pass a record for just their keys; the other categories a page
+// also gates stay entitled so those tests keep asserting only their own feature.
+export const PEER_CATEGORY_KEYS = [
+  "photo.upload",
+  "photo.gallery.view",
+  "photo.profile.set",
+  "photo.delete",
+  "universe.view",
+  "journey.check_in",
+  "journey.streaks.view",
+  "journey.badges.view",
+];
+
 export function makeDb(
   states: FeatureGateState | Record<string, FeatureGateState>,
   key?: string,
 ): FeatureGateDb {
   const byKey: Record<string, FeatureGateState> =
-    typeof states === "string" ? { [key!]: states } : states;
+    typeof states === "string"
+      ? { [key!]: states }
+      : { ...Object.fromEntries(PEER_CATEGORY_KEYS.map((peer) => [peer, "entitled" as const])), ...states };
   const entitledKeys = Object.keys(byKey).filter((featureKey) => byKey[featureKey] === "entitled");
   return {
     feature: {
@@ -91,11 +107,14 @@ export function gateStateFor(scenario: Scenario): FeatureGateState {
 export type Capture = {
   order: string[];
   redirects: string[];
+  /** Care-category page resolutions only; care.test.ts asserts these exactly. */
   gateCalls: Array<[string, string]>;
+  /** Every page-level resolution, whatever the category. */
+  allGateCalls: Array<[string, string]>;
 };
 
 export function newCapture(): Capture {
-  return { order: [], redirects: [], gateCalls: [] };
+  return { order: [], redirects: [], gateCalls: [], allGateCalls: [] };
 }
 
 export function gateStub(db: FeatureGateDb, sessionUser: { id: string; plan: string } | null, capture: Capture) {
@@ -113,7 +132,17 @@ export function gateStub(db: FeatureGateDb, sessionUser: { id: string; plan: str
     },
     resolveUserFeatureGate: (userId: string, key: string) => {
       capture.gateCalls.push([userId, key]);
+      capture.allGateCalls.push([userId, key]);
       return resolveUserFeatureGate(db, userId, key);
+    },
+    resolveUserGates: (userId: string | null | undefined, keys: readonly string[]) => {
+      if (userId) {
+        for (const key of keys) {
+          capture.allGateCalls.push([userId, key]);
+          if (key.startsWith("care.")) capture.gateCalls.push([userId, key]);
+        }
+      }
+      return resolveUserGates(db, userId, keys);
     },
   };
 }

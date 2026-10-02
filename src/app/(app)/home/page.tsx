@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
 import { daysBetween, formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
-import { resolveUserFeatureGate } from "@/lib/features/gate";
+import { resolveUserGates } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { getStreakPreview, reviewItemsFor } from "@/lib/constellation-data";
 import { StreakCard } from "@/components/constellation/streak-card";
@@ -17,6 +17,8 @@ import { getSpiderWriteState } from "@/lib/spider-write-policy";
 import { EmailVerificationNotice } from "@/components/auth/email-verification-notice";
 import { legacyVerificationDeadline } from "@/lib/email-verification";
 import { prisma } from "@/lib/db";
+
+const JOURNEY_HOME_KEYS = ["journey.streaks.view"] as const;
 
 function greeting(timeZone: string) {
   let hour = 12;
@@ -37,12 +39,10 @@ function greeting(timeZone: string) {
 
 export default async function HomePage() {
   const user = await requireUser();
-  const careGatesPromise = Promise.all(
-    CARE_FEATURE_KEYS.map(async (key) => [key, user.id ? await resolveUserFeatureGate(user.id, key) : "upsell"] as const),
-  ).then((entries) => Object.fromEntries(entries) as CareGates);
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...JOURNEY_HOME_KEYS]);
   const defaultsPromise = getUserDefaults(user.id!);
   const zonePromise = defaultsPromise.then((defaults) => resolveDisplayTimeZone(defaults.timezone));
-  const [defaults, views, activity, zone, constellation, writeState, verificationAccount, careGates] = await Promise.all([
+  const [defaults, views, activity, zone, constellation, writeState, verificationAccount, gates] = await Promise.all([
     defaultsPromise,
     listSpidersForUser(user.id!),
     getRecentActivity(user.id!),
@@ -52,8 +52,9 @@ export default async function HomePage() {
     process.env.PASSWORD_EMAIL_VERIFICATION_GRACE_START
       ? prisma.user.findUnique({ where: { id: user.id! }, select: { passwordHash: true, emailVerified: true } })
       : Promise.resolve(null),
-    careGatesPromise,
+    gatesPromise,
   ]);
+  const careGates: CareGates = gates;
   const reviewItems = await withCareProgress(user.id!, calendarDayKey(new Date(), zone), zone, reviewItemsFor(views, defaults.feedDefaultDays, writeState));
   const isReadOnly = (spiderId: string) => !writeState.proAccess && writeState.firstSpiderId !== spiderId;
   const verificationDeadline = verificationAccount
@@ -82,13 +83,15 @@ export default async function HomePage() {
 
       {verificationDeadline ? <EmailVerificationNotice deadline={new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "long", timeStyle: "short" }).format(verificationDeadline) + " UTC"} /> : null}
 
-      <StreakCard
-        daysTogether={Math.max(0, daysBetween(defaults.createdAt, new Date(), zone))}
-        completedToday={constellation.completedToday}
-        activeCount={reviewItems.length}
-        caredCount={reviewItems.filter(item => item.caredFor).length}
-        compact
-      />
+      <FeatureGate state={gates["journey.streaks.view"]} featureKey="journey.streaks.view" name="Care streaks">
+        <StreakCard
+          daysTogether={Math.max(0, daysBetween(defaults.createdAt, new Date(), zone))}
+          completedToday={constellation.completedToday}
+          activeCount={reviewItems.length}
+          caredCount={reviewItems.filter(item => item.caredFor).length}
+          compact
+        />
+      </FeatureGate>
 
       <section>
         <SectionHeader
