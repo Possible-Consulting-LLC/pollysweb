@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import {
   loadLegacyPlanSource,
@@ -132,4 +133,117 @@ export async function emitGateEvent(
   } catch (error) {
     console.error("gate-telemetry", error);
   }
+}
+
+export type FeatureGateOptions = {
+  db?: Pick<Prisma.TransactionClient, "feature" | "user" | "plan" | "siteSettings">;
+  redirectFn?: (url: string) => void | never;
+  sessionUser?:
+    | { id?: string | null; plan?: string | null }
+    | null
+    | (() => Promise<{ id?: string | null; plan?: string | null } | null>);
+  plan?: string | null;
+  sinkTransport?: (sink: "posthog", event: GateEvent) => Promise<void> | void;
+  emitEvent?: (
+    db: Pick<Prisma.TransactionClient, "feature" | "user" | "plan" | "siteSettings">,
+    event: GateEvent,
+    sinkTransport?: (sink: "posthog", event: GateEvent) => Promise<void> | void,
+  ) => Promise<void> | void;
+  resolveGate?: (
+    db: Pick<Prisma.TransactionClient, "feature" | "user" | "plan" | "siteSettings">,
+    userId: string,
+    featureKey: string,
+  ) => Promise<FeatureGateState>;
+};
+
+export async function withFeatureGate<T>(
+  featureKey: string,
+  work: () => Promise<T>,
+  options?: FeatureGateOptions,
+): Promise<T> {
+  const db = options?.db ?? prisma;
+  const redirectFn = options?.redirectFn ?? redirect;
+  const emit = options?.emitEvent ?? emitGateEvent;
+  const resolver = options?.resolveGate ?? resolveUserFeatureGate;
+
+  let user: { id?: string | null; plan?: string | null } | null = null;
+  try {
+    user =
+      options?.sessionUser !== undefined
+        ? typeof options.sessionUser === "function"
+          ? await options.sessionUser()
+          : options.sessionUser
+        : await (async () => {
+            const { getActionUser } = await import("@/lib/session");
+            return await getActionUser();
+          })();
+  } catch {
+    user = null;
+  }
+
+  if (!user?.id) {
+    try {
+      await emit(
+        db,
+        { feature: featureKey, outcome: "upsell", plan: null },
+        options?.sinkTransport,
+      );
+    } catch {
+      // safe fallback on telemetry failure
+    }
+    redirectFn(`/features/${featureKey}`);
+    return undefined as unknown as T;
+  }
+
+  let state: FeatureGateState = "coming-soon";
+  try {
+    state = await resolver(db, user.id, featureKey);
+  } catch {
+    state = "coming-soon";
+  }
+
+  const plan =
+    options?.plan !== undefined
+      ? options.plan
+      : (user as { plan?: string | null })?.plan ?? null;
+
+  if (state === "entitled") {
+    try {
+      await emit(
+        db,
+        { feature: featureKey, outcome: "used", plan },
+        options?.sinkTransport,
+      );
+    } catch {
+      // safe fallback on telemetry failure
+    }
+    return await work();
+  }
+
+  if (state === "upsell") {
+    try {
+      await emit(
+        db,
+        { feature: featureKey, outcome: "upsell", plan },
+        options?.sinkTransport,
+      );
+    } catch {
+      // safe fallback on telemetry failure
+    }
+    redirectFn(`/features/${featureKey}`);
+    return undefined as unknown as T;
+  }
+
+  // state === "coming-soon"
+  try {
+    await emit(
+      db,
+      { feature: featureKey, outcome: "coming-soon", plan },
+      options?.sinkTransport,
+    );
+  } catch {
+    // safe fallback on telemetry failure
+  }
+  redirectFn(`/features/${featureKey}?state=coming-soon`);
+  return undefined as unknown as T;
 }
