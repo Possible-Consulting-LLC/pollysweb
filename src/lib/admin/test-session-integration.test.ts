@@ -10,7 +10,10 @@ test('every exported mutation has an explicit context boundary before any action
     for (const node of ast.statements) {
       if (!ts.isFunctionDeclaration(node) || !node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) || !node.body || node.name?.text === 'logoutAction')
         continue;
-      assert.match(node.body.getText(ast), /^\{\s*return withMutation\(/, `${file}:${node.name?.text}`);
+      const body = node.body.getText(ast);
+      const plain = /^\{\s*return withMutation\(/.test(body);
+      const gated = /^\{\s*(?:const \{ withFeatureGate \} = await import\((['"])@\/lib\/features\/gate\1\);\s*)?return withFeatureGate\((['"])[\w.-]+\2,\s*\(\) => withMutation\(/.test(body);
+      assert.ok(plain || gated, `${file}:${node.name?.text}`);
     }
   }
 });

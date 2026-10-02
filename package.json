@@ -10,7 +10,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
-    "test": "tsx --test src/lib/*.test.ts src/lib/**/*.test.ts src/components/*.test.ts src/components/**/*.test.ts",
+    "test": "tsx --test src/lib/*.test.ts src/lib/**/*.test.ts src/lib/features/variations/*.test.ts src/components/*.test.ts src/components/**/*.test.ts",
     "test:integration": "playwright test",
     "test:integration:ui": "playwright test --ui",
     "postinstall": "prisma generate",

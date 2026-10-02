@@ -174,7 +174,8 @@ export async function createSpiderAction(
   _prev: { error?: string; } | undefined,
   formData: FormData,
 ): Promise<{ error?: string; redirectTo?: string; message?: string; celebrations?: Celebration[]; }> {
-  return withMutation(formData, 'data', 'createspideraction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('spood.create', () => withMutation(formData, 'data', 'createspideraction', async () => {
     const user = await getActionUser();
     if (!user?.id) return { error: "Please sign in again." };
     const userId = user.id;
@@ -317,7 +318,7 @@ export async function createSpiderAction(
       };
     }
 
-  });
+  }));
 }
 
 export async function updateSettingsAction(formData: FormData) {

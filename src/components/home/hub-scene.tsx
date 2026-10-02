@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { FeatureGate } from "@/components/features/feature-gate";
+import { resolveUserFeatureGate, type FeatureGateState } from "@/lib/features/gate";
+import { getSessionUser } from "@/lib/session";
 
 /** Dense quarter-web from the top-left corner — pencil-sketch style. */
 function CornerWeb({ className }: { className?: string }) {
@@ -243,7 +246,16 @@ function CornerGear({ className }: { className?: string }) {
   );
 }
 
-export function HubScene() {
+export async function HubScene({ addSpoodState }: { addSpoodState?: FeatureGateState } = {}) {
+  let state = addSpoodState;
+  if (!state) {
+    const user = await getSessionUser();
+    state = user?.id ? await resolveUserFeatureGate(user.id, "spood.create") : "upsell";
+  }
+  return <HubSceneView addSpoodState={state} />;
+}
+
+export function HubSceneView({ addSpoodState }: { addSpoodState: FeatureGateState }) {
   return (
     <div className="hub-scene relative grid h-full min-h-0 grid-cols-2 grid-rows-2 bg-[var(--cream)]">
       {/* Home — corner web + bubble word + crawler (sketch quadrant) */}
@@ -325,28 +337,32 @@ export function HubScene() {
       </Link>
 
       {/* Add a Spood — bubble title + walking doodle */}
-      <Link
-        href="/spoods/new"
-        className="hub-tile group relative overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--plum)]"
-      >
-        <div className="relative z-10 flex h-full flex-col items-start justify-center px-4 sm:px-7">
-          <BubbleLabel className="block text-[clamp(1.75rem,6.2vw,3.25rem)] leading-[0.92]">
-            Add a
-          </BubbleLabel>
-          <BubbleLabel className="block text-[clamp(1.75rem,6.2vw,3.25rem)] leading-[0.92]">
-            Spood
-          </BubbleLabel>
-        </div>
-        <div className="hub-walk-track pointer-events-none absolute bottom-5 left-0 right-0 h-11 sm:bottom-7 sm:h-12">
-          <div className="absolute inset-x-5 top-1/2 -translate-y-1/2 border-t border-dashed border-[var(--midnight)]/35 sm:inset-x-8" />
-          <div className="hub-walk-spood absolute bottom-0">
-            <SketchSpood
-              facing="side"
-              className="h-8 w-12 text-[var(--midnight)] sm:h-10 sm:w-14"
-            />
-          </div>
-        </div>
-      </Link>
+      <div className={addSpoodState === "entitled" ? "contents" : "hub-tile flex items-center justify-center p-4 text-center text-[var(--midnight)]"}>
+        <FeatureGate state={addSpoodState} featureKey="spood.create" name="Adding a Spood">
+          <Link
+            href="/spoods/new"
+            className="hub-tile group relative overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--plum)]"
+          >
+            <div className="relative z-10 flex h-full flex-col items-start justify-center px-4 sm:px-7">
+              <BubbleLabel className="block text-[clamp(1.75rem,6.2vw,3.25rem)] leading-[0.92]">
+                Add a
+              </BubbleLabel>
+              <BubbleLabel className="block text-[clamp(1.75rem,6.2vw,3.25rem)] leading-[0.92]">
+                Spood
+              </BubbleLabel>
+            </div>
+            <div className="hub-walk-track pointer-events-none absolute bottom-5 left-0 right-0 h-11 sm:bottom-7 sm:h-12">
+              <div className="absolute inset-x-5 top-1/2 -translate-y-1/2 border-t border-dashed border-[var(--midnight)]/35 sm:inset-x-8" />
+              <div className="hub-walk-spood absolute bottom-0">
+                <SketchSpood
+                  facing="side"
+                  className="h-8 w-12 text-[var(--midnight)] sm:h-10 sm:w-14"
+                />
+              </div>
+            </div>
+          </Link>
+        </FeatureGate>
+      </div>
     </div>
   );
 }
