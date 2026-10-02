@@ -2,9 +2,10 @@
 // names it in the rebrand story; the scanner and its tests self-match by
 // necessity (they contain the patterns they detect).
 const ALLOWLIST = new Set([
-  "app/(marketing)/about/page.tsx",
-  "lib/rebrand-scan.ts",
-  "lib/rebrand.test.ts",
+  "app/(marketing)/about/page.tsx", // rebrand story names the old brand intentionally
+  "app/(marketing)/page.tsx", // announcement banner names the former name
+  "lib/rebrand-scan.ts", // the scanner must contain the patterns it detects
+  "lib/rebrand.test.ts", // tests exercise the scanner with old-brand fixtures
 ]);
 
 /** Paths whose text still carries the old brand ("Spoodly Space" or its
