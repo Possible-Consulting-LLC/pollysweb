@@ -440,6 +440,7 @@ model SiteSettings {
  deadline DateTime?
  announcementEnabled Boolean @default(false)
  announcement String @default("")
+ featureTelemetrySink String @default("off")
  updatedBy String?
  updatedAt DateTime @updatedAt
 }
