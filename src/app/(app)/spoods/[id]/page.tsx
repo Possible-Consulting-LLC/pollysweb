@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { QuickLogButtons } from "@/components/spoods/quick-log";
+import { CARE_FEATURE_KEYS, GatedQuickLogButtons, type CareGates } from "@/components/spoods/spood-card";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { PremoltToggle } from "@/components/spoods/premolt-toggle";
 import { AboutForm } from "@/components/spoods/about-form";
 import {
@@ -18,6 +19,7 @@ import { DisclosureCard } from "@/components/ui/disclosure-card";
 import { Field } from "@/components/ui/field";
 import { formatCareWhen, parseHydrationMethods } from "@/lib/utils";
 import { getSpiderCare } from "@/lib/spiders";
+import { resolveUserFeatureGate } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { formatShortDate } from "@/lib/utils";
 import { isPremoltLike } from "@/lib/care";
@@ -31,6 +33,11 @@ export default async function SpiderProfilePage({
   searchParams: Promise<{ photo?: string }>;
 }) {
   const user = await requireUser();
+  const careGates = Object.fromEntries(
+    await Promise.all(
+      CARE_FEATURE_KEYS.map(async (key) => [key, user.id ? await resolveUserFeatureGate(user.id, key) : "upsell"] as const),
+    ),
+  ) as CareGates;
   const { id } = await params;
   const { photo: photoFlag } = await searchParams;
   const view = await getSpiderCare(user.id!, id);
@@ -121,56 +128,59 @@ export default async function SpiderProfilePage({
         <>
           <Card className="space-y-3">
             <SectionHeader title="Current care" />
-            <dl className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Last fed</dt>
-                <dd className="font-semibold">
-                  {formatCareWhen(view.lastFedAt)}
-                </dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">
-                  Last successful meal
-                </dt>
-                <dd className="font-semibold">
-                  {formatCareWhen(view.lastSuccessfulFedAt)}
-                </dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Last hydrated</dt>
-                <dd className="font-semibold">
-                  {formatCareWhen(view.lastMistedAt)}
-                </dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Days since molt</dt>
-                <dd className="font-semibold">
-                  {view.daysSinceMolt === null ? "—" : view.daysSinceMolt}
-                </dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Body condition</dt>
-                <dd className="font-semibold">
-                  {view.latestBodyCondition ?? "—"}
-                </dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
-                <dt className="text-xs text-[var(--midnight)]/55">Molt phase</dt>
-                <dd className="font-semibold">{spider.status}</dd>
-              </div>
-            </dl>
-            {isPremoltLike(spider.status) ? (
-              <p className="rounded-2xl bg-[var(--lavender)]/50 px-3 py-2 text-sm text-[var(--plum-deep)]">
-                Feeding reminders are paused while {spider.name} may be fasting for
-                a molt.
-              </p>
-            ) : null}
-            {view.mistDue && careStatus !== "Mist today" ? (
-              <p className="rounded-2xl bg-emerald-100 px-3 py-2 text-sm text-emerald-950">
-                {spider.name} could use a little mist today.
-              </p>
-            ) : null}
-            {writable ? <QuickLogButtons
+            <FeatureGate state={careGates["care.status.view"]} featureKey="care.status.view" name="Care status">
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">Last fed</dt>
+                  <dd className="font-semibold">
+                    {formatCareWhen(view.lastFedAt)}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">
+                    Last successful meal
+                  </dt>
+                  <dd className="font-semibold">
+                    {formatCareWhen(view.lastSuccessfulFedAt)}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">Last hydrated</dt>
+                  <dd className="font-semibold">
+                    {formatCareWhen(view.lastMistedAt)}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">Days since molt</dt>
+                  <dd className="font-semibold">
+                    {view.daysSinceMolt === null ? "—" : view.daysSinceMolt}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">Body condition</dt>
+                  <dd className="font-semibold">
+                    {view.latestBodyCondition ?? "—"}
+                  </dd>
+                </div>
+                <div className="rounded-2xl bg-[var(--cream-deep)]/60 p-3">
+                  <dt className="text-xs text-[var(--midnight)]/55">Molt phase</dt>
+                  <dd className="font-semibold">{spider.status}</dd>
+                </div>
+              </dl>
+              {isPremoltLike(spider.status) ? (
+                <p className="rounded-2xl bg-[var(--lavender)]/50 px-3 py-2 text-sm text-[var(--plum-deep)]">
+                  Feeding reminders are paused while {spider.name} may be fasting for
+                  a molt.
+                </p>
+              ) : null}
+              {view.mistDue && careStatus !== "Mist today" ? (
+                <p className="rounded-2xl bg-emerald-100 px-3 py-2 text-sm text-emerald-950">
+                  {spider.name} could use a little mist today.
+                </p>
+              ) : null}
+            </FeatureGate>
+            {writable ? <GatedQuickLogButtons
+              gates={careGates}
               spiderId={spider.id}
               spiderName={spider.name}
               currentLifeStage={spider.instar}
@@ -196,7 +206,9 @@ export default async function SpiderProfilePage({
 
           {writable ? <DisclosureCard title="Molt phase" defaultOpen={false}>
             <Field label="Current phase">
-              <PremoltToggle spiderId={spider.id} status={spider.status} />
+              <FeatureGate state={careGates["care.premolt.manage"]} featureKey="care.premolt.manage" name="Molt phase tracking">
+                <PremoltToggle spiderId={spider.id} status={spider.status} />
+              </FeatureGate>
             </Field>
           </DisclosureCard> : null}
         </>
@@ -236,10 +248,12 @@ export default async function SpiderProfilePage({
 
       {!memorialized && writable ? (
         <DisclosureCard title="Body condition observation" defaultOpen={false}>
-          <BodyConditionForm
-            spiderId={spider.id}
-            currentCondition={view.latestBodyCondition}
-          />
+          <FeatureGate state={careGates["care.body_condition.log"]} featureKey="care.body_condition.log" name="Logging body condition">
+            <BodyConditionForm
+              spiderId={spider.id}
+              currentCondition={view.latestBodyCondition}
+            />
+          </FeatureGate>
         </DisclosureCard>
       ) : null}
 

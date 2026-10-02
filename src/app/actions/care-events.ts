@@ -26,7 +26,8 @@ export async function quickFeed(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'quickfeed', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.feed.log', () => withMutation(formData, 'data', 'quickfeed', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -79,14 +80,15 @@ export async function quickFeed(
       };
     }
 
-  });
+  }));
 }
 
 export async function quickMist(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'quickmist', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.hydrate.log', () => withMutation(formData, 'data', 'quickmist', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -141,14 +143,15 @@ export async function quickMist(
       };
     }
 
-  });
+  }));
 }
 
 export async function quickObservation(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'quickobservation', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.observe.log', () => withMutation(formData, 'data', 'quickobservation', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -181,14 +184,15 @@ export async function quickObservation(
       };
     }
 
-  });
+  }));
 }
 
 export async function quickInteraction(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'quickinteraction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.play.log', () => withMutation(formData, 'data', 'quickinteraction', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user?.id) return { ok: false, error: "Please sign in again." };
@@ -217,14 +221,15 @@ export async function quickInteraction(
       return { ok: false, error: error instanceof Error ? error.message : "Could not save interaction." };
     }
 
-  });
+  }));
 }
 
 export async function logBodyCondition(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'logbodycondition', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.body_condition.log', () => withMutation(formData, 'data', 'logbodycondition', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -263,14 +268,15 @@ export async function logBodyCondition(
       };
     }
 
-  });
+  }));
 }
 
 export async function logMolt(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'logmolt', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.molt.log', () => withMutation(formData, 'data', 'logmolt', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -315,14 +321,15 @@ export async function logMolt(
       };
     }
 
-  });
+  }));
 }
 
 export async function updatePremoltStatus(
   spiderId: string,
   status: string, submittedContext: string
 ): Promise<ActionResult> {
-  return withMutation(submittedContext, 'data', 'updatepremoltstatus', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('care.premolt.manage', () => withMutation(submittedContext, 'data', 'updatepremoltstatus', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -346,5 +353,5 @@ export async function updatePremoltStatus(
       };
     }
 
-  });
+  }));
 }

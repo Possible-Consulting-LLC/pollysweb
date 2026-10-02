@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
-import { SpoodCareDetails, SpoodIdentity } from "@/components/spoods/spood-card";
+import { CARE_FEATURE_KEYS, SpoodCareDetails, SpoodIdentity, type CareGates } from "@/components/spoods/spood-card";
 import { SpoodSearch } from "@/components/spoods/spood-search";
 import { SpoodAccordion } from "@/components/spoods/spood-accordion";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
 import { Field, Select } from "@/components/ui/field";
 import { listSpidersForUser } from "@/lib/spiders";
+import { resolveUserFeatureGate } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { PREMOLT_STATUSES, SEX_OPTIONS } from "@/lib/constants";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
@@ -17,6 +18,11 @@ export default async function SpoodsPage({
   searchParams: Promise<{ q?: string; status?: string; sex?: string }>;
 }) {
   const user = await requireUser();
+  const careGates = Object.fromEntries(
+    await Promise.all(
+      CARE_FEATURE_KEYS.map(async (key) => [key, user.id ? await resolveUserFeatureGate(user.id, key) : "upsell"] as const),
+    ),
+  ) as CareGates;
   const params = await searchParams;
   const hasFilters = Boolean(params.q || params.status || params.sex);
   const [views, allViews, writeState] = await Promise.all([
@@ -99,6 +105,7 @@ export default async function SpoodsPage({
               content: (
                 <SpoodCareDetails
                   view={view}
+                  gates={careGates}
                   readOnly={readOnly}
                   showProfileLink
                 />

@@ -2,12 +2,14 @@ import { withCareProgress } from "@/lib/care-progress-data";
 import { calendarDayKey } from "@/lib/constellation";
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
-import { SpoodCareCard } from "@/components/spoods/spood-card";
+import { CARE_FEATURE_KEYS, SpoodCareCard, type CareGates } from "@/components/spoods/spood-card";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { SpoodImage } from "@/components/spoods/spood-image";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, EmptyState, SectionHeader, StatusPill } from "@/components/ui/card";
 import { getRecentActivity, getUserDefaults, listSpidersForUser } from "@/lib/spiders";
 import { daysBetween, formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
+import { resolveUserFeatureGate } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { getStreakPreview, reviewItemsFor } from "@/lib/constellation-data";
 import { StreakCard } from "@/components/constellation/streak-card";
@@ -35,9 +37,12 @@ function greeting(timeZone: string) {
 
 export default async function HomePage() {
   const user = await requireUser();
+  const careGatesPromise = Promise.all(
+    CARE_FEATURE_KEYS.map(async (key) => [key, user.id ? await resolveUserFeatureGate(user.id, key) : "upsell"] as const),
+  ).then((entries) => Object.fromEntries(entries) as CareGates);
   const defaultsPromise = getUserDefaults(user.id!);
   const zonePromise = defaultsPromise.then((defaults) => resolveDisplayTimeZone(defaults.timezone));
-  const [defaults, views, activity, zone, constellation, writeState, verificationAccount] = await Promise.all([
+  const [defaults, views, activity, zone, constellation, writeState, verificationAccount, careGates] = await Promise.all([
     defaultsPromise,
     listSpidersForUser(user.id!),
     getRecentActivity(user.id!),
@@ -47,6 +52,7 @@ export default async function HomePage() {
     process.env.PASSWORD_EMAIL_VERIFICATION_GRACE_START
       ? prisma.user.findUnique({ where: { id: user.id! }, select: { passwordHash: true, emailVerified: true } })
       : Promise.resolve(null),
+    careGatesPromise,
   ]);
   const reviewItems = await withCareProgress(user.id!, calendarDayKey(new Date(), zone), zone, reviewItemsFor(views, defaults.feedDefaultDays, writeState));
   const isReadOnly = (spiderId: string) => !writeState.proAccess && writeState.firstSpiderId !== spiderId;
@@ -88,9 +94,11 @@ export default async function HomePage() {
         <SectionHeader
           title="Needs attention"
           subtitle={
-            needing.length
-              ? `${needing.length} spood${needing.length === 1 ? "" : "s"} could use a moment`
-              : "Everyone looks cozy"
+            careGates["care.status.view"] !== "entitled"
+              ? undefined
+              : needing.length
+                ? `${needing.length} spood${needing.length === 1 ? "" : "s"} could use a moment`
+                : "Everyone looks cozy"
           }
         />
         {active.length === 0 && memorial.length === 0 ? (
@@ -101,21 +109,25 @@ export default async function HomePage() {
               <Link href="/spoods/new" className={buttonVariants()}>Add your first spood</Link>
             }
           />
-        ) : needing.length === 0 ? (
-          <Card>
-            <p className="font-[family-name:var(--font-display)] text-lg text-[var(--midnight)]">
-              All clear among the stars ✦
-            </p>
-            <p className="mt-1 text-sm text-[var(--midnight)]/60">
-              No urgent care needs right now. Enjoy a quiet moment with your spoods.
-            </p>
-          </Card>
         ) : (
-          <div className="space-y-3">
-            {needing.map((view) => (
-              <SpoodCareCard key={view.spider.id} view={view} readOnly={isReadOnly(view.spider.id)} />
-            ))}
-          </div>
+          <FeatureGate state={careGates["care.status.view"]} featureKey="care.status.view" name="Care status">
+            {needing.length === 0 ? (
+              <Card>
+                <p className="font-[family-name:var(--font-display)] text-lg text-[var(--midnight)]">
+                  All clear among the stars ✦
+                </p>
+                <p className="mt-1 text-sm text-[var(--midnight)]/60">
+                  No urgent care needs right now. Enjoy a quiet moment with your spoods.
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {needing.map((view) => (
+                  <SpoodCareCard key={view.spider.id} view={view} gates={careGates} readOnly={isReadOnly(view.spider.id)} />
+                ))}
+              </div>
+            )}
+          </FeatureGate>
         )}
       </section>
 

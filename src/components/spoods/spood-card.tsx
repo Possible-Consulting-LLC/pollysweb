@@ -1,13 +1,65 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import Link from "next/link";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { CareStatusGrid } from "@/components/spoods/care-status-grid";
 import { QuickLogButtons, type QuickLogAction } from "@/components/spoods/quick-log";
 import { SpoodImage } from "@/components/spoods/spood-image";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, StatusPill } from "@/components/ui/card";
 import { friendlyNeedCopy } from "@/lib/care";
+import type { FeatureGateState } from "@/lib/features/gate";
 import type { SpiderCareView } from "@/lib/spiders";
 import { parseHydrationMethods } from "@/lib/utils";
+
+export const CARE_FEATURE_KEYS = [
+  "care.feed.log",
+  "care.hydrate.log",
+  "care.molt.log",
+  "care.observe.log",
+  "care.play.log",
+  "care.body_condition.log",
+  "care.premolt.manage",
+  "care.status.view",
+] as const;
+
+export type CareFeatureKey = (typeof CARE_FEATURE_KEYS)[number];
+export type CareGates = Record<CareFeatureKey, FeatureGateState>;
+
+const GATED_QUICK_ACTIONS: Partial<Record<QuickLogAction, { key: CareFeatureKey; name: string }>> = {
+  feed: { key: "care.feed.log", name: "Logging feedings" },
+  hydrate: { key: "care.hydrate.log", name: "Logging hydration" },
+  molt: { key: "care.molt.log", name: "Logging molts" },
+  note: { key: "care.observe.log", name: "Logging observations" },
+  play: { key: "care.play.log", name: "Logging play" },
+};
+
+const ALL_QUICK_ACTIONS: readonly QuickLogAction[] = ["feed", "hydrate", "molt", "note", "play", "housekeeping"];
+
+export function GatedQuickLogButtons({
+  gates,
+  actions = ALL_QUICK_ACTIONS,
+  ...props
+}: ComponentProps<typeof QuickLogButtons> & { gates: CareGates }): ReactNode {
+  const open = actions.filter((action) => {
+    const gated = GATED_QUICK_ACTIONS[action];
+    return !gated || gates[gated.key] === "entitled";
+  });
+  const locked = actions.flatMap((action) => {
+    const gated = GATED_QUICK_ACTIONS[action];
+    return gated && gates[gated.key] !== "entitled" ? [gated] : [];
+  });
+
+  return (
+    <>
+      {open.length ? <QuickLogButtons {...props} actions={open} /> : null}
+      {locked.map(({ key, name }) => (
+        <FeatureGate key={key} state={gates[key]} featureKey={key} name={name}>
+          {null}
+        </FeatureGate>
+      ))}
+    </>
+  );
+}
 
 export function SpoodIdentity({
   view,
@@ -90,6 +142,7 @@ export function SpoodIdentity({
 
 export function SpoodCareDetails({
   view,
+  gates,
   readOnly = false,
   showProfileLink = false,
   showQuickActions = true,
@@ -98,6 +151,7 @@ export function SpoodCareDetails({
   actions,
 }: {
   view: SpiderCareView;
+  gates: CareGates;
   readOnly?: boolean;
   showProfileLink?: boolean;
   showQuickActions?: boolean;
@@ -117,11 +171,13 @@ export function SpoodCareDetails({
         >
           Care status
         </h3>
-        <CareStatusGrid
-          daysSinceFeed={view.daysSinceFeed}
-          daysSinceMist={view.daysSinceMist}
-          latestBehavior={view.latestBehavior}
-        />
+        <FeatureGate state={gates["care.status.view"]} featureKey="care.status.view" name="Care status">
+          <CareStatusGrid
+            daysSinceFeed={view.daysSinceFeed}
+            daysSinceMist={view.daysSinceMist}
+            latestBehavior={view.latestBehavior}
+          />
+        </FeatureGate>
       </section> : null}
 
       {showQuickActions && !readOnly ? (
@@ -138,7 +194,8 @@ export function SpoodCareDetails({
               Log care
             </h3>
           ) : null}
-          <QuickLogButtons
+          <GatedQuickLogButtons
+            gates={gates}
             spiderId={spider.id}
             spiderName={spider.name}
             currentLifeStage={spider.instar}
@@ -176,10 +233,12 @@ export function SpoodCareDetails({
 
 export function SpoodCareCard({
   view,
+  gates,
   showQuickActions = true,
   readOnly = false,
 }: {
   view: SpiderCareView;
+  gates: CareGates;
   showQuickActions?: boolean;
   readOnly?: boolean;
 }) {
@@ -200,6 +259,7 @@ export function SpoodCareCard({
       </div>
       <SpoodCareDetails
         view={view}
+        gates={gates}
         readOnly={readOnly}
         showQuickActions={showQuickActions}
         showStatus={false}

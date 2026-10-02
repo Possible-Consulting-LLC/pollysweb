@@ -26,7 +26,7 @@ function actionFixture() {
     },
   });
   const care = load<typeof import('../app/actions/care-events')>('../app/actions/care-events.ts', {
-    '@/lib/maintenance-write':{}, '@/lib/admin/maintenance-policy':maintenancePolicy, '@/lib/mutation-boundary': boundary, '@/lib/care-celebrations': {}, zod: {}, '@/lib/history-mutations': {}, '@/lib/db': {}, '@/lib/care': {},
+    '@/lib/maintenance-write':{}, '@/lib/admin/maintenance-policy':maintenancePolicy, '@/lib/mutation-boundary': boundary, '@/lib/features/gate': { withFeatureGate: (_key: string, work: () => unknown) => work() }, '@/lib/care-celebrations': {}, zod: {}, '@/lib/history-mutations': {}, '@/lib/db': {}, '@/lib/care': {},
     '@/lib/spood-details': {}, '@/lib/interaction': {}, '@/lib/write-validation': {},
     '@/app/actions/care-shared': { getCareWriteUser: async () => { helperCalls++; assert.fail('stale context must not reach helpers'); } },
   });

@@ -1,60 +1,33 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import ts from "typescript";
 import * as jsx from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
-import * as maintenancePolicy from "../../admin/maintenance-policy";
 import { FeatureGate } from "../../../components/features/feature-gate";
+import type { FeatureGateState } from "../gate";
 import {
-  resolveUserFeatureGate,
-  withFeatureGate,
-  type FeatureGateDb,
-  type FeatureGateState,
-} from "../gate";
+  gateStateFor,
+  gateStub,
+  loadModule,
+  maintenancePolicy,
+  makeDb,
+  mutationBoundaryStub,
+  nextStubs,
+  newCapture,
+  sessionFor,
+  type Scenario,
+} from "./_harness";
 
 const KEY = "spood.create";
 const ALLOWANCE_ERROR =
   "Free accounts include 1 active spood. Upgrade to Pro to add more — or memorialize a passed spood to free a slot.";
 
-type Scenario = FeatureGateState | "unauthenticated";
-
-function makeDb(state: FeatureGateState): FeatureGateDb {
-  const translationKey = state === "entitled" ? KEY : "some.other.feature";
-  return {
-    feature: { findUnique: async () => ({ key: KEY, active: state !== "coming-soon" }) },
-    user: {
-      findUnique: async () => ({
-        plan: "free",
-        subscriptions: [
-          {
-            status: "ACTIVE",
-            expiresAt: null,
-            plan: {
-              name: "Pro",
-              featureTranslations: [{ enabled: true, feature: { key: translationKey } }],
-            },
-          },
-        ],
-      }),
-    },
-    siteSettings: { findUnique: async () => ({ featureTelemetrySink: "off" }) },
-  } as unknown as FeatureGateDb;
-}
-
 function loadAction(scenario: Scenario, billing: { canAddSpider: boolean; freeLimit: number }) {
-  const source = ts.transpileModule(
-    readFileSync(new URL("../../../app/actions/auth.ts", import.meta.url), "utf8"),
-    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } },
-  ).outputText;
-
-  const order: string[] = [];
-  const redirects: string[] = [];
-  const db = makeDb(scenario === "unauthenticated" ? "upsell" : scenario);
-  const sessionUser = scenario === "unauthenticated" ? null : { id: "user-1", plan: "Pro" };
+  const capture = newCapture();
+  const { order, redirects } = capture;
+  const db = makeDb(gateStateFor(scenario), KEY);
 
   const dependencies: Record<string, unknown> = {
+    ...nextStubs,
     "@/lib/admin/maintenance-policy": maintenancePolicy,
     "@/lib/admin/maintenance-access": { guardMaintenance: async () => {}, prepareCredentialChange: async () => {} },
     "@/lib/maintenance-write": {
@@ -63,31 +36,8 @@ function loadAction(scenario: Scenario, billing: { canAddSpider: boolean; freeLi
         return { ok: true, value: { id: "spider-1" } };
       },
     },
-    "@/lib/mutation-boundary": {
-      withMutation: async (_ctx: unknown, _kind: unknown, _action: unknown, work: () => Promise<unknown>) => {
-        order.push("withMutation");
-        try {
-          return await work();
-        } catch (error) {
-          if (error instanceof maintenancePolicy.MaintenanceError) return maintenancePolicy.maintenanceFailure();
-          throw error;
-        }
-      },
-      recordMutationSuccess: async () => {},
-    },
-    "@/lib/features/gate": {
-      withFeatureGate: (key: string, work: () => Promise<unknown>) => {
-        order.push(`gate:${key}`);
-        return withFeatureGate(key, work, {
-          db,
-          sessionUser,
-          redirectFn: (url: string) => {
-            redirects.push(url);
-            throw new Error(`redirect:${url}`);
-          },
-        });
-      },
-    },
+    "@/lib/mutation-boundary": mutationBoundaryStub(capture),
+    "@/lib/features/gate": gateStub(db, sessionFor(scenario), capture),
     "@/lib/rate-limit": {
       allowAction: async () => {
         order.push("rate-limit");
@@ -121,34 +71,18 @@ function loadAction(scenario: Scenario, billing: { canAddSpider: boolean; freeLi
     "@/lib/email-delivery": {},
     "@/lib/email-challenge": {},
     "next-auth": { AuthError: Error },
-    "next/navigation": { redirect: (url: string) => { throw new Error(`redirect:${url}`); } },
-    "next/cache": { revalidatePath: () => {} },
-    "next/dist/client/components/redirect-error": {
-      isRedirectError: (error: Error) => error.message.startsWith("redirect:"),
-    },
     zod: { z: {} },
   };
 
-  const exports: Record<string, unknown> = {};
-  runInNewContext(source, {
-    exports,
-    FormData,
-    File,
-    console: { error: () => undefined, warn: () => undefined },
-    process: { env: {} },
-    require: (name: string) => {
-      assert.ok(name in dependencies, `Unexpected dependency ${name}`);
-      return dependencies[name];
-    },
-  });
-
-  const action = exports.createSpiderAction as (
-    prev: undefined,
-    form: FormData,
-  ) => Promise<{ error?: string; redirectTo?: string; message?: string }>;
+  const exports = loadModule<{
+    createSpiderAction: (
+      prev: undefined,
+      form: FormData,
+    ) => Promise<{ error?: string; redirectTo?: string; message?: string }>;
+  }>("app/actions/auth.ts", dependencies);
   const form = new FormData();
   form.set("name", "Charlotte");
-  return { run: () => action(undefined, form), order, redirects };
+  return { run: () => exports.createSpiderAction(undefined, form), order, redirects };
 }
 
 test("createSpiderAction: entitled user passes the gate and enters the create path", async () => {
@@ -189,22 +123,10 @@ test("createSpiderAction: unauthenticated session gets the upsell redirect befor
   assert.deepEqual(order, ["gate:spood.create"]);
 });
 
-function loadNewPage(state: FeatureGateState | "unauthenticated", billing: { canAddSpider: boolean }) {
-  const source = ts.transpileModule(
-    readFileSync(new URL("../../../app/(app)/spoods/new/page.tsx", import.meta.url), "utf8"),
-    {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX,
-        esModuleInterop: true,
-      },
-    },
-  ).outputText;
-
-  const gateCalls: Array<[string, string]> = [];
+function loadNewPage(state: Scenario, billing: { canAddSpider: boolean }) {
+  const capture = newCapture();
   const billingCalls: string[] = [];
-  const db = makeDb(state === "unauthenticated" ? "upsell" : state);
+  const db = makeDb(gateStateFor(state), KEY);
   const dependencies: Record<string, unknown> = {
     "react/jsx-runtime": jsx,
     "next/link": ({ href, children }: { href: string; children: unknown }) => jsx.jsx("a", { href, children }),
@@ -222,27 +144,14 @@ function loadNewPage(state: FeatureGateState | "unauthenticated", billing: { can
     "@/lib/session": {
       requireUser: async () => (state === "unauthenticated" ? { id: null } : { id: "user-1" }),
     },
-    "@/lib/features/gate": {
-      resolveUserFeatureGate: (userId: string, key: string) => {
-        gateCalls.push([userId, key]);
-        return resolveUserFeatureGate(db, userId, key);
-      },
-    },
+    "@/lib/features/gate": gateStub(db, sessionFor(state), capture),
     "@/components/features/feature-gate": { FeatureGate },
   };
-  const exports: { default?: () => Promise<unknown> } = {};
-  runInNewContext(source, {
-    exports,
-    process: { env: {} },
-    require: (name: string) => {
-      assert.ok(name in dependencies, `Unexpected dependency ${name}`);
-      return dependencies[name];
-    },
-  });
+  const exports = loadModule<{ default: () => Promise<unknown> }>("app/(app)/spoods/new/page.tsx", dependencies);
   return {
     render: async () =>
-      renderToStaticMarkup((await exports.default!()) as Parameters<typeof renderToStaticMarkup>[0]),
-    gateCalls,
+      renderToStaticMarkup((await exports.default()) as Parameters<typeof renderToStaticMarkup>[0]),
+    gateCalls: capture.gateCalls,
     billingCalls,
   };
 }
@@ -288,47 +197,22 @@ test("spoods/new page: a user without an id is treated as upsell and never hits 
 });
 
 function loadHubScene(sessionUser: { id?: string | null } | null, state: FeatureGateState) {
-  const source = ts.transpileModule(
-    readFileSync(new URL("../../../components/home/hub-scene.tsx", import.meta.url), "utf8"),
-    {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX,
-        esModuleInterop: true,
-      },
-    },
-  ).outputText;
-  const gateCalls: Array<[string, string]> = [];
-  const db = makeDb(state);
+  const capture = newCapture();
+  const db = makeDb(state, KEY);
   const dependencies: Record<string, unknown> = {
     "react/jsx-runtime": jsx,
     "next/link": ({ href, children }: { href: string; children: unknown }) => jsx.jsx("a", { href, children }),
     "@/components/features/feature-gate": { FeatureGate },
     "@/lib/session": { getSessionUser: async () => sessionUser },
-    "@/lib/features/gate": {
-      resolveUserFeatureGate: (userId: string, key: string) => {
-        gateCalls.push([userId, key]);
-        return resolveUserFeatureGate(db, userId, key);
-      },
-    },
+    "@/lib/features/gate": gateStub(db, null, capture),
   };
-  const exports: {
-    HubScene?: (props?: { addSpoodState?: FeatureGateState }) => Promise<unknown>;
-    HubSceneView?: (props: { addSpoodState: FeatureGateState }) => unknown;
-  } = {};
-  runInNewContext(source, {
-    exports,
-    process: { env: {} },
-    require: (name: string) => {
-      assert.ok(name in dependencies, `Unexpected dependency ${name}`);
-      return dependencies[name];
-    },
-  });
+  const exports = loadModule<{
+    HubScene: (props?: { addSpoodState?: FeatureGateState }) => Promise<unknown>;
+  }>("components/home/hub-scene.tsx", dependencies);
   return {
-    gateCalls,
+    gateCalls: capture.gateCalls,
     render: async (props?: { addSpoodState?: FeatureGateState }) =>
-      renderToStaticMarkup((await exports.HubScene!(props)) as Parameters<typeof renderToStaticMarkup>[0]),
+      renderToStaticMarkup((await exports.HubScene(props)) as Parameters<typeof renderToStaticMarkup>[0]),
   };
 }
 

@@ -17,6 +17,8 @@ function loadHome(dependencies: Record<string, unknown>, now?: Date) {
     require: (name: string) => {
       if (name === "react/jsx-runtime") return jsx;
       if (name in dependencies) return dependencies[name];
+      if (name === "@/lib/features/gate") return { resolveUserFeatureGate: async () => "entitled" };
+      if (name === "@/components/spoods/spood-card") return { CARE_FEATURE_KEYS: ["care.status.view"], SpoodCareCard: () => null };
       if (name.startsWith("@/components/") || name === "next/link") return new Proxy({}, { get: () => () => null });
       throw new Error(`Unexpected dependency ${name}`);
     },
