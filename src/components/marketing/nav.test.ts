@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NAV_ITEMS, FOOTER_LEGAL_SLUGS, activeNavKey } from "./nav";
 
-test("nav carries the seven approved items in order", () => {
+test("nav carries the live public items in order (help is hidden until content lands)", () => {
   assert.deepEqual(NAV_ITEMS.map((item) => item.href), [
     "/features",
     "/care-guides",
     "/blog",
     "/pricing",
     "/about",
-    "/help",
     "/contact",
   ]);
   assert.deepEqual(NAV_ITEMS.map((item) => item.label), [
@@ -18,7 +17,6 @@ test("nav carries the seven approved items in order", () => {
     "Blog",
     "Pricing",
     "About",
-    "Help",
     "Contact",
   ]);
 });

@@ -2,7 +2,7 @@
 // mobile drawer, and the footer all read from here so link order and targets
 // can never drift between surfaces.
 
-export type NavKey = "features" | "care-guides" | "blog" | "pricing" | "about" | "help" | "contact";
+export type NavKey = "features" | "care-guides" | "blog" | "pricing" | "about" | "contact";
 
 export const NAV_ITEMS: Array<{ key: NavKey; label: string; href: string }> = [
   { key: "features", label: "Features", href: "/features" },
@@ -10,9 +10,11 @@ export const NAV_ITEMS: Array<{ key: NavKey; label: string; href: string }> = [
   { key: "blog", label: "Blog", href: "/blog" },
   { key: "pricing", label: "Pricing", href: "/pricing" },
   { key: "about", label: "About", href: "/about" },
-  { key: "help", label: "Help", href: "/help" },
   { key: "contact", label: "Contact", href: "/contact" },
 ];
+
+// The help center lives at /help but stays out of navigation and (later) the
+// sitemap until its content pass is done — reachable by direct URL only.
 
 // The five documents shown in the footer's Legal column (per review: the full
 // set lives on the legal hub; the footer carries the essentials only).
