@@ -82,7 +82,7 @@ export default function LegalHubPage() {
               alt=""
               fill
               sizes="(min-width: 1152px) 42vw, 0px"
-              className="object-cover object-bottom"
+              className="object-contain object-bottom-right"
             />
           ) : (
             <div
