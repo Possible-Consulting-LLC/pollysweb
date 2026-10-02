@@ -3,6 +3,7 @@ import test from "node:test";
 import path from "node:path";
 import { listLegalDocs, getLegalDoc } from "./legal";
 import { listGuides, getGuide, GUIDE_CATEGORIES } from "./care-guides";
+import { listBlogPosts, getBlogPost } from "./blog";
 import { renderMarkdown } from "./markdown";
 
 const FIXTURES = path.join(process.cwd(), "src", "lib", "content", "fixtures");
@@ -95,4 +96,24 @@ test("getGuide returns rendered html and toc", () => {
   assert.ok(guide);
   assert.ok(guide.html.includes('<h2 id="feed-well">Feed Well</h2>'));
   assert.deepEqual(guide.toc, [{ id: "feed-well", text: "Feed Well", level: 2 }]);
+});
+
+test("blog posts list newest first with drafts excluded and tags parsed", () => {
+  const posts = listBlogPosts(path.join(FIXTURES, "blog"));
+  assert.deepEqual(posts.map((post) => post.slug), ["fixture-post-b", "fixture-post-a"]);
+  assert.deepEqual(posts[0].tags, ["welcome"]);
+  assert.deepEqual(posts[1].tags, ["care", "feeding"]);
+});
+
+test("draft blog posts are hidden from lists and getters unconditionally", () => {
+  const posts = listBlogPosts(path.join(FIXTURES, "blog"));
+  assert.ok(posts.every((post) => post.slug !== "fixture-draft-post"));
+  assert.equal(getBlogPost("fixture-draft-post", path.join(FIXTURES, "blog")), null);
+});
+
+test("getBlogPost returns rendered html and toc", () => {
+  const post = getBlogPost("fixture-post-a", path.join(FIXTURES, "blog"));
+  assert.ok(post);
+  assert.ok(post.html.includes('<h2 id="older">Older</h2>'));
+  assert.equal(post.date, "2026-09-20");
 });

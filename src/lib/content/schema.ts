@@ -22,9 +22,10 @@ export type LegalDocMeta = {
 };
 
 /** Parses the scalar subset: `key: value` lines, optional quoting, numbers,
- * true/false. Anything else is rejected by the zod schemas downstream. */
-export function parseFrontmatter(raw: string): Record<string, string | number | boolean> {
-  const values: Record<string, string | number | boolean> = {};
+ * true/false, and single-line inline arrays (`[a, b]`). Anything else is
+ * rejected by the zod schemas downstream. */
+export function parseFrontmatter(raw: string): Record<string, string | number | boolean | string[]> {
+  const values: Record<string, string | number | boolean | string[]> = {};
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -34,6 +35,13 @@ export function parseFrontmatter(raw: string): Record<string, string | number | 
     let value = trimmed.slice(separator + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
+    } else if (value.startsWith("[") && value.endsWith("]")) {
+      values[key] = value
+        .slice(1, -1)
+        .split(",")
+        .map((item) => item.trim().replace(/^["']|["']$/g, ""))
+        .filter((item) => item.length > 0);
+      continue;
     }
     if (value === "true") values[key] = true;
     else if (value === "false") values[key] = false;
