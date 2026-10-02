@@ -29,98 +29,74 @@ const features = [
   {
     icon: ClipboardList,
     iconClass: "text-pink-500 bg-pink-50",
-    art: "from-pink-100/80 to-rose-50",
     title: "Spood Profiles",
     body: "Track important details like species, sex, life stage, hatch date, and more.",
-    href: "/register",
   },
   {
     icon: Utensils,
     iconClass: "text-orange-500 bg-orange-50",
-    art: "from-orange-100/80 to-amber-50",
     title: "Feeding Tracking",
     body: "Log feedings, prey type, quantity, and outcomes so you can spot patterns.",
-    href: "/care-guides/feeding",
   },
   {
     icon: Droplet,
     iconClass: "text-sky-500 bg-sky-50",
-    art: "from-sky-100/80 to-cyan-50",
     title: "Hydration Tracking",
     body: "Track hydration methods and keep your spood happy and healthy.",
-    href: "/care-guides/water",
   },
   {
     icon: Moon,
     iconClass: "text-[var(--plum)] bg-[var(--lavender)]/70",
-    art: "from-[var(--lavender)]/60 to-purple-50",
     title: "Molts & Growth",
     body: "Log molts, track growth milestones, and celebrate every stage.",
-    href: "/care-guides/molting",
   },
   {
     icon: House,
     iconClass: "text-green-600 bg-green-50",
-    art: "from-emerald-100/80 to-lime-50",
     title: "Enclosure Details",
     body: "Keep notes on enclosures, decor, substrate, and environment.",
-    href: "/care-guides/habitat",
   },
   {
     icon: Heart,
     iconClass: "text-pink-500 bg-pink-50",
-    art: "from-pink-100/80 to-rose-50",
     title: "Handling Notes",
     body: "Track handling sessions and build a positive relationship.",
-    href: "/care-guides/handling",
   },
   {
     icon: Sparkles,
     iconClass: "text-amber-500 bg-amber-50",
-    art: "from-amber-100/80 to-yellow-50",
     title: "Cleaning Log",
     body: "Stay on top of cleaning schedules and enclosure maintenance.",
-    href: "/care-guides/cleaning",
   },
   {
     icon: Sprout,
     iconClass: "text-green-600 bg-green-50",
-    art: "from-lime-100/80 to-green-50",
     title: "Life Stages",
     body: "From sling to adult, track their journey and learn what to expect.",
-    href: "/care-guides/life-stages",
   },
   {
     icon: Cross,
     iconClass: "text-red-500 bg-red-50",
-    art: "from-red-100/80 to-orange-50",
     title: "Health Tracking",
     body: "Log health notes, keep an eye on changes, and have important info handy.",
-    href: "/care-guides/health",
   },
   {
     icon: BookOpen,
     iconClass: "text-[var(--plum)] bg-[var(--lavender)]/70",
-    art: "from-[var(--lavender)]/50 to-sky-50",
     title: "Species Profiles",
     body: "Explore care info for different jumper species with trusted guidance.",
-    href: "/care-guides/species-profiles",
   },
   {
     icon: Camera,
     iconClass: "text-[var(--plum)] bg-[var(--lavender)]/70",
-    art: "from-[var(--lavender)]/60 to-indigo-50",
     title: "Photos & History",
     body: "Capture memories and build a visual timeline of your spood's life.",
-    href: "/register",
   },
   {
     icon: BarChart3,
     iconClass: "text-[var(--plum)] bg-[var(--lavender)]/70",
-    art: "from-[var(--lavender)]/60 to-sky-50",
     title: "Dashboards & Insights",
     body: "Get a clear view of care, activity, and important dates all in one place.",
-    href: "/register",
   },
 ];
 
@@ -223,11 +199,10 @@ export default function FeaturesPage() {
           </p>
         </div>
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {features.map(({ icon: Icon, iconClass, art, title, body, href }) => (
-            <Link
+          {features.map(({ icon: Icon, iconClass, title, body }) => (
+            <article
               key={title}
-              href={href}
-              className="group flex flex-col overflow-hidden rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] shadow-[0_8px_30px_var(--shadow)] transition hover:border-[var(--plum)]/25"
+              className="flex flex-col overflow-hidden rounded-3xl border border-[var(--plum)]/10 bg-[var(--card-solid)] shadow-[0_8px_30px_var(--shadow)]"
             >
               <span className="flex flex-1 flex-col p-5">
                 <span className={`grid h-10 w-10 place-items-center rounded-2xl ${iconClass}`}>
@@ -237,14 +212,11 @@ export default function FeaturesPage() {
                   {title}
                 </span>
                 <span className="mt-1.5 flex-1 text-sm leading-6 text-[var(--midnight)]/65">{body}</span>
-                <span className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[var(--plum)] transition group-hover:gap-2">
-                  Learn More <ArrowRight className="h-4 w-4" aria-hidden />
-                </span>
               </span>
-              <span aria-hidden className={`flex h-16 items-end justify-center bg-gradient-to-t text-2xl ${art}`}>
+              <span aria-hidden className={`flex h-16 items-end justify-center bg-gradient-to-t text-2xl ${title === "Molts & Growth" ? "from-[var(--lavender)]/60 to-purple-50" : title === "Hydration Tracking" ? "from-sky-100/80 to-cyan-50" : "from-[var(--lavender)]/40 to-rose-50"}`}>
                 <span className="mb-2">{title === "Molts & Growth" ? "🦗" : title === "Hydration Tracking" ? "💧" : "🕸️"}</span>
               </span>
-            </Link>
+            </article>
           ))}
         </div>
       </section>
