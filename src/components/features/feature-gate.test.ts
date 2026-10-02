@@ -8,8 +8,7 @@ test("entitled features render their children", () => {
   const markup = renderToStaticMarkup(
     createElement(FeatureGate, {
       state: "entitled", featureKey: "spood.create", name: "Spood Create",
-      children: createElement("strong", null, "Feature content"),
-    }),
+    }, createElement("strong", null, "Feature content")),
   );
 
   assert.equal(markup, "<strong>Feature content</strong>");
@@ -19,8 +18,7 @@ test("upsell features show a link with the feature name", () => {
   const markup = renderToStaticMarkup(
     createElement(FeatureGate, {
       state: "upsell", featureKey: "spood.create", name: "Spood Create",
-      children: createElement("strong", null, "Feature content"),
-    }),
+    }, createElement("strong", null, "Feature content")),
   );
 
   assert.match(markup, /href="\/features\/spood\.create"/);
@@ -32,8 +30,7 @@ test("coming-soon features show an inline placeholder", () => {
   const markup = renderToStaticMarkup(
     createElement(FeatureGate, {
       state: "coming-soon", featureKey: "spood.create", name: "Spood Create",
-      children: createElement("strong", null, "Feature content"),
-    }),
+    }, createElement("strong", null, "Feature content")),
   );
 
   assert.match(markup, /Spood Create — coming soon/);
