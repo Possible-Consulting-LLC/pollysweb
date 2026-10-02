@@ -11,6 +11,18 @@ const providerNames: Record<SocialProviderId, string> = {
   facebook: "Facebook",
 };
 
+/** Pure render-data: only providers the app has configured become buttons,
+ * in the given order, with mockup-consistent labels. Unknown/unsupported
+ * provider ids are dropped. */
+export function socialButtonsFor(
+  providers: SocialProviderId[],
+): Array<{ id: "facebook" | "google"; label: string }> {
+  const supported: Array<"facebook" | "google"> = ["google", "facebook"];
+  return providers
+    .filter((provider): provider is "facebook" | "google" => (supported as SocialProviderId[]).includes(provider as "facebook" | "google"))
+    .map((id) => ({ id, label: `Continue with ${providerNames[id]}` }));
+}
+
 export function SocialButtons({
   providers,
   mode,
