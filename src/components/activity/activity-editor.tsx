@@ -37,11 +37,21 @@ type EditableItem = {
   };
 };
 
-export function ActivityEditorList({ items, writableSpiderIds }: { items: EditableItem[]; writableSpiderIds?: string[] }) {
+export function ActivityEditorList({
+  items,
+  writableSpiderIds,
+  allowEdit = true,
+  allowDelete = true,
+}: {
+  items: EditableItem[];
+  writableSpiderIds?: string[];
+  allowEdit?: boolean;
+  allowDelete?: boolean;
+}) {
   return (
     <div className="divide-y divide-[var(--plum)]/10 overflow-hidden rounded-3xl border border-[var(--plum)]/15 bg-[var(--card)]">
       {items.map((item) => (
-        <ActivityEditorRow key={`${item.type}-${item.id}`} item={item} readOnly={writableSpiderIds ? !writableSpiderIds.includes(item.spiderId) : false} />
+        <ActivityEditorRow key={`${item.type}-${item.id}`} item={item} readOnly={writableSpiderIds ? !writableSpiderIds.includes(item.spiderId) : false} allowEdit={allowEdit} allowDelete={allowDelete} />
       ))}
     </div>
   );
@@ -51,14 +61,27 @@ export function ActivityEditorRow({
   item,
   compact = false,
   readOnly = false,
+  allowEdit = true,
+  allowDelete = true,
 }: {
   item: EditableItem;
   compact?: boolean;
   readOnly?: boolean;
+  allowEdit?: boolean;
+  allowDelete?: boolean;
 }) {
  const mutationContext = useMutationContext();
   const [open, setOpen] = useState(false);
   const { pending, message, error, run } = useActionFeedback();
+
+  function remove() {
+    if (!window.confirm("Delete this activity log? This can’t be undone.")) return;
+    run(async () => {
+      const result = await deleteActivityAction(item.type, item.id, mutationContext);
+      if (result.ok) setOpen(false);
+      return result;
+    });
+  }
 
   return (
     <div className={compact ? "space-y-2" : "px-4 py-3"}>
@@ -83,12 +106,20 @@ export function ActivityEditorRow({
                 Profile
               </Link>
             ) : null}
-            {!readOnly ? <button
+            {!readOnly && allowEdit ? <button
               type="button"
               className="text-xs font-semibold text-[var(--plum)] hover:underline"
               onClick={() => setOpen((v) => !v)}
             >
               {open ? "Close" : "Edit"}
+            </button> : null}
+            {!readOnly && !allowEdit && allowDelete ? <button
+              type="button"
+              disabled={pending}
+              className="text-xs font-semibold text-rose-800 hover:underline"
+              onClick={remove}
+            >
+              Delete
             </button> : null}
           </div>
         </div>
@@ -278,28 +309,17 @@ export function ActivityEditorRow({
             <Button type="submit" className="flex-1" disabled={pending}>
               {pending ? "Saving…" : "Save changes"}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="flex-1 text-rose-800"
-              disabled={pending}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "Delete this activity log? This can’t be undone.",
-                  )
-                ) {
-                  return;
-                }
-                run(async () => {
-                  const result = await deleteActivityAction(item.type, item.id, mutationContext);
-                  if (result.ok) setOpen(false);
-                  return result;
-                });
-              }}
-            >
-              Delete
-            </Button>
+            {allowDelete ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1 text-rose-800"
+                disabled={pending}
+                onClick={remove}
+              >
+                Delete
+              </Button>
+            ) : null}
           </div>
         </form>
       ) : null}

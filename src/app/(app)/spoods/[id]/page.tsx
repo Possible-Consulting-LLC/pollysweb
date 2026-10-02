@@ -32,6 +32,8 @@ const PHOTO_FEATURE_KEYS = [
   "photo.delete",
 ] as const;
 
+const HABITAT_FEATURE_KEYS = ["enclosure.view", "enclosure.manage", "housekeeping.log"] as const;
+
 export default async function SpiderProfilePage({
   params,
   searchParams,
@@ -40,7 +42,7 @@ export default async function SpiderProfilePage({
   searchParams: Promise<{ photo?: string }>;
 }) {
   const user = await requireUser();
-  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...PHOTO_FEATURE_KEYS]);
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...PHOTO_FEATURE_KEYS, ...HABITAT_FEATURE_KEYS]);
   const { id } = await params;
   const { photo: photoFlag } = await searchParams;
   const [view, writeState, gates] = await Promise.all([
@@ -265,45 +267,58 @@ export default async function SpiderProfilePage({
       ) : null}
 
       {!memorialized ? (
-        <DisclosureCard
-          title="Enclosure"
-          subtitle={
-            spider.enclosure
-              ? "View, edit, or log cleaning"
-              : "Add a home for this spood"
-          }
-          defaultOpen={false}
-        >
-          {writable ? <EnclosureForm
-            spiderId={spider.id}
-            timeZone={view.timeZone}
-            enclosure={
+        <FeatureGate state={gates["enclosure.view"]} featureKey="enclosure.view" name="Enclosure details">
+          <DisclosureCard
+            title="Enclosure"
+            subtitle={
               spider.enclosure
-                ? {
-                    name: spider.enclosure.name,
-                    type: spider.enclosure.type,
-                    dimensions: spider.enclosure.dimensions,
-                    notes: spider.enclosure.notes,
-                    setupDate: spider.enclosure.setupDate
-                      ? spider.enclosure.setupDate.toISOString()
-                      : null,
-                    lastCleaned: spider.enclosure.lastCleaned
-                      ? spider.enclosure.lastCleaned.toISOString()
-                      : null,
-                    lastRehoused: spider.enclosure.lastRehoused
-                      ? spider.enclosure.lastRehoused.toISOString()
-                      : null,
-                  }
-                : null
+                ? "View, edit, or log cleaning"
+                : "Add a home for this spood"
             }
-          /> : (
-            <p className="text-sm text-[var(--midnight)]/75">
-              {spider.enclosure?.name || "No enclosure details yet."}
-              {spider.enclosure?.dimensions ? ` · ${spider.enclosure.dimensions}` : ""}
-            </p>
-          )}
-          {writable && spider.enclosure ? <div className="mt-6"><MaintenanceForm spiderId={spider.id} /></div> : null}
-        </DisclosureCard>
+            defaultOpen={false}
+          >
+            {writable && gates["enclosure.manage"] === "entitled" ? <EnclosureForm
+              spiderId={spider.id}
+              timeZone={view.timeZone}
+              enclosure={
+                spider.enclosure
+                  ? {
+                      name: spider.enclosure.name,
+                      type: spider.enclosure.type,
+                      dimensions: spider.enclosure.dimensions,
+                      notes: spider.enclosure.notes,
+                      setupDate: spider.enclosure.setupDate
+                        ? spider.enclosure.setupDate.toISOString()
+                        : null,
+                      lastCleaned: spider.enclosure.lastCleaned
+                        ? spider.enclosure.lastCleaned.toISOString()
+                        : null,
+                      lastRehoused: spider.enclosure.lastRehoused
+                        ? spider.enclosure.lastRehoused.toISOString()
+                        : null,
+                    }
+                  : null
+              }
+            /> : (
+              <>
+                <p className="text-sm text-[var(--midnight)]/75">
+                  {spider.enclosure?.name || "No enclosure details yet."}
+                  {spider.enclosure?.dimensions ? ` · ${spider.enclosure.dimensions}` : ""}
+                </p>
+                {writable ? (
+                  <FeatureGate state={gates["enclosure.manage"]} featureKey="enclosure.manage" name="Managing the enclosure">{null}</FeatureGate>
+                ) : null}
+              </>
+            )}
+            {writable && spider.enclosure ? (
+              <div className="mt-6">
+                <FeatureGate state={gates["housekeeping.log"]} featureKey="housekeeping.log" name="Logging housekeeping">
+                  <MaintenanceForm spiderId={spider.id} />
+                </FeatureGate>
+              </div>
+            ) : null}
+          </DisclosureCard>
+        </FeatureGate>
       ) : null}
 
       <DisclosureCard

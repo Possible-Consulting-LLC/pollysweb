@@ -26,6 +26,12 @@ export const PEER_CATEGORY_KEYS = [
   "journey.check_in",
   "journey.streaks.view",
   "journey.badges.view",
+  "enclosure.view",
+  "enclosure.manage",
+  "housekeeping.log",
+  "activity.full_history.view",
+  "activity.edit",
+  "activity.delete",
 ];
 
 export function makeDb(
@@ -41,6 +47,10 @@ export function makeDb(
     feature: {
       findUnique: async ({ where }: { where: { key: string } }) =>
         where.key in byKey ? { key: where.key, active: byKey[where.key] !== "coming-soon" } : null,
+      findMany: async ({ where }: { where: { key: { in: string[] } } }) =>
+        where.key.in
+          .filter((featureKey) => featureKey in byKey)
+          .map((featureKey) => ({ key: featureKey, active: byKey[featureKey] !== "coming-soon" })),
     },
     user: {
       findUnique: async () => ({

@@ -113,17 +113,67 @@ export async function resolveUserGates<K extends string>(
     ? [prisma as FeatureGateDb, dbOrUserId as string | null | undefined, userIdOrKeys as readonly K[]]
     : [dbOrUserId as FeatureGateDb, userIdOrKeys as string | null | undefined, maybeKeys!];
 
-  const entries = await Promise.all(
-    keys.map(async (key) => {
-      if (!userId) return [key, "upsell"] as const;
-      try {
-        return [key, await resolveUserFeatureGate(db, userId, key)] as const;
-      } catch {
-        return [key, "coming-soon"] as const;
-      }
+  const uniqueKeys = [...new Set(keys)];
+  if (!userId) {
+    return Object.fromEntries(uniqueKeys.map((key) => [key, "upsell"])) as Record<K, FeatureGateState>;
+  }
+  if (uniqueKeys.length === 0) return {} as Record<K, FeatureGateState>;
+
+  try {
+    return await resolveBatchedGates(db, userId, uniqueKeys);
+  } catch {
+    // The batch could not be read as a whole; resolve per key so one bad lookup cannot take down the rest.
+    const entries = await Promise.all(
+      uniqueKeys.map(async (key) => {
+        try {
+          return [key, await resolveUserFeatureGate(db, userId, key)] as const;
+        } catch {
+          return [key, "coming-soon"] as const;
+        }
+      }),
+    );
+    return Object.fromEntries(entries) as Record<K, FeatureGateState>;
+  }
+}
+
+// Constant query count however many keys: one feature.findMany, one user read (with subscriptions),
+// and one legacy-plan read. Per-key states are then derived in memory.
+async function resolveBatchedGates<K extends string>(
+  db: FeatureGateDb,
+  userId: string,
+  keys: readonly K[],
+): Promise<Record<K, FeatureGateState>> {
+  const [features, user] = await Promise.all([
+    db.feature.findMany({ where: { key: { in: [...keys] } } }),
+    db.user.findUnique({
+      where: { id: userId },
+      include: {
+        subscriptions: {
+          include: {
+            plan: {
+              include: {
+                featureTranslations: { include: { feature: { select: { key: true } } } },
+              },
+            },
+          },
+        },
+      },
     }),
-  );
-  return Object.fromEntries(entries) as Record<K, FeatureGateState>;
+  ]);
+  const activeKeys = new Set(features.filter((feature) => feature.active).map((feature) => feature.key));
+
+  if (!user || activeKeys.size === 0) {
+    return Object.fromEntries(keys.map((key) => [key, "coming-soon"])) as Record<K, FeatureGateState>;
+  }
+
+  const legacyPlans = typeof db.plan?.findMany === "function"
+    ? await loadLegacyPlanSource(db as unknown as PrismaClient | Prisma.TransactionClient)
+    : ({} as LegacyPlanSource);
+  const entitled = new Set(resolveEffectiveEntitlements(user as unknown as EntitlementUser, legacyPlans).featureKeys);
+
+  return Object.fromEntries(
+    keys.map((key) => [key, resolveFeatureGate({ active: activeKeys.has(key), entitled: entitled.has(key) })]),
+  ) as Record<K, FeatureGateState>;
 }
 
 export async function emitGateEvent(

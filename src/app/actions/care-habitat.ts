@@ -28,7 +28,8 @@ export async function upsertEnclosure(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'upsertenclosure', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('enclosure.manage', () => withMutation(formData, 'data', 'upsertenclosure', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -82,14 +83,15 @@ export async function upsertEnclosure(
       };
     }
 
-  });
+  }));
 }
 
 export async function logEnclosureMaintenance(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'logenclosuremaintenance', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('housekeeping.log', () => withMutation(formData, 'data', 'logenclosuremaintenance', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -127,7 +129,7 @@ export async function logEnclosureMaintenance(
       };
     }
 
-  });
+  }));
 }
 
 export async function addSpiderPhoto(

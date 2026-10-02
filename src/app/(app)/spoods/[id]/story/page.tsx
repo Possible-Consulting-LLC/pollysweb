@@ -3,14 +3,18 @@ import { SpoodImage } from "@/components/spoods/spood-image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActivityEditorRow } from "@/components/activity/activity-editor";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { PhotoOpenButton } from "@/components/spoods/photo-gallery";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatShortDate, formatDateTimeInZone, resolveDisplayTimeZone, toDateTimeLocalInputValue } from "@/lib/utils";
 import { getSpiderStory, getUserDefaults } from "@/lib/spiders";
+import { resolveUserGates } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { parseHydrationMethods } from "@/lib/utils";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
+
+const ACTIVITY_EDIT_KEYS = ["activity.edit", "activity.delete"] as const;
 
 type StoryEvent = {
   id: string;
@@ -51,10 +55,11 @@ export default async function StoryPage({
   const user = await requireUser();
   const { id } = await params;
   const { before } = await searchParams;
-  const [view, defaults, writeState] = await Promise.all([
+  const [view, defaults, writeState, gates] = await Promise.all([
     getSpiderStory(user.id!, id, before),
     getUserDefaults(user.id!),
     getSpiderWriteState(user.id!),
+    resolveUserGates(user.id, ACTIVITY_EDIT_KEYS),
   ]);
   if (!view) notFound();
   const { spider } = view;
@@ -250,6 +255,13 @@ export default async function StoryPage({
         </p>
       </div>
 
+      {writable ? (
+        <>
+          <FeatureGate state={gates["activity.edit"]} featureKey="activity.edit" name="Editing activity entries">{null}</FeatureGate>
+          <FeatureGate state={gates["activity.delete"]} featureKey="activity.delete" name="Deleting activity entries">{null}</FeatureGate>
+        </>
+      ) : null}
+
       <nav aria-label="Story pages" className="flex gap-4">
         {before ? <Link href={`/spoods/${spider.id}/story`} className="underline">Newest entries</Link> : null}
         {view.nextCursor ? <Link href={`/spoods/${spider.id}/story?before=${encodeURIComponent(view.nextCursor)}`} className="underline">Older entries</Link> : null}
@@ -307,6 +319,8 @@ export default async function StoryPage({
                         <ActivityEditorRow
                           compact
                           readOnly={!writable}
+                          allowEdit={gates["activity.edit"] === "entitled"}
+                          allowDelete={gates["activity.delete"] === "entitled"}
                           item={{
                             id: event.id,
                             type: event.kind as

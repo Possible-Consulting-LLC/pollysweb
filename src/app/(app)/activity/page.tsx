@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/layout/nav";
 import { ActivityEditorList } from "@/components/activity/activity-editor";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { EmptyState, SectionHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/field";
@@ -9,8 +10,11 @@ import {
 } from "@/lib/spiders";
 import { formatDateTimeInZone, resolveDisplayTimeZone } from "@/lib/utils";
 import { prisma } from "@/lib/db";
+import { resolveUserGates } from "@/lib/features/gate";
 import { requireUser } from "@/lib/session";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
+
+const ACTIVITY_FEATURE_KEYS = ["activity.full_history.view", "activity.edit", "activity.delete"] as const;
 
 export default async function ActivityPage({
   searchParams,
@@ -19,6 +23,15 @@ export default async function ActivityPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
+  const gates = await resolveUserGates(user.id, ACTIVITY_FEATURE_KEYS);
+  if (gates["activity.full_history.view"] !== "entitled") {
+    return (
+      <div className="space-y-6">
+        <AppHeader title="Recent Activity" subtitle="Feedings, molts, mistings and little moments." />
+        <FeatureGate state={gates["activity.full_history.view"]} featureKey="activity.full_history.view" name="Activity history">{null}</FeatureGate>
+      </div>
+    );
+  }
   const [spiders, activity, defaults, writeState] = await Promise.all([
     prisma.spider.findMany({ where: { userId: user.id! }, select: { id: true, name: true, memorializedAt: true }, orderBy: { name: "asc" } }),
     getRecentActivity(user.id!, {
@@ -66,6 +79,9 @@ export default async function ActivityPage({
         </div>
       </form>
 
+      <FeatureGate state={gates["activity.edit"]} featureKey="activity.edit" name="Editing activity entries">{null}</FeatureGate>
+      <FeatureGate state={gates["activity.delete"]} featureKey="activity.delete" name="Deleting activity entries">{null}</FeatureGate>
+
       <SectionHeader title={`${activity.length} moments`} />
 
       {activity.length === 0 ? (
@@ -75,6 +91,8 @@ export default async function ActivityPage({
         />
       ) : (
         <ActivityEditorList
+          allowEdit={gates["activity.edit"] === "entitled"}
+          allowDelete={gates["activity.delete"] === "entitled"}
           writableSpiderIds={writeState.proAccess ? spiders.map((spider) => spider.id) : writeState.firstSpiderId ? [writeState.firstSpiderId] : []}
           items={activity.map((item) => ({
             id: item.id,

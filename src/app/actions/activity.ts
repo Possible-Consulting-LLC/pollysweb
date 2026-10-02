@@ -117,7 +117,8 @@ export async function updateActivityAction(
   id: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'updateactivityaction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('activity.edit', () => withMutation(formData, 'data', 'updateactivityaction', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user?.id) return { ok: false, error: "Please sign in again." };
@@ -253,14 +254,15 @@ export async function updateActivityAction(
       };
     }
 
-  });
+  }));
 }
 
 export async function deleteActivityAction(
   type: ActivityType,
   id: string, submittedContext: string
 ): Promise<ActionResult> {
-  return withMutation(submittedContext, 'data', 'deleteactivityaction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('activity.delete', () => withMutation(submittedContext, 'data', 'deleteactivityaction', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user?.id) return { ok: false, error: "Please sign in again." };
@@ -332,5 +334,5 @@ export async function deleteActivityAction(
       };
     }
 
-  });
+  }));
 }

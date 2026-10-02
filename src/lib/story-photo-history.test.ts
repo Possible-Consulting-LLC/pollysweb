@@ -15,6 +15,8 @@ async function storyPage(profilePhoto: string) {
     "next/link": "a",
     "next/navigation": { notFound: () => { throw new Error("Not found"); } },
     "@/lib/session": { requireUser: async () => ({ id: "keeper" }) },
+    "@/lib/features/gate": { resolveUserGates: async (_userId: string, keys: string[]) => Object.fromEntries(keys.map(key => [key, "entitled"])) },
+    "@/components/features/feature-gate": { FeatureGate: "feature-gate" },
     "@/lib/constants": { observationLabel: (kind: string) => kind },
     "@/lib/utils": { ...utils, resolveDisplayTimeZone: async () => "UTC" },
     "@/lib/spider-write-policy": { getSpiderWriteState: async () => ({ proAccess: true }) },
