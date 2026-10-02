@@ -117,7 +117,7 @@ test('release toggle runs in the admin boundary and audits feature.release with 
   assert.deepEqual(f.audits, [{ action: 'feature.release', targetId: REGISTERED.id,
     reason: `Toggled feature ${REGISTERED.key} release`,
     changes: { featureKey: REGISTERED.key, previousActive: false, active: true } }]);
-  assert.deepEqual(f.revalidated, ['/admin/features']);
+  assert.deepEqual(f.revalidated, ['/admin/features', '/pricing']);
 });
 
 test('metadata save audits feature.metadata with featureKey and changed fields, never description text', async () => {
@@ -162,7 +162,7 @@ test('sync action delegates to the real registry sync inside the admin boundary'
   const f = fixture('super_admin');
   assert.deepEqual(jsonOf(await f.api.syncRegistryAction(new FormData())), { success: true });
   assert.deepEqual(f.syncCalls, [{ actorId: 'owner-1', reason: 'Sync the feature registry from code' }]);
-  assert.deepEqual(f.revalidated, ['/admin/features']);
+  assert.deepEqual(f.revalidated, ['/admin/features', '/pricing']);
   assert.equal(f.store.size, FEATURE_REGISTRY.length + 1);
   for (const definition of FEATURE_REGISTRY) assert.equal(f.store.get(definition.key)!.active, false, definition.key);
   assert.equal(f.store.get(ORPHANED.key)!.active, true);
@@ -184,7 +184,7 @@ test('bulk release audits one feature.release mutation per selected feature', as
   form.set('active', 'true');
   assert.deepEqual(jsonOf(await f.api.bulkSetFeatureReleaseAction(form)), { success: true });
   assert.deepEqual(f.mutations, ['admin:bulksetfeaturerelease']);
-  assert.deepEqual(f.revalidated, ['/admin/features']);
+  assert.deepEqual(f.revalidated, ['/admin/features', '/pricing']);
   assert.equal(f.audits.length, 2);
   const flip = f.audits.find(audit => audit.changes.featureKey === 'care.feed.log');
   assert.equal(flip!.action, 'feature.release');

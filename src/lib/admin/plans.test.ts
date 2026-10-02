@@ -514,7 +514,7 @@ test('a super administrator creates a plan through the mutation boundary and aud
   form.set('maxSpiders', '10'); form.set('active', 'true'); form.set('public', 'true');
   assert.deepEqual(jsonOf(await f.api.createPlanAction(form)), { success: true });
   assert.deepEqual(f.mutations, ['admin:createplan']);
-  assert.deepEqual(f.revalidated, ['/admin/plans']);
+  assert.deepEqual(f.revalidated, ['/admin/plans', '/pricing']);
   assert.equal(f.audits.length, 1);
   assert.equal(f.audits[0].action, 'plan.create');
   assert.equal(f.audits[0].reason, 'Created plan Deluxe (CUSTOM, public)');

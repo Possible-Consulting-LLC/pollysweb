@@ -305,7 +305,7 @@ test('a super administrator saves the matrix through the mutation boundary and a
   form.append('feature', 'spood.create'); form.append('feature', 'photo.upload');
   assert.deepEqual(jsonOf(await f.api.saveFeatureMatrixAction(form)), { success: true });
   assert.deepEqual(f.mutations, ['admin:savefeaturematrix']);
-  assert.deepEqual(f.revalidated, ['/admin/plans']);
+  assert.deepEqual(f.revalidated, ['/admin/plans', '/pricing']);
   assert.equal(f.audits.length, 1);
   assert.equal(f.audits[0].action, 'plan.features');
   assert.equal(f.audits[0].reason,
