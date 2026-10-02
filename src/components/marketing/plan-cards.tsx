@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Check, Crown, Leaf, Sprout, Star } from "lucide-react";
+import { ArrowRight, Check, Crown, Star } from "lucide-react";
+import { SpiderGlyph, SpiderWebGlyph } from "@/components/marketing/spider-glyph";
 import {
   annualFreeMonths,
   ctaForPlan,
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 type Interval = "monthly" | "yearly";
 
-const CARD_ICONS = [Leaf, Sprout, Crown, Star];
+const CARD_ICONS = [SpiderGlyph, SpiderWebGlyph, Crown, Star];
 
 function formatCents(cents: number): string {
   return (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
