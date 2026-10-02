@@ -25,7 +25,17 @@ import { configuredSocialProviders, type SocialProviderId } from "@/lib/social-a
 import { socialErrorMessage } from "@/lib/social-error";
 import { EmailVerificationNotice } from "@/components/auth/email-verification-notice";
 import { EmailChangeForm } from "@/components/settings/email-change-form";
+import { FeatureGate } from "@/components/features/feature-gate";
+import { resolveUserGates } from "@/lib/features/gate";
 import { legacyVerificationDeadline } from "@/lib/email-verification";
+
+const SETTINGS_FEATURE_KEYS = [
+  "settings.profile.manage",
+  "settings.theme.customize",
+  "settings.password.change",
+  "settings.email.change",
+  "settings.social.link",
+] as const;
 
 export default async function SettingsPage({
   searchParams,
@@ -35,11 +45,12 @@ export default async function SettingsPage({
   const { user, identity } = await requireUserContext();
   const testingAs = Boolean(identity.testSessionId);
   const adminAccess = await requireAdminActor('admin').then(() => true).catch(() => false);
-  const [defaults, billing, account, linkedAccounts] = await Promise.all([
+  const [defaults, billing, account, linkedAccounts, gates] = await Promise.all([
     getUserDefaults(user.id!),
     getBillingProfile(user.id!),
     prisma.user.findUnique({ where: { id: user.id! }, select: { passwordHash: true, emailVerified: true } }),
     prisma.account.findMany({ where: { userId: user.id! }, select: { provider: true } }),
+    resolveUserGates(user.id, SETTINGS_FEATURE_KEYS),
   ]);
   const params = searchParams ? await searchParams : {};
   const saved = params.saved === "1";
@@ -54,6 +65,12 @@ export default async function SettingsPage({
     : params.error === "invalid-settings"
       ? "Use a display name under 120 characters and reminder intervals from 1 to 365 whole days."
       : null;
+  const profileEntitled = gates["settings.profile.manage"] === "entitled";
+  const themeControl = (
+    <FeatureGate state={gates["settings.theme.customize"]} featureKey="settings.theme.customize" name="Customizing the theme">
+      <ThemeToggle key={theme} theme={theme} action={updateThemeAction} />
+    </FeatureGate>
+  );
   const now = new Date();
   const verificationDeadline = account
     ? legacyVerificationDeadline(account, now, process.env.PASSWORD_EMAIL_VERIFICATION_GRACE_START)
@@ -97,6 +114,7 @@ export default async function SettingsPage({
             Settings saved.
           </p>
         ) : null}
+        <FeatureGate state={gates["settings.profile.manage"]} featureKey="settings.profile.manage" name="Managing your profile">
         <MutationForm action={updateSettingsAction} className="space-y-4"><MutationContextInput />
           <Field label="Display name" htmlFor="name">
             <Input id="name" name="name" maxLength={120} defaultValue={defaults.name ?? ""} />
@@ -125,24 +143,28 @@ export default async function SettingsPage({
             </Field>
           </div>
           <TimezoneSelect defaultValue={defaults.timezone} />
-          <ThemeToggle key={theme} theme={theme} action={updateThemeAction} />
+          {themeControl}
 
           <Button type="submit" className="w-full">
             Save settings
           </Button>
         </MutationForm>
+        </FeatureGate>
+        {profileEntitled ? null : themeControl}
       </Card>
 
       {!testingAs ? <>
       <Card className="space-y-3">
         <SectionHeader title="Change email" subtitle="Confirm a new address before it becomes your login email." />
-        <EmailChangeForm
-          currentEmail={defaults.email}
-          hasPassword={Boolean(account?.passwordHash)}
-          linkedProviders={linkedAccounts.map((linked) => linked.provider).filter((provider): provider is SocialProviderId =>
-            provider === "google" || provider === "apple" || provider === "facebook")}
-          recentlyAuthenticated={typeof user.emailChangeReauthAt === "number" && user.emailChangeReauthAt <= now.getTime() && now.getTime() - user.emailChangeReauthAt <= 5 * 60_000}
-        />
+        <FeatureGate state={gates["settings.email.change"]} featureKey="settings.email.change" name="Changing your email">
+          <EmailChangeForm
+            currentEmail={defaults.email}
+            hasPassword={Boolean(account?.passwordHash)}
+            linkedProviders={linkedAccounts.map((linked) => linked.provider).filter((provider): provider is SocialProviderId =>
+              provider === "google" || provider === "apple" || provider === "facebook")}
+            recentlyAuthenticated={typeof user.emailChangeReauthAt === "number" && user.emailChangeReauthAt <= now.getTime() && now.getTime() - user.emailChangeReauthAt <= 5 * 60_000}
+          />
+        </FeatureGate>
       </Card>
 
       <Card className="space-y-3">
@@ -156,6 +178,7 @@ export default async function SettingsPage({
         <p className="text-sm text-[var(--midnight)]/75">
           {account?.passwordHash ? "Email and password are available." : "This account uses a connected provider to sign in."}
         </p>
+        <FeatureGate state={gates["settings.social.link"]} featureKey="settings.social.link" name="Linking sign-in methods">
         {linkedAccounts.length > 0 ? (
           <ul className="space-y-1 text-sm text-[var(--midnight)]/85">
             {linkedAccounts.map((linked) => (
@@ -173,6 +196,7 @@ export default async function SettingsPage({
           </ul>
         ) : null}
         <SocialButtons providers={connectableProviders} mode="link" action={linkSocialProvider} />
+        </FeatureGate>
         <p className="text-sm text-[var(--midnight)]/75">Disconnecting removes the sign-in link in Polly&apos;s Web. You can also revoke consent in your Google or Facebook account settings. For Facebook-provided data removal, see <Link href="/legal/data-deletion" className="underline">data deletion</Link>.</p>
       </Card>
 
@@ -180,7 +204,9 @@ export default async function SettingsPage({
         {account?.passwordHash ? (
           <>
             <SectionHeader title="Password" subtitle="Choose a new password for this account." />
-            <PasswordForm />
+            <FeatureGate state={gates["settings.password.change"]} featureKey="settings.password.change" name="Changing your password">
+              <PasswordForm />
+            </FeatureGate>
           </>
         ) : (
           <>

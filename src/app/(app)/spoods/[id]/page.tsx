@@ -34,6 +34,13 @@ const PHOTO_FEATURE_KEYS = [
 
 const HABITAT_FEATURE_KEYS = ["enclosure.view", "enclosure.manage", "housekeeping.log"] as const;
 
+const SPOOD_FEATURE_KEYS = [
+  "spood.about.view",
+  "spood.about.edit",
+  "spood.memorialize",
+  "spood.memorial.restore",
+] as const;
+
 export default async function SpiderProfilePage({
   params,
   searchParams,
@@ -42,7 +49,7 @@ export default async function SpiderProfilePage({
   searchParams: Promise<{ photo?: string }>;
 }) {
   const user = await requireUser();
-  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...PHOTO_FEATURE_KEYS, ...HABITAT_FEATURE_KEYS]);
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...PHOTO_FEATURE_KEYS, ...HABITAT_FEATURE_KEYS, ...SPOOD_FEATURE_KEYS]);
   const { id } = await params;
   const { photo: photoFlag } = await searchParams;
   const [view, writeState, gates] = await Promise.all([
@@ -56,13 +63,16 @@ export default async function SpiderProfilePage({
 
   const { spider, careStatus } = view;
   const memorialized = Boolean(spider.memorializedAt);
-  const subtitle = [
-    spider.sex,
-    spider.commonName || spider.species,
-    spider.instar,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const aboutVisible = gates["spood.about.view"] === "entitled";
+  const subtitle = aboutVisible
+    ? [
+        spider.sex,
+        spider.commonName || spider.species,
+        spider.instar,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <div className="space-y-6">
@@ -102,7 +112,7 @@ export default async function SpiderProfilePage({
             <h1 className="mt-1 font-[family-name:var(--font-display)] text-3xl leading-none [overflow-wrap:anywhere]">
               {spider.name}
             </h1>
-            <p className="mt-2 text-sm text-[var(--on-panel)]/70 [overflow-wrap:anywhere]">{subtitle}</p>
+            {aboutVisible ? <p className="mt-2 text-sm text-[var(--on-panel)]/70 [overflow-wrap:anywhere]">{subtitle}</p> : null}
           </div>
           <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap content-center items-start gap-2 sm:row-start-2 sm:mt-3 sm:content-start">
             <StatusPill status={memorialized ? "In memory" : careStatus} />
@@ -119,7 +129,7 @@ export default async function SpiderProfilePage({
       {memorialized ? (
         <Card className="space-y-2">
           <SectionHeader title="Memorial" />
-          {writable ? <MemorialPanel
+          {writable && gates["spood.memorial.restore"] === "entitled" ? <MemorialPanel
             spiderId={spider.id}
             spiderName={spider.name}
             memorialized
@@ -130,6 +140,9 @@ export default async function SpiderProfilePage({
           /> : (
             <p className="text-sm text-[var(--midnight)]/75">{spider.memorialNote || "Their story remains here."}</p>
           )}
+          {writable ? (
+            <FeatureGate state={gates["spood.memorial.restore"]} featureKey="spood.memorial.restore" name="Restoring a memorial">{null}</FeatureGate>
+          ) : null}
         </Card>
       ) : null}
 
@@ -228,7 +241,8 @@ export default async function SpiderProfilePage({
         subtitle="Name, species, dates, and notes"
         defaultOpen={false}
       >
-        {writable ? <AboutForm
+        <FeatureGate state={gates["spood.about.view"]} featureKey="spood.about.view" name="Spood profile">
+        {writable && gates["spood.about.edit"] === "entitled" ? <AboutForm
           spiderId={spider.id}
           about={{
             name: spider.name,
@@ -253,6 +267,10 @@ export default async function SpiderProfilePage({
             <div><dt className="text-[var(--midnight)]/60">Notes</dt><dd>{spider.notes || "—"}</dd></div>
           </dl>
         )}
+        {writable ? (
+          <FeatureGate state={gates["spood.about.edit"]} featureKey="spood.about.edit" name="Editing the spood profile">{null}</FeatureGate>
+        ) : null}
+        </FeatureGate>
       </DisclosureCard>
 
       {!memorialized && writable ? (
@@ -368,13 +386,15 @@ export default async function SpiderProfilePage({
           subtitle="Keep their story without using a free plan slot"
           defaultOpen={false}
         >
-          <MemorialPanel
-            spiderId={spider.id}
-            spiderName={spider.name}
-            memorialized={false}
-            passedOn={null}
-            memorialNote={null}
-          />
+          <FeatureGate state={gates["spood.memorialize"]} featureKey="spood.memorialize" name="Memorializing a spood">
+            <MemorialPanel
+              spiderId={spider.id}
+              spiderName={spider.name}
+              memorialized={false}
+              passedOn={null}
+              memorialNote={null}
+            />
+          </FeatureGate>
         </DisclosureCard>
       ) : null}
     </div>

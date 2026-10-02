@@ -117,6 +117,7 @@ async function fixture(passwordHash: string | null = null, email = "keeper@examp
     "@/lib/utils": {}, "next-auth": { AuthError: Error }, "next/navigation": {},
     "@/lib/registration-validation": {}, "@/lib/auth": {}, "@/lib/db": { prisma },
     "@/lib/session": { getActionUser: async () => ({ id: keeper.id }) },
+    "@/lib/features/gate": { withFeatureGate: async (_key: string, work: () => Promise<unknown>) => work() },
     "@/lib/constants": {}, "@/lib/uploads": {}, "@/lib/spider-slots": {},
     "@/lib/write-validation": {}, "next/cache": {},
     "next/dist/client/components/redirect-error": {},

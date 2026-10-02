@@ -18,6 +18,7 @@ function actions(passwordHash: string | null, reauthAt?: number, oldAddressAllow
       if(name==='@/lib/admin/maintenance-policy') return maintenancePolicy;
       if (name === "@/lib/mutation-boundary") return { withMutation: async (_context: unknown, _kind: unknown, _action: unknown, work: () => Promise<unknown>) => work() };
       if (name === "zod") return { z };
+      if (name === "@/lib/features/gate") return { withFeatureGate: async (_key: string, work: () => Promise<unknown>) => work() };
       if (name === "@/lib/session") return { getActionUser: async () => ({ id: "keeper-1", emailChangeReauthAt: reauthAt }) };
       if (name === "@/lib/db") return { prisma: { user: { findUnique: async () => ({ email: "old@example.test", passwordHash, emailVerified: new Date() }) } } };
       if (name === "@/lib/password-policy") return { verifyPassword: async (value: string) => value === "current-password" };

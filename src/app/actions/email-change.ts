@@ -16,7 +16,8 @@ const emailSchema = z.email().max(254);
 const SOCIAL_REAUTH_MS = 5 * 60_000;
 
 export async function requestEmailChangeAction(_prev: { error?: string; success?: string; } | undefined, formData: FormData): Promise<{ error?: string; success?: string; }> {
-  return withMutation(formData, 'identity', 'requestemailchangeaction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.email.change', () => withMutation(formData, 'identity', 'requestemailchangeaction', async () => {
     void _prev;
     const session = await getActionUser();
     if (!session?.id) return { error: "Please sign in again." };
@@ -50,7 +51,7 @@ export async function requestEmailChangeAction(_prev: { error?: string; success?
       return { error: "Couldn’t send the confirmation link right now. Please try again later." };
     }
 
-  });
+  }));
 }
 
 export async function confirmEmailChangeAction(_prev: { error?: string; } | undefined, formData: FormData) {

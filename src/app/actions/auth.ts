@@ -238,7 +238,9 @@ export async function createSpiderAction(
     const file = formData.get("photo");
     let photoSkipped = false;
     if (file instanceof File && file.size > 0) {
-      const saved = await saveImageUpload(file, user.id);
+      const { resolveUserFeatureGate } = await import("@/lib/features/gate");
+      const uploadAllowed = await resolveUserFeatureGate(userId, "photo.upload") === "entitled";
+      const saved = uploadAllowed ? await saveImageUpload(file, user.id) : { error: "Photo uploads are not part of your plan." };
       if ("error" in saved) {
         // Still create the spood — don't block the whole welcome on Storage hiccups.
         console.warn("[createSpider] photo upload failed; using default portrait", saved.error);
@@ -322,7 +324,8 @@ export async function createSpiderAction(
 }
 
 export async function updateSettingsAction(formData: FormData) {
-  return withMutation(formData, 'data', 'updatesettingsaction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.profile.manage', () => withMutation(formData, 'data', 'updatesettingsaction', async () => {
     const user = await requireUser();
     if (!await allowAction("care", user.id!)) redirect("/settings?error=rate-limit");
     const { normalizeTimeZone } = await import("@/lib/utils");
@@ -355,11 +358,12 @@ export async function updateSettingsAction(formData: FormData) {
     await recordMutationSuccess("updatesettingsaction");
     redirect("/settings?saved=1");
 
-  });
+  }));
 }
 
 export async function updateThemeAction(formData: FormData) {
-  return withMutation(formData, "data", "updatethemeaction", async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.theme.customize', () => withMutation(formData, "data", "updatethemeaction", async () => {
     const user = await requireUser();
     if (!await allowAction("care", user.id!)) {
       return { error: "Too many changes right now. Please try again later." };
@@ -380,14 +384,15 @@ export async function updateThemeAction(formData: FormData) {
     revalidatePath("/settings");
     await recordMutationSuccess("updatethemeaction");
     return { ok: true as const };
-  });
+  }));
 }
 
 export async function updatePasswordAction(
   _prev: { error?: string; success?: string; } | undefined,
   formData: FormData,
 ): Promise<{ error?: string; success?: string; }> {
-  return withMutation(formData, 'identity', 'updatepasswordaction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.password.change', () => withMutation(formData, 'identity', 'updatepasswordaction', async () => {
     const user = await getActionUser();
     if (!user?.id) return { error: "Please sign in again." };
 
@@ -430,5 +435,5 @@ export async function updatePasswordAction(
       return { error: "Couldn’t update your password. Try again." };
     }
 
-  });
+  }));
 }

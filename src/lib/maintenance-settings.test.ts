@@ -40,6 +40,7 @@ function fixture() {
     '@/lib/admin/maintenance-access': {}, '@/lib/mutation-boundary': boundary, '@/lib/rate-limit': {}, '@/lib/password-policy': {},
     '@/lib/utils': {}, 'next-auth': {}, 'next/navigation': navigation, '@/lib/registration-validation': {}, '@/lib/auth': {}, '@/lib/db': {},
     '@/lib/session': session, '@/lib/constants': {}, '@/lib/uploads': {}, '@/lib/spider-slots': {}, '@/lib/write-validation': {},
+    '@/lib/features/gate': { withFeatureGate: async (_key: string, work: () => Promise<unknown>) => work() },
     'next/cache': {}, 'next/dist/client/components/redirect-error': {}, zod: { z }, '@/lib/email-delivery': {}, '@/lib/email-challenge': {},
   });
   return { actions, session, redirects, writes: () => writes, close: () => { active = true; }, identity, Redirect };

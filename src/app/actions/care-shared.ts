@@ -61,6 +61,10 @@ export async function rememberUserTimeZone(
   });
   if (!user || normalizeTimeZone(user.timezone)) return;
 
+  // Persisting the zone is a profile preference; a log from a non-entitled user still works from the form zone.
+  const { resolveUserFeatureGate } = await import("@/lib/features/gate");
+  if (await resolveUserFeatureGate(userId, "settings.profile.manage") !== "entitled") return;
+
   await maintenanceTransaction(tx => tx.user.update({
     where: { id: userId },
     data: { timezone: fromForm },

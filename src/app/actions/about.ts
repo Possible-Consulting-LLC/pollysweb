@@ -18,7 +18,8 @@ export async function updateSpiderAbout(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'updatespiderabout', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('spood.about.edit', () => withMutation(formData, 'data', 'updatespiderabout', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -72,5 +73,5 @@ export async function updateSpiderAbout(
       };
     }
 
-  });
+  }));
 }

@@ -12,11 +12,12 @@ import { LifeStageField } from "@/components/spoods/life-stage-field";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ENCLOSURE_TYPES, SEX_OPTIONS } from "@/lib/constants";
+import type { FeatureGateState } from "@/lib/features/gate";
 import { localTodayInputValue } from "@/lib/utils";
 
 import { getPhotoSizeError } from "@/lib/upload-limits";
 
-export function AddSpoodForm() {
+export function AddSpoodForm({ photoUploadGate }: { photoUploadGate: FeatureGateState }) {
   const router = useRouter();
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
@@ -47,7 +48,7 @@ export function AddSpoodForm() {
         <Input id="name" name="name" required placeholder="Star" />
       </Field>
 
-      <SpoodAvatarPicker onSelectionChange={() => setPhotoError(null)} />
+      <SpoodAvatarPicker uploadGate={photoUploadGate} onSelectionChange={() => setPhotoError(null)} />
 
       <SpeciesFields />
       <div className="grid gap-3 sm:grid-cols-2">

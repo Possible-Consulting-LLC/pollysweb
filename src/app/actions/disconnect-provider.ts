@@ -13,7 +13,8 @@ import { disconnectProvider, DisconnectError } from '@/lib/social-disconnect';
 import { redirect } from 'next/navigation';
 
 export async function disconnectProviderAction(_previous: { error?: string; } | undefined, formData: FormData): Promise<{ error?: string; }> {
-  return withMutation(formData, 'identity', 'disconnectprovideraction', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.social.link', () => withMutation(formData, 'identity', 'disconnectprovideraction', async () => {
     const session = await getActionUser();
     if (!session?.id || !session.credentialVersion) return { error: 'Please sign in again.' };
     const provider = formData.get('provider');
@@ -38,5 +39,5 @@ export async function disconnectProviderAction(_previous: { error?: string; } | 
     await signOut({ redirect: false });
     redirect('/login?methodDisconnected=1');
 
-  });
+  }));
 }

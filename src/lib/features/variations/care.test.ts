@@ -455,6 +455,7 @@ function loadSpoodsListPage(states: Record<string, FeatureGateState>) {
     "react/jsx-runtime": jsx,
     "next/link": CARD_STUBS["next/link"],
     "@/components/layout/nav": { AppHeader: () => el("h1") },
+    "@/components/features/feature-gate": { FeatureGate },
     "@/components/spoods/spood-card": { ...loadSpoodCard(), SpoodIdentity: () => el("div") },
     "@/components/spoods/spood-search": { SpoodSearch: () => el("input") },
     "@/components/spoods/spood-accordion": {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/layout/nav";
 import { CARE_FEATURE_KEYS, SpoodCareDetails, SpoodIdentity } from "@/components/spoods/spood-card";
+import { FeatureGate } from "@/components/features/feature-gate";
 import { SpoodSearch } from "@/components/spoods/spood-search";
 import { SpoodAccordion } from "@/components/spoods/spood-accordion";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,20 +13,32 @@ import { requireUser } from "@/lib/session";
 import { PREMOLT_STATUSES, SEX_OPTIONS } from "@/lib/constants";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
+const SPOOD_LIST_FEATURE_KEYS = ["spood.list.view", "spood.about.view", "housekeeping.log"] as const;
+
 export default async function SpoodsPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; status?: string; sex?: string }>;
 }) {
   const user = await requireUser();
-  const careGatesPromise = resolveUserGates(user.id, CARE_FEATURE_KEYS);
+  const gatesPromise = resolveUserGates(user.id, [...CARE_FEATURE_KEYS, ...SPOOD_LIST_FEATURE_KEYS]);
   const params = await searchParams;
+  const gates = await gatesPromise;
+  if (gates["spood.list.view"] !== "entitled") {
+    return (
+      <div className="space-y-6">
+        <AppHeader title="My Spoods" subtitle="Everyone in your little web." />
+        <FeatureGate state={gates["spood.list.view"]} featureKey="spood.list.view" name="Your spood collection">{null}</FeatureGate>
+      </div>
+    );
+  }
   const hasFilters = Boolean(params.q || params.status || params.sex);
-  const [views, allViews, writeState, careGates] = await Promise.all([
+  const careGates = gates;
+  const aboutVisible = gates["spood.about.view"] === "entitled";
+  const [views, allViews, writeState] = await Promise.all([
     listSpidersForUser(user.id!, { q: params.q, status: params.status, sex: params.sex }),
     hasFilters ? listSpidersForUser(user.id!) : Promise.resolve(null),
     getSpiderWriteState(user.id!),
-    careGatesPromise,
   ]);
   const collection = allViews ?? views;
   const activeCount = collection.filter((v) => !v.spider.memorializedAt).length;
@@ -66,6 +79,8 @@ export default async function SpoodsPage({
         </div>
       </form>
 
+      <FeatureGate state={gates["spood.about.view"]} featureKey="spood.about.view" name="Spood profile details">{null}</FeatureGate>
+
       <SectionHeader
         title={`${activeCount} active`}
         subtitle={
@@ -97,6 +112,7 @@ export default async function SpoodsPage({
                   view={view}
                   linkName={false}
                   readOnly={readOnly}
+                  showProfileDetails={aboutVisible}
                 />
               ),
               content: (

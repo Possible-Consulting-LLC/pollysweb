@@ -25,12 +25,18 @@ export const CARE_FEATURE_KEYS = [
 export type CareFeatureKey = (typeof CARE_FEATURE_KEYS)[number];
 export type CareGates = Record<CareFeatureKey, FeatureGateState>;
 
-const GATED_QUICK_ACTIONS: Partial<Record<QuickLogAction, { key: CareFeatureKey; name: string }>> = {
+// Housekeeping is a habitat feature that shares the quick-log row. Pages that show every quick action
+// pass its state; callers that omit it (the home card never offers housekeeping) leave the button open.
+export type QuickLogGates = CareGates & { "housekeeping.log"?: FeatureGateState };
+type QuickLogGateKey = CareFeatureKey | "housekeeping.log";
+
+const GATED_QUICK_ACTIONS: Partial<Record<QuickLogAction, { key: QuickLogGateKey; name: string }>> = {
   feed: { key: "care.feed.log", name: "Logging feedings" },
   hydrate: { key: "care.hydrate.log", name: "Logging hydration" },
   molt: { key: "care.molt.log", name: "Logging molts" },
   note: { key: "care.observe.log", name: "Logging observations" },
   play: { key: "care.play.log", name: "Logging play" },
+  housekeeping: { key: "housekeeping.log", name: "Logging housekeeping" },
 };
 
 const ALL_QUICK_ACTIONS: readonly QuickLogAction[] = ["feed", "hydrate", "molt", "note", "play", "housekeeping"];
@@ -39,21 +45,23 @@ export function GatedQuickLogButtons({
   gates,
   actions = ALL_QUICK_ACTIONS,
   ...props
-}: ComponentProps<typeof QuickLogButtons> & { gates: CareGates }): ReactNode {
+}: ComponentProps<typeof QuickLogButtons> & { gates: QuickLogGates }): ReactNode {
+  const stateFor = (key: QuickLogGateKey): FeatureGateState =>
+    key === "housekeeping.log" ? (gates[key] ?? "entitled") : gates[key];
   const open = actions.filter((action) => {
     const gated = GATED_QUICK_ACTIONS[action];
-    return !gated || gates[gated.key] === "entitled";
+    return !gated || stateFor(gated.key) === "entitled";
   });
   const locked = actions.flatMap((action) => {
     const gated = GATED_QUICK_ACTIONS[action];
-    return gated && gates[gated.key] !== "entitled" ? [gated] : [];
+    return gated && stateFor(gated.key) !== "entitled" ? [gated] : [];
   });
 
   return (
     <>
       {open.length ? <QuickLogButtons {...props} actions={open} /> : null}
       {locked.map(({ key, name }) => (
-        <FeatureGate key={key} state={gates[key]} featureKey={key} name={name}>
+        <FeatureGate key={key} state={stateFor(key)} featureKey={key} name={name}>
           {null}
         </FeatureGate>
       ))}
@@ -66,17 +74,19 @@ export function SpoodIdentity({
   linkName = true,
   readOnly = false,
   showCareCopy = true,
+  showProfileDetails = true,
 }: {
   view: SpiderCareView;
   linkName?: boolean;
   readOnly?: boolean;
   showCareCopy?: boolean;
+  showProfileDetails?: boolean;
 }): ReactNode {
   const { spider, careStatus } = view;
   const memorialized = Boolean(spider.memorializedAt);
-  const subtitle = [spider.sex, spider.commonName || spider.species, spider.instar]
-    .filter(Boolean)
-    .join(" · ");
+  const subtitle = showProfileDetails
+    ? [spider.sex, spider.commonName || spider.species, spider.instar].filter(Boolean).join(" · ")
+    : "";
   const name = (
     <span className="[overflow-wrap:anywhere] font-[family-name:var(--font-display)] text-xl text-[var(--midnight)]">
       {spider.name}
@@ -110,7 +120,7 @@ export function SpoodIdentity({
             {name}
           </Link>
         ) : name}
-        <p className="[overflow-wrap:anywhere] text-sm text-[var(--midnight)]/60">{subtitle}</p>
+        {showProfileDetails ? <p className="[overflow-wrap:anywhere] text-sm text-[var(--midnight)]/60">{subtitle}</p> : null}
         <div className="mt-2 flex flex-wrap gap-1.5">
           <StatusPill status={memorialized ? "In memory" : careStatus} />
           {!memorialized && view.mistDue && careStatus !== "Mist today" ? (
@@ -151,7 +161,7 @@ export function SpoodCareDetails({
   actions,
 }: {
   view: SpiderCareView;
-  gates: CareGates;
+  gates: QuickLogGates;
   readOnly?: boolean;
   showProfileLink?: boolean;
   showQuickActions?: boolean;

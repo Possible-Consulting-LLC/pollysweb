@@ -304,7 +304,8 @@ export async function memorializeSpider(
   spiderId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withMutation(formData, 'data', 'memorializespider', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('spood.memorialize', () => withMutation(formData, 'data', 'memorializespider', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -347,13 +348,14 @@ export async function memorializeSpider(
       };
     }
 
-  });
+  }));
 }
 
 export async function restoreMemorializedSpider(
   spiderId: string, submittedContext: string
 ): Promise<ActionResult> {
-  return withMutation(submittedContext, 'data', 'restorememorializedspider', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('spood.memorial.restore', () => withMutation(submittedContext, 'data', 'restorememorializedspider', async () => {
     try {
       const user = await getCareWriteUser();
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -395,5 +397,5 @@ export async function restoreMemorializedSpider(
       };
     }
 
-  });
+  }));
 }

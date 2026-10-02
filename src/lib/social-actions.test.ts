@@ -24,6 +24,7 @@ function socialActions(session: { id?: string } | null) {
     process: { env: { AUTH_GOOGLE_ID: "client", AUTH_GOOGLE_SECRET: "secret" } },
     require: (id: string) => {
       if (id === "@/lib/mutation-boundary") return { withMutation: async (_context: unknown, _kind: unknown, _action: unknown, work: () => Promise<unknown>) => work() };
+      if (id === "@/lib/features/gate") return { withFeatureGate: async (_key: string, work: () => Promise<unknown>) => work() };
       if (id === "@/lib/admin/reauth-store") return { clearAdminSocialChallenge: async () => { authOrder.push("clearChallenge"); } };
       if (id === "@/lib/social-auth") return { configuredSocialProviders };
       if (id === "@/lib/auth") return {

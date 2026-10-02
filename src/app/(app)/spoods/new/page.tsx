@@ -4,14 +4,17 @@ import { AddSpoodForm } from "@/components/spoods/add-spood-form";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FeatureGate } from "@/components/features/feature-gate";
-import { resolveUserFeatureGate } from "@/lib/features/gate";
+import { resolveUserFeatureGate, resolveUserGates } from "@/lib/features/gate";
 import { FREE_SPIDER_LIMIT, PLAN_PRICES } from "@/lib/billing";
 import { getBillingProfile } from "@/lib/stripe";
 import { requireUser } from "@/lib/session";
 
 export default async function AddSpoodPage() {
   const user = await requireUser();
-  const gateState = user.id ? await resolveUserFeatureGate(user.id, "spood.create") : "upsell";
+  const [gateState, uploadGates] = await Promise.all([
+    user.id ? resolveUserFeatureGate(user.id, "spood.create") : ("upsell" as const),
+    resolveUserGates(user.id, ["photo.upload"]),
+  ]);
   const billing = gateState === "entitled" ? await getBillingProfile(user.id!) : null;
 
   return (
@@ -24,7 +27,7 @@ export default async function AddSpoodPage() {
       <FeatureGate state={gateState} featureKey="spood.create" name="Adding a Spood">
         {billing?.canAddSpider ? (
           <Card>
-            <AddSpoodForm />
+            <AddSpoodForm photoUploadGate={uploadGates["photo.upload"]} />
           </Card>
         ) : billing ? (
           <Card className="space-y-4">

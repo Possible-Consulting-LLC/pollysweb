@@ -14,7 +14,7 @@ import { requireUser } from "@/lib/session";
 import { parseHydrationMethods } from "@/lib/utils";
 import { getSpiderWriteState } from "@/lib/spider-write-policy";
 
-const ACTIVITY_EDIT_KEYS = ["activity.edit", "activity.delete"] as const;
+const STORY_FEATURE_KEYS = ["spood.story.view", "photo.gallery.view", "activity.edit", "activity.delete"] as const;
 
 type StoryEvent = {
   id: string;
@@ -53,13 +53,21 @@ export default async function StoryPage({
   searchParams: Promise<{ before?: string }>;
 }) {
   const user = await requireUser();
+  const gates = await resolveUserGates(user.id, STORY_FEATURE_KEYS);
+  if (gates["spood.story.view"] !== "entitled") {
+    return (
+      <div className="space-y-6">
+        <FeatureGate state={gates["spood.story.view"]} featureKey="spood.story.view" name="The spood story">{null}</FeatureGate>
+        <Link href="/spoods" className={buttonVariants({ variant: "soft", size: "sm" })}>My Spoods</Link>
+      </div>
+    );
+  }
   const { id } = await params;
   const { before } = await searchParams;
-  const [view, defaults, writeState, gates] = await Promise.all([
+  const [view, defaults, writeState] = await Promise.all([
     getSpiderStory(user.id!, id, before),
     getUserDefaults(user.id!),
     getSpiderWriteState(user.id!),
-    resolveUserGates(user.id, ACTIVITY_EDIT_KEYS),
   ]);
   if (!view) notFound();
   const { spider } = view;
@@ -223,6 +231,7 @@ export default async function StoryPage({
   }
 
   events.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const galleryAllowed = gates["photo.gallery.view"] === "entitled";
 
   const galleryPhotos = events
     .filter((event) => event.photo)
@@ -262,6 +271,10 @@ export default async function StoryPage({
         </>
       ) : null}
 
+      {!galleryAllowed ? (
+        <FeatureGate state={gates["photo.gallery.view"]} featureKey="photo.gallery.view" name="Photo gallery">{null}</FeatureGate>
+      ) : null}
+
       <nav aria-label="Story pages" className="flex gap-4">
         {before ? <Link href={`/spoods/${spider.id}/story`} className="underline">Newest entries</Link> : null}
         {view.nextCursor ? <Link href={`/spoods/${spider.id}/story?before=${encodeURIComponent(view.nextCursor)}`} className="underline">Older entries</Link> : null}
@@ -291,7 +304,7 @@ export default async function StoryPage({
                 </div>
                 <Card className="flex-1 !p-3">
                   <div className="flex gap-3">
-                    {event.photo ? (
+                    {event.photo && galleryAllowed ? (
                       <PhotoOpenButton
                         photos={galleryPhotos}
                         index={Math.max(

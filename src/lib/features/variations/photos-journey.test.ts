@@ -724,6 +724,7 @@ test("spoods list page starts gate resolution before search params resolve (no w
     "react/jsx-runtime": jsx,
     "next/link": ({ href, children }: { href: string; children?: unknown }) => jsx.jsx("a", { href, children }),
     "@/components/layout/nav": { AppHeader: () => el("h1") },
+    "@/components/features/feature-gate": { FeatureGate },
     "@/components/spoods/spood-card": { CARE_FEATURE_KEYS: CARE_KEYS, SpoodCareDetails: () => null, SpoodIdentity: () => null },
     "@/components/spoods/spood-search": { SpoodSearch: () => el("input") },
     "@/components/spoods/spood-accordion": { SpoodAccordion: () => el("div") },
@@ -744,7 +745,7 @@ test("spoods list page starts gate resolution before search params resolve (no w
   const started = capture.allGateCalls.length;
   release({});
   await rendered;
-  assert.equal(started, CARE_KEYS.length);
+  assert.ok(started >= CARE_KEYS.length);
 });
 
 // ---------------------------------------------------------------- celebration payload suppression

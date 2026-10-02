@@ -6,10 +6,18 @@ import {
   DEFAULT_SPOOOD_AVATARS,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { FeatureGate } from "@/components/features/feature-gate";
+import type { FeatureGateState } from "@/lib/features/gate";
 import { PHOTO_HELP } from "@/lib/prepare-photo";
 import { PreparedPhotoInput } from "./prepared-photo-input";
 
-export function SpoodAvatarPicker({ onSelectionChange }: { onSelectionChange?: () => void }) {
+export function SpoodAvatarPicker({
+  onSelectionChange,
+  uploadGate,
+}: {
+  onSelectionChange?: () => void;
+  uploadGate: FeatureGateState;
+}) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<string>(DEFAULT_SPOOOD_AVATAR_SRC);
@@ -41,7 +49,7 @@ export function SpoodAvatarPicker({ onSelectionChange }: { onSelectionChange?: (
       <div>
         <p className="text-sm font-semibold text-[var(--midnight)]">Photo</p>
         <p className="mt-0.5 text-xs text-[var(--midnight)]/55">
-          Pick a default portrait or upload your own. {PHOTO_HELP}
+          {uploadGate === "entitled" ? <>Pick a default portrait or upload your own. {PHOTO_HELP}</> : "Pick a default portrait."}
         </p>
       </div>
 
@@ -90,6 +98,7 @@ export function SpoodAvatarPicker({ onSelectionChange }: { onSelectionChange?: (
         })}
       </div>
 
+      <FeatureGate state={uploadGate} featureKey="photo.upload" name="Photo uploads">
       <div className="flex flex-wrap items-center gap-2">
         <label
           htmlFor={inputId}
@@ -120,6 +129,7 @@ export function SpoodAvatarPicker({ onSelectionChange }: { onSelectionChange?: (
           </button>
         </div>
       ) : null}
+      </FeatureGate>
     </div>
   );
 }

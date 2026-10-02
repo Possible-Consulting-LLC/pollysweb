@@ -32,6 +32,17 @@ export const PEER_CATEGORY_KEYS = [
   "activity.full_history.view",
   "activity.edit",
   "activity.delete",
+  "spood.about.view",
+  "spood.about.edit",
+  "spood.list.view",
+  "spood.story.view",
+  "spood.memorialize",
+  "spood.memorial.restore",
+  "settings.profile.manage",
+  "settings.theme.customize",
+  "settings.password.change",
+  "settings.email.change",
+  "settings.social.link",
 ];
 
 export function makeDb(

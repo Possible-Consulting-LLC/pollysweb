@@ -30,7 +30,8 @@ export async function startSocialSignIn(formData: FormData): Promise<void | Muta
 }
 
 export async function linkSocialProvider(formData: FormData): Promise<void | MutationFailure> {
-  return withMutation(formData, 'identity', 'linksocialprovider', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.social.link', () => withMutation(formData, 'identity', 'linksocialprovider', async () => {
     const user = await getActionUser();
     if (!user?.id) redirect("/login?error=SessionRequired");
     const provider = allowedProvider(formData);
@@ -39,11 +40,12 @@ export async function linkSocialProvider(formData: FormData): Promise<void | Mut
     await clearAdminSocialChallenge();
     await signIn(provider, { redirectTo: "/settings?linked=1" });
 
-  });
+  }));
 }
 
 export async function reauthenticateForEmailChange(formData: FormData): Promise<void | MutationFailure> {
-  return withMutation(formData, 'identity', 'reauthenticateforemailchange', async () => {
+  const { withFeatureGate } = await import("@/lib/features/gate");
+  return withFeatureGate('settings.email.change', () => withMutation(formData, 'identity', 'reauthenticateforemailchange', async () => {
     const user = await getActionUser();
     if (!user?.id) redirect("/login?error=SessionRequired");
     const provider = allowedProvider(formData);
@@ -54,5 +56,5 @@ export async function reauthenticateForEmailChange(formData: FormData): Promise<
     await clearAdminSocialChallenge();
     await signIn(provider, { redirectTo: "/settings?reauth=1" }, provider === "google" ? { prompt: "select_account" } : undefined);
 
-  });
+  }));
 }

@@ -693,16 +693,18 @@ function loadStoryPage(states: Record<string, FeatureGateState>, scenario: Scena
 test("story page resolves both inline-edit gates in one call for the signed-in user", async () => {
   const page = loadStoryPage(gatesWith("none", "entitled"));
   await page.render();
-  assert.deepEqual(page.capture.allGateCalls.map(([, key]) => key).sort(), ["activity.delete", "activity.edit"]);
+  assert.deepEqual(
+    page.capture.allGateCalls.map(([, key]) => key).filter((key) => key.startsWith("activity.")).sort(),
+    ["activity.delete", "activity.edit"],
+  );
 });
 
-test("story page: a user without an id gets read-only upsell state and never hits the gate resolver", async () => {
+test("story page: a user without an id gets the story upsell and never hits the gate resolver", async () => {
   const page = loadStoryPage(gatesWith("none", "entitled"), "unauthenticated");
   const html = await page.render();
   assert.deepEqual(page.capture.allGateCalls, []);
-  assert.match(html, /data-edit="false"/);
-  assert.match(html, /data-delete="false"/);
-  assert.match(html, /href="\/features\/activity\.edit"/);
+  assert.doesNotMatch(html, /data-testid="event-editor"/);
+  assert.match(html, /href="\/features\/spood\.story\.view"/);
 });
 
 for (const state of STATES) {
