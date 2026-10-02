@@ -21,6 +21,7 @@ export async function syncRegistryAction(form: FormData): Promise<Result> {
         await syncFeatureRegistry(tx, actor.id, 'Sync the feature registry from code');
       });
       revalidatePath('/admin/features');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -67,6 +68,7 @@ export async function bulkSetFeatureReleaseAction(form: FormData): Promise<Resul
         }
       });
       revalidatePath('/admin/features');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -102,6 +104,7 @@ export async function saveFeatureMetadataAction(form: FormData): Promise<Result>
         await appendAudit(tx, { actorId: actor.id, targetId: row.id, action: 'feature.metadata', reason, changes });
       });
       revalidatePath('/admin/features');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -129,6 +132,7 @@ export async function setFeatureReleaseAction(form: FormData): Promise<Result> {
           changes: { featureKey: key, previousActive: row.active, active } });
       });
       revalidatePath('/admin/features');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;

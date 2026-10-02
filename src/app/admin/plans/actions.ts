@@ -55,6 +55,7 @@ export async function createPlanAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -75,6 +76,7 @@ export async function updatePlanAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -93,6 +95,7 @@ export async function duplicatePlanAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -114,6 +117,7 @@ export async function deletePlanAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -135,6 +139,7 @@ export async function saveBillingOptionAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -162,6 +167,7 @@ export async function setBillingOptionActiveAction(form: FormData): Promise<Resu
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -181,6 +187,7 @@ export async function reorderPlanAction(form: FormData): Promise<Result> {
         if (isServiceError(result)) throw result;
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -214,6 +221,7 @@ export async function bulkSetPlanFlagsAction(form: FormData): Promise<Result> {
         }
       });
       revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
       return { success: true };
     } catch (error) {
       if (error instanceof MaintenanceError) throw error;
@@ -244,6 +252,7 @@ export async function saveFeatureMatrixAction(form: FormData): Promise<Result & 
           return result;
         });
         revalidatePath('/admin/plans');
+      revalidatePath('/pricing');
         const warning = applied.removedAccess.length
           ? `Removed access: ${applied.removedAccess.join(', ')}. Accounts assigned to this plan lose these features on their next gate check; their subscription rows were not modified.`
           : undefined;
