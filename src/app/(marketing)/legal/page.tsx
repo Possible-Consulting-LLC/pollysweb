@@ -74,15 +74,16 @@ export default function LegalHubPage() {
           </div>
           <div aria-hidden className="hidden lg:block" />
         </div>
-        {/* Art bleeds to the band's bottom-right corner, ignoring band padding. */}
-        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] lg:block">
+        {/* Art bleeds to the band's bottom-right corner, ignoring band padding.
+    The mask fades its left edge into the band gradient over 50px. */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] lg:block [-webkit-mask-image:linear-gradient(to_right,transparent_0,black_50px)] [mask-image:linear-gradient(to_right,transparent_0,black_50px)]">
           {heroArt ? (
             <Image
               src="/images/legal-hero.png"
               alt=""
               fill
               sizes="(min-width: 1152px) 42vw, 0px"
-              className="object-contain object-bottom-right"
+              className="object-cover object-bottom-right"
             />
           ) : (
             <div
