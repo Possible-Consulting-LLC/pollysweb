@@ -16,15 +16,17 @@ export async function readMaintenanceState(db: Pick<Prisma.TransactionClient, 's
     throw new MaintenanceError();
   }
 }
+export type FeatureTelemetrySink = 'off' | 'posthog';
+type SettingsRow = MaintenanceState & { featureTelemetrySink?: string };
 async function change(actor: {
   id: string;
-}, version: number, update: (current: MaintenanceState) => Partial<MaintenanceState>, action: string) {
+}, version: number, update: (current: SettingsRow) => Partial<SettingsRow>, action: string) {
   if (!Number.isSafeInteger(version) || version < 0)
     throw Error('Invalid maintenance version.');
   await withAdminControl(async (tx, live) => {
     if (live.id !== actor.id)
       throw Error('Administrator identity changed.');
-    const current = await readMaintenanceState(tx);
+    const current: SettingsRow = await readMaintenanceState(tx);
     if (current.version !== version)
       throw Error('Maintenance settings changed. Reload before trying again.');
     const data = update(current);
@@ -38,7 +40,10 @@ async function change(actor: {
       actorId: live.id, targetId: null, action, reason: 'Maintenance control',
       changes: {
         version: version + 1, maintenanceDeadline: (data.deadline === undefined ? current.deadline : data.deadline)?.toISOString() ?? null,
-        announcementEnabled: data.announcementEnabled ?? current.announcementEnabled
+        announcementEnabled: data.announcementEnabled ?? current.announcementEnabled,
+        ...(data.featureTelemetrySink === undefined ? {} : {
+          featureTelemetrySinkFrom: current.featureTelemetrySink ?? 'off', featureTelemetrySinkTo: data.featureTelemetrySink
+        })
       }
     });
   });
@@ -65,23 +70,10 @@ export async function setAnnouncement(actor: {
     throw Error('Enter a plain text announcement of 1–500 characters.');
   await change(actor, version, () => ({ announcementEnabled: enabled, announcement: message.trim() }), 'maintenance.announcement');
 }
-export async function setFeatureTelemetrySink(sink: 'off' | 'posthog'): Promise<void> {
+export async function setFeatureTelemetrySink(actor: {
+  id: string;
+}, version: number, sink: FeatureTelemetrySink): Promise<void> {
   if (sink !== 'off' && sink !== 'posthog')
     throw Error('Invalid feature telemetry sink.');
-  await withAdminControl(async (tx, live) => {
-    const current = await tx.siteSettings.findUnique({ where: { id: 1 } });
-    if (!current)
-      throw new MaintenanceError();
-    const version = current.version;
-    const changed = await tx.siteSettings.updateMany({
-      where: { id: 1, version },
-      data: { featureTelemetrySink: sink, version: { increment: 1 }, updatedBy: live.id }
-    });
-    if (changed.count !== 1)
-      throw Error('Maintenance settings changed. Reload before trying again.');
-    await appendAudit(tx, {
-      actorId: live.id, targetId: null, action: 'feature_telemetry_sink', reason: 'Feature telemetry sink control',
-      changes: { version: version + 1 }
-    });
-  });
+  await change(actor, version, () => ({ featureTelemetrySink: sink }), 'maintenance.telemetry_sink');
 }

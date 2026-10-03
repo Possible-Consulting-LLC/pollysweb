@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache';
 import { withMutation } from '@/lib/mutation-boundary';
 import { requireAdminActor } from '@/lib/admin/actor';
-import { setMaintenance, setAnnouncement } from '@/lib/admin/maintenance-state';
+import { setMaintenance, setAnnouncement, setFeatureTelemetrySink, type FeatureTelemetrySink } from '@/lib/admin/maintenance-state';
 import { MaintenanceError } from '@/lib/admin/maintenance-policy';
 import { allowAction, RATE_LIMIT_MESSAGE } from '@/lib/rate-limit';
 import type { MutationFailure } from '@/lib/mutation-failure';
@@ -46,6 +46,23 @@ export async function setAnnouncementAction(form: FormData): Promise<Result> {
       if (error instanceof MaintenanceError)
         throw error;
       return { error: error instanceof Error ? error.message : 'Announcement could not be changed.' };
+    }
+  });
+}
+export async function setFeatureTelemetrySinkAction(form: FormData): Promise<Result> {
+  return withMutation(form, 'admin', 'maintenancetelemetrysink', async () => {
+    try {
+      const actor = await requireAdminActor('super_admin');
+      if (!await allowAction('care', actor.id))
+        return { error: RATE_LIMIT_MESSAGE };
+      await setFeatureTelemetrySink(actor, Number(form.get('version')), String(form.get('sink') ?? '') as FeatureTelemetrySink);
+      revalidatePath('/admin/maintenance');
+      return { success: true };
+    }
+    catch (error) {
+      if (error instanceof MaintenanceError)
+        throw error;
+      return { error: error instanceof Error ? error.message : 'Feature telemetry sink could not be changed.' };
     }
   });
 }

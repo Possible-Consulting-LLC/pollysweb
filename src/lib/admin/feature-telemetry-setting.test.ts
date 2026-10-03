@@ -13,6 +13,8 @@ function load(relativePath: string, deps: Record<string, unknown>): Record<strin
   ).outputText;
   runInNewContext(code, {
     exports,
+    Error,
+    FormData,
     require: (name: string) => {
       assert.ok(name in deps, `unexpected dependency ${name}`);
       return deps[name];
@@ -86,82 +88,111 @@ function fixture(role: 'admin' | 'super_admin' = 'super_admin') {
 
   const maintenanceState = load('./maintenance-state.ts', maintenanceStateDeps);
 
+  let allowed = true;
   const actionsDeps: Record<string, unknown> = {
-    'next/cache': {
+    "next/cache": {
       revalidatePath: (path: string) => {
         revalidated.push(path);
       },
     },
-    '@/lib/admin/maintenance-state': maintenanceState,
-    '@/lib/admin/maintenance-policy': policy,
-    '@/lib/admin/actor': maintenanceStateDeps['./actor'],
-    '@/lib/admin/audit': maintenanceStateDeps['./audit'],
-    '@/lib/db': { prisma: tx },
+    "@/lib/mutation-boundary": {
+      withMutation: async (_form: unknown, kind: unknown, _name: unknown, work: () => Promise<unknown>) => {
+        assert.equal(kind, "admin");
+        try {
+          return await work();
+        } catch (error) {
+          if (error instanceof policy.MaintenanceError) return policy.maintenanceFailure();
+          throw error;
+        }
+      },
+    },
+    "@/lib/admin/actor": {
+      requireAdminActor: async () => {
+        if (role !== "super_admin") throw new Error("Administrator access denied.");
+        return actor;
+      },
+    },
+    "@/lib/admin/maintenance-state": maintenanceState,
+    "@/lib/admin/maintenance-policy": policy,
+    "@/lib/rate-limit": { allowAction: async () => allowed, RATE_LIMIT_MESSAGE: "Slow down." },
   };
 
-  const actions = load('../../app/admin/maintenance/actions.ts', actionsDeps) as {
-    setFeatureTelemetrySink: (sink: unknown) => Promise<unknown>;
+  const actions = load("../../app/actions/admin-maintenance.ts", actionsDeps) as {
+    setFeatureTelemetrySinkAction: (form: FormData) => Promise<{ success?: true; error?: string }>;
   };
 
   return {
     actions,
+    submit: (sink: unknown, version: unknown = state.version) => {
+      const form = new FormData();
+      if (sink !== undefined && sink !== null) form.set("sink", String(sink));
+      if (version !== undefined) form.set("version", String(version));
+      return actions.setFeatureTelemetrySinkAction(form).then((result) => JSON.parse(JSON.stringify(result)) as typeof result);
+    },
+    limit: () => {
+      allowed = false;
+    },
     state: () => ({ ...state }),
-    audits: () => [...audits],
+    audits: () => JSON.parse(JSON.stringify(audits)) as typeof audits,
     revalidated: () => [...revalidated],
   };
 }
 
-test('super-admin sets feature telemetry sink to posthog: updates row, increments version, appends audit', async () => {
-  const f = fixture('super_admin');
-  await f.actions.setFeatureTelemetrySink('posthog');
-  assert.equal(f.state().featureTelemetrySink, 'posthog');
+test("super-admin sets the sink to posthog: versioned update, audit records old/new sink", async () => {
+  const f = fixture("super_admin");
+  assert.deepEqual(await f.submit("posthog", 0), { success: true });
+  assert.equal(f.state().featureTelemetrySink, "posthog");
   assert.equal(f.state().version, 1);
-  assert.equal(f.state().updatedBy, 'super-admin-1');
+  assert.equal(f.state().updatedBy, "super-admin-1");
   assert.equal(f.audits().length, 1);
-  assert.equal(f.audits()[0].action, 'feature_telemetry_sink');
-  assert.equal(f.audits()[0].actorId, 'super-admin-1');
-  assert.deepEqual(f.revalidated(), ['/admin/maintenance']);
+  assert.equal(f.audits()[0].action, "maintenance.telemetry_sink");
+  assert.equal(f.audits()[0].actorId, "super-admin-1");
+  assert.equal(f.audits()[0].changes.featureTelemetrySinkFrom, "off");
+  assert.equal(f.audits()[0].changes.featureTelemetrySinkTo, "posthog");
+  assert.equal(f.audits()[0].changes.version, 1);
+  assert.deepEqual(f.revalidated(), ["/admin/maintenance"]);
 });
 
-test('super-admin can toggle feature telemetry sink back to off', async () => {
-  const f = fixture('super_admin');
-  await f.actions.setFeatureTelemetrySink('posthog');
-  assert.equal(f.state().featureTelemetrySink, 'posthog');
-  assert.equal(f.state().version, 1);
-
-  await f.actions.setFeatureTelemetrySink('off');
-  assert.equal(f.state().featureTelemetrySink, 'off');
+test("super-admin can toggle the sink back to off with the next version", async () => {
+  const f = fixture("super_admin");
+  await f.submit("posthog", 0);
+  assert.deepEqual(await f.submit("off", 1), { success: true });
+  assert.equal(f.state().featureTelemetrySink, "off");
   assert.equal(f.state().version, 2);
-  assert.equal(f.audits().length, 2);
-  assert.equal(f.audits()[1].action, 'feature_telemetry_sink');
+  assert.equal(f.audits()[1].changes.featureTelemetrySinkFrom, "posthog");
+  assert.equal(f.audits()[1].changes.featureTelemetrySinkTo, "off");
 });
 
-test('non-admin is rejected and writes nothing', async () => {
-  const f = fixture('admin');
-  await assert.rejects(f.actions.setFeatureTelemetrySink('posthog'), /denied/i);
-  assert.equal(f.state().featureTelemetrySink, 'off');
-  assert.equal(f.state().version, 0);
-  assert.equal(f.audits().length, 0);
-});
-
-test('invalid telemetry sink values (e.g. garbage) are rejected without touching db or audit', async () => {
-  const f = fixture('super_admin');
-  await assert.rejects(f.actions.setFeatureTelemetrySink('garbage'), /invalid/i);
-  await assert.rejects(f.actions.setFeatureTelemetrySink(''), /invalid/i);
-  await assert.rejects(f.actions.setFeatureTelemetrySink(null as unknown as 'off'), /invalid/i);
-  await assert.rejects(f.actions.setFeatureTelemetrySink(undefined as unknown as 'off'), /invalid/i);
-  assert.equal(f.state().featureTelemetrySink, 'off');
-  assert.equal(f.state().version, 0);
-  assert.equal(f.audits().length, 0);
-});
-
-test('FormData support: accepts form submission with sink field', async () => {
-  const f = fixture('super_admin');
-  const form = new FormData();
-  form.set('sink', 'posthog');
-  await f.actions.setFeatureTelemetrySink(form);
-  assert.equal(f.state().featureTelemetrySink, 'posthog');
+test("a stale form version is rejected instead of overwriting newer settings", async () => {
+  const f = fixture("super_admin");
+  await f.submit("posthog", 0);
+  const result = await f.submit("off", 0);
+  assert.match(result.error ?? "", /changed\. Reload/);
+  assert.equal(f.state().featureTelemetrySink, "posthog");
   assert.equal(f.state().version, 1);
   assert.equal(f.audits().length, 1);
-  assert.equal(f.audits()[0].action, 'feature_telemetry_sink');
+});
+
+test("non-admin gets an error result and writes nothing", async () => {
+  const f = fixture("admin");
+  assert.match((await f.submit("posthog", 0)).error ?? "", /denied/i);
+  assert.equal(f.state().featureTelemetrySink, "off");
+  assert.equal(f.state().version, 0);
+  assert.equal(f.audits().length, 0);
+});
+
+test("rate-limited admin gets the rate-limit message and writes nothing", async () => {
+  const f = fixture("super_admin");
+  f.limit();
+  assert.deepEqual(await f.submit("posthog", 0), { error: "Slow down." });
+  assert.equal(f.state().version, 0);
+});
+
+test("invalid sink values and versions return an error without touching db or audit", async () => {
+  const f = fixture("super_admin");
+  for (const sink of ["garbage", "", null]) assert.match((await f.submit(sink, 0)).error ?? "", /invalid/i);
+  assert.match((await f.submit("posthog", "stale")).error ?? "", /invalid/i);
+  assert.equal(f.state().featureTelemetrySink, "off");
+  assert.equal(f.state().version, 0);
+  assert.equal(f.audits().length, 0);
 });

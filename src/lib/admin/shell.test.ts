@@ -116,6 +116,9 @@ test('maintenance page requires super admin before reading state and passes the 
     '@/lib/admin/maintenance-state': { readMaintenanceState: async () => { read = true; } },
     '@/lib/admin/maintenance-policy': maintenancePolicy,
     '@/lib/admin/reporting': {}, '@/lib/admin/presentation': {}, '@/components/admin/maintenance-controls': {},
+    '@/components/mutation-form': { MutationForm: 'form' }, '@/components/mutation-context': { MutationContextInput: 'input' },
+    '@/app/actions/admin-maintenance': { setFeatureTelemetrySinkAction: async () => ({ success: true }) }, '@/lib/db': { prisma: {} },
+    '@/lib/features/release-preflight': { checkFeatureReleaseReadiness: async () => { read = true; return { ok: true, problems: [] }; } },
   }) as { default(): Promise<Element> };
   await assert.rejects(denied.default(), /denied/); assert.equal(read, false);
   const allowed = load('../../app/admin/maintenance/page.tsx', {
@@ -125,7 +128,36 @@ test('maintenance page requires super admin before reading state and passes the 
     '@/lib/admin/reporting': { getAdminReportingPreferences: async () => ({ timezone: 'America/Los_Angeles' }) },
     '@/lib/admin/presentation': { adminEnvironment: () => 'Staging' },
     '@/components/admin/maintenance-controls': { MaintenanceControls: 'controls' },
+    '@/components/mutation-form': { MutationForm: 'form' }, '@/components/mutation-context': { MutationContextInput: 'input' },
+    '@/app/actions/admin-maintenance': { setFeatureTelemetrySinkAction: async () => ({ success: true }) }, '@/lib/db': { prisma: {} },
+    '@/lib/features/release-preflight': { checkFeatureReleaseReadiness: async () => ({ ok: false, problems: ['Feature "spood.create" is not active (released).'] }) },
   }) as { default(): Promise<Element> };
   const tree = elements(await allowed.default());
   assert.ok(tree.some(node => node.type === 'controls' && node.props.timezone === 'America/Los_Angeles' && node.props.environment === 'Staging'));
+  const form = tree.find(node => node.type === 'form')!;
+  assert.ok(form && typeof form.props.action === 'function');
+  assert.ok(elements(form).some(node => node.type === 'input' && node.props.name === 'version' && node.props.value === 3));
+  assert.ok(elements(form).some(node => node.type === 'select' && node.props.name === 'sink'));
+  const preflight = tree.find(node => node.props['aria-label'] === 'Feature release preflight')!;
+  const text = JSON.stringify(preflight.props.children);
+  assert.match(text, /1 problem/);
+  assert.match(text, /spood\.create/);
+});
+test('maintenance page shows a ready preflight and degrades to a problem row when the check cannot run', async () => {
+  const render = async (check: () => Promise<unknown>) => {
+    const page = load('../../app/admin/maintenance/page.tsx', {
+      'react/jsx-runtime': jsx, '@/lib/admin/actor': { requireAdminActor: async () => ({ id: 'owner' }) },
+      '@/lib/admin/maintenance-state': { readMaintenanceState: async () => ({ version: 1, deadline: null, announcementEnabled: false, announcement: '' }) },
+      '@/lib/admin/reporting': { getAdminReportingPreferences: async () => ({ timezone: 'UTC' }) },
+      '@/lib/admin/presentation': { adminEnvironment: () => 'Staging' },
+      '@/components/admin/maintenance-controls': { MaintenanceControls: 'controls' },
+      '@/components/mutation-form': { MutationForm: 'form' }, '@/components/mutation-context': { MutationContextInput: 'input' },
+      '@/app/actions/admin-maintenance': { setFeatureTelemetrySinkAction: async () => ({ success: true }) }, '@/lib/db': { prisma: {} },
+      '@/lib/features/release-preflight': { checkFeatureReleaseReadiness: check },
+    }) as { default(): Promise<Element> };
+    const tree = elements(await page.default());
+    return JSON.stringify(tree.find(node => node.props['aria-label'] === 'Feature release preflight')!.props.children);
+  };
+  assert.match(await render(async () => ({ ok: true, problems: [] })), /ready/);
+  assert.match(await render(async () => { throw new Error('db down'); }), /could not read the database/);
 });
