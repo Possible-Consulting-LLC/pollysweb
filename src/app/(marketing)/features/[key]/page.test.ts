@@ -19,6 +19,10 @@ function loadPage(stubs: {
   findUniqueResult?: FeatureRow | null;
   onFindUnique?: (args: unknown) => void;
   onNotFound?: () => void;
+  findUniqueThrows?: boolean;
+  sessionUser?: { id: string } | null;
+  gateState?: string;
+  onGate?: (userId: string, key: string) => void;
 }) {
   const filePath = new URL("./page.tsx", import.meta.url);
   const source = readFileSync(filePath, "utf8");
@@ -40,6 +44,7 @@ function loadPage(stubs: {
 
   runInNewContext(output, {
     exports,
+    console: { error: () => undefined },
     process: { env: {} },
     require: (name: string) => {
       if (name === "react/jsx-runtime") return jsx;
@@ -65,9 +70,21 @@ function loadPage(stubs: {
             feature: {
               findUnique: async (args: unknown) => {
                 stubs.onFindUnique?.(args);
+                if (stubs.findUniqueThrows) throw new Error("db down");
                 return stubs.findUniqueResult ?? null;
               },
             },
+          },
+        };
+      }
+      if (name === "@/lib/session") {
+        return { getSessionUser: async () => stubs.sessionUser ?? null };
+      }
+      if (name === "@/lib/features/gate") {
+        return {
+          resolveUserFeatureGate: async (userId: string, key: string) => {
+            stubs.onGate?.(userId, key);
+            return stubs.gateState ?? "upsell";
           },
         };
       }
@@ -205,4 +222,46 @@ test("generateMetadata returns fallback title for unknown feature", async () => 
   assert.deepEqual(jsonOf(metadata), {
     title: "Feature | Polly's Web",
   });
+});
+
+const ACTIVE: FeatureRow = {
+  id: "feat-9",
+  key: "care.feed.log",
+  name: "Log feedings",
+  description: "Record feedings.",
+  category: "care",
+  active: true,
+};
+
+test("a database outage renders not-found instead of a 500, and metadata falls back", async () => {
+  const page = loadPage({ findUniqueThrows: true });
+  await assert.rejects(page.render("care.feed.log"), /NEXT_NOT_FOUND/);
+  assert.deepEqual(jsonOf(await page.metadata("care.feed.log")), { title: "Feature | Polly's Web" });
+});
+
+test("an entitled signed-in viewer is not sent to pricing", async () => {
+  const gates: Array<[string, string]> = [];
+  const page = loadPage({
+    findUniqueResult: ACTIVE,
+    sessionUser: { id: "user-1" },
+    gateState: "entitled",
+    onGate: (userId, key) => gates.push([userId, key]),
+  });
+  const html = await page.render("care.feed.log");
+  assert.doesNotMatch(html, /See Plans/);
+  assert.doesNotMatch(html, /href="\/pricing"/);
+  assert.match(html, /Included in your plan/);
+  assert.deepEqual(gates, [["user-1", "care.feed.log"]]);
+});
+
+test("a signed-in viewer without the feature still sees the pricing CTA", async () => {
+  const page = loadPage({ findUniqueResult: ACTIVE, sessionUser: { id: "user-1" }, gateState: "upsell" });
+  assert.match(await page.render("care.feed.log"), /href="\/pricing"/);
+});
+
+test("signed-out viewers see the pricing CTA without a gate resolution", async () => {
+  let resolved = false;
+  const page = loadPage({ findUniqueResult: ACTIVE, onGate: () => (resolved = true) });
+  assert.match(await page.render("care.feed.log"), /See Plans/);
+  assert.equal(resolved, false);
 });

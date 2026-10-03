@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { ArrowRight, Clock, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { BRAND } from "@/lib/brand";
+import { getSessionUser } from "@/lib/session";
+import { resolveUserFeatureGate } from "@/lib/features/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +13,19 @@ type Props = {
   params: Promise<{ key: string }>;
 };
 
+/** A database outage reads as an unknown feature (not found), never a 500. */
+async function readFeature(key: string) {
+  try {
+    return await prisma.feature.findUnique({ where: { key } });
+  } catch (error) {
+    console.error("feature-page", key, error);
+    return null;
+  }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { key } = await params;
-  const feature = await prisma.feature.findUnique({ where: { key } });
+  const feature = await readFeature(key);
   if (!feature) {
     return { title: `Feature | ${BRAND.name}` };
   }
@@ -25,11 +37,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function FeatureDetailPage({ params }: Props) {
   const { key } = await params;
-  const feature = await prisma.feature.findUnique({ where: { key } });
+  const [feature, user] = await Promise.all([readFeature(key), getSessionUser()]);
 
   if (!feature) {
     notFound();
   }
+  const entitled = feature.active && user?.id ? (await resolveUserFeatureGate(user.id, key)) === "entitled" : false;
 
   if (!feature.active) {
     return (
@@ -69,6 +82,15 @@ export default async function FeatureDetailPage({ params }: Props) {
           {feature.description}
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+          {entitled ? (
+            <Link
+              href="/home"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--plum)] px-8 py-3.5 text-base font-bold text-[var(--on-accent)] transition hover:opacity-90"
+            >
+              Included in your plan — back to your spoods
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : (
           <Link
             href="/pricing"
             className="inline-flex items-center justify-center gap-2 rounded-full bg-orange-500 px-8 py-3.5 text-base font-bold text-white shadow-[0_10px_28px_rgba(249,115,22,0.35)] transition hover:bg-orange-600"
@@ -76,6 +98,7 @@ export default async function FeatureDetailPage({ params }: Props) {
             See Plans &amp; Pricing
             <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
+          )}
         </div>
       </div>
     </div>
