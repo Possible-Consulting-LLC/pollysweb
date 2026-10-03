@@ -54,6 +54,7 @@ export async function requestEmailChangeAction(_prev: { error?: string; success?
   }));
 }
 
+// Exempt from settings.email.change by design: the emailed link must finish a change the gated request already started.
 export async function confirmEmailChangeAction(_prev: { error?: string; } | undefined, formData: FormData) {
   return withMutation(formData, 'public-identity', 'confirmemailchangeaction', async () => {
     void _prev;

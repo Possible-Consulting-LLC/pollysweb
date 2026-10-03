@@ -133,7 +133,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `care.ts` — re-export barrel over `care-events.ts` and `care-habitat.ts`; maps to the same care/habitat/photos/spoods keys those modules carry (`care.feed.log`, `care.hydrate.log`, `care.observe.log`, `care.play.log`, `care.body_condition.log`, `care.molt.log`, `care.premolt.manage`, `enclosure.manage`, `housekeeping.log`, `photo.upload`, `photo.profile.set`, `photo.delete`, `spood.memorialize`, `spood.memorial.restore`)
 - [x] `constellation.ts` → `journey.check_in`
 - [x] `disconnect-provider.ts` → `settings.social.link`
-- [x] `email-change.ts` → `settings.email.change`
+- [x] `email-change.ts` → `settings.email.change` (`requestEmailChangeAction`); `confirmEmailChangeAction` is exempt by design — the emailed confirmation link completes a change the gated request already started, so gating it would strand an in-flight change
 - [x] `social-auth.ts` — `linkSocialProvider` → `settings.social.link`; `reauthenticateForEmailChange` → `settings.email.change`; `startSocialSignIn` → auth (plan-independent)
 - [x] `feedback.ts`, `auth.ts` (register/login/verification) — plan-independent (feedback, auth)
 
@@ -144,7 +144,7 @@ Every file walked in Step 1 maps to at least one feature above, or is explicitly
 - [x] `cron/reconcile-billing/route.ts` — billing reconciliation background job; protected by service secret; plan-independent (platform reliability, not a keeper feature)
 - [x] `facebook/data-deletion/route.ts` — compliance, plan-independent
 - [x] `health/route.ts` — health check, plan-independent
-- [x] `photos/route.ts` → `photo.gallery.view` (serves private photos)
+- [x] `photos/route.ts` → `photo.gallery.view` (serves private photos); a spood's `profilePhoto` reference is exempt so identity images render on cards, lists, and headers
 - [x] `site-status/route.ts`, `site-status/context/route.ts` — platform status, plan-independent
 - [x] `stripe/webhook/route.ts` — billing infrastructure, plan-independent (webhook, not user entry point)
 
