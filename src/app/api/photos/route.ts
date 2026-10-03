@@ -10,11 +10,25 @@ import { ownsPhotoReference } from "@/lib/photo-reference-owner";
 
 export const dynamic = "force-dynamic";
 
+/** A spood's profile photo is the keeper's chosen identity image and renders everywhere (cards,
+ * lists, headers); only gallery references sit behind photo.gallery.view. */
+async function isProfilePhotoReference(reference: string, userId: string): Promise<boolean> {
+  try {
+    const spider = await prisma.spider.findFirst({ where: { userId, profilePhoto: reference }, select: { id: true } });
+    return Boolean(spider);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request): Promise<Response> {
   let identity;
   try { identity = await resolveRequestIdentity(); await guardMaintenance('read', identity); } catch { return maintenanceResponse(); }
   const userId = identity?.effectiveUserId ?? null;
-  if (userId && (await resolveUserFeatureGate(userId, "photo.gallery.view")) !== "entitled") {
+  const reference = new URL(request.url).searchParams.get("ref") || "";
+  // One gate resolution per gallery request; profile photos skip it entirely.
+  if (userId && reference && !(await isProfilePhotoReference(reference, userId))
+    && (await resolveUserFeatureGate(userId, "photo.gallery.view")) !== "entitled") {
     return new Response(null, { status: 403, headers: { "Cache-Control": "private, no-store" } });
   }
   const response = await servePrivatePhoto(request, {

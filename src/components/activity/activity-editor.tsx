@@ -40,8 +40,8 @@ type EditableItem = {
 export function ActivityEditorList({
   items,
   writableSpiderIds,
-  allowEdit = true,
-  allowDelete = true,
+  allowEdit = false,
+  allowDelete = false,
 }: {
   items: EditableItem[];
   writableSpiderIds?: string[];
@@ -61,8 +61,8 @@ export function ActivityEditorRow({
   item,
   compact = false,
   readOnly = false,
-  allowEdit = true,
-  allowDelete = true,
+  allowEdit = false,
+  allowDelete = false,
 }: {
   item: EditableItem;
   compact?: boolean;

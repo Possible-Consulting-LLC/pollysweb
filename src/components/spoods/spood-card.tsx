@@ -26,7 +26,7 @@ export type CareFeatureKey = (typeof CARE_FEATURE_KEYS)[number];
 export type CareGates = Record<CareFeatureKey, FeatureGateState>;
 
 // Housekeeping is a habitat feature that shares the quick-log row. Pages that show every quick action
-// pass its state; callers that omit it (the home card never offers housekeeping) leave the button open.
+// pass its state; an omitted state fails closed (the home card never offers housekeeping anyway).
 export type QuickLogGates = CareGates & { "housekeeping.log"?: FeatureGateState };
 type QuickLogGateKey = CareFeatureKey | "housekeeping.log";
 
@@ -47,7 +47,7 @@ export function GatedQuickLogButtons({
   ...props
 }: ComponentProps<typeof QuickLogButtons> & { gates: QuickLogGates }): ReactNode {
   const stateFor = (key: QuickLogGateKey): FeatureGateState =>
-    key === "housekeeping.log" ? (gates[key] ?? "entitled") : gates[key];
+    key === "housekeeping.log" ? (gates[key] ?? "coming-soon") : gates[key];
   const open = actions.filter((action) => {
     const gated = GATED_QUICK_ACTIONS[action];
     return !gated || stateFor(gated.key) === "entitled";

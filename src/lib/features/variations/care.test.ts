@@ -255,7 +255,9 @@ for (const [key, action] of QUICK_ACTIONS) {
   for (const state of STATES) {
     test(`quick-log ${action} (${key}): ${state}`, () => {
       const { SpoodCareDetails } = loadSpoodCard();
-      const html = markup(SpoodCareDetails({ view: VIEW, gates: gatesWith(key, state), showStatus: false }));
+      // pages that show housekeeping in the quick-log row pass its state (an omitted state fails closed)
+      const gates = { ...gatesWith(key, state), "housekeeping.log": "entitled" };
+      const html = markup(SpoodCareDetails({ view: VIEW, gates, showStatus: false }));
       const actions = /data-actions="([^"]*)"/.exec(html)?.[1].split(",") ?? [];
       if (state === "entitled") assert.ok(actions.includes(action), html);
       else assert.ok(!actions.includes(action), html);

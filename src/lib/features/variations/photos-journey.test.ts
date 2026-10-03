@@ -78,25 +78,30 @@ test("resolveUserGates marks a registered but unentitled key as upsell", async (
 });
 
 for (const userId of [null, undefined, ""]) {
-  test(`resolveUserGates gives every key an upsell without touching the db for userId=${JSON.stringify(userId)}`, async () => {
-    const db = new Proxy({}, { get: () => assert.fail("db must not be read") }) as unknown as FeatureGateDb;
-    assert.deepEqual(await resolveUserGates(db, userId, ["a.one", "a.two"]), { "a.one": "upsell", "a.two": "upsell" });
+  test(`resolveUserGates gives released keys an upsell and unreleased keys coming-soon without reading a user for userId=${JSON.stringify(userId)}`, async () => {
+    const healthy = makeDb({ "a.one": "upsell", "a.two": "coming-soon" });
+    const db = { ...healthy, user: { findUnique: () => assert.fail("no user to read") } } as unknown as FeatureGateDb;
+    assert.deepEqual(await resolveUserGates(db, userId, ["a.one", "a.two", "a.unknown"]), {
+      "a.one": "upsell",
+      "a.two": "coming-soon",
+      "a.unknown": "coming-soon",
+    });
   });
 }
 
-test("resolveUserGates fails safe to coming-soon for a key whose lookup throws, without losing the others", async () => {
+test("resolveUserGates fails every key closed when the batched feature read throws", async () => {
   const healthy = makeDb({ "a.one": "entitled", "a.two": "entitled" });
   const db = {
     ...healthy,
     feature: {
-      findUnique: async (args: { where: { key: string } }) => {
-        if (args.where.key === "a.two") throw new Error("db down");
-        return (healthy.feature as unknown as { findUnique: (a: unknown) => Promise<unknown> }).findUnique(args);
+      findMany: async () => {
+        throw new Error("db down");
       },
+      findUnique: () => assert.fail("no per-key fallback"),
     },
   } as unknown as FeatureGateDb;
   assert.deepEqual(await resolveUserGates(db, "user-1", ["a.one", "a.two"]), {
-    "a.one": "entitled",
+    "a.one": "coming-soon",
     "a.two": "coming-soon",
   });
 });
@@ -349,15 +354,23 @@ function loadConstellationAction(scenario: Scenario, state: FeatureGateState) {
 
 // ---------------------------------------------------------------- photo gallery route
 
-function loadPhotoRoute(states: Record<string, FeatureGateState>, userId: string | null) {
+function loadPhotoRoute(states: Record<string, FeatureGateState>, userId: string | null, profilePhotos: string[] = []) {
   const db = makeDb(states);
   const served: Array<string | null> = [];
-  const gate = gateStub(db, userId ? { id: userId, plan: "Pro" } : null, newCapture());
+  const capture = newCapture();
+  const gate = gateStub(db, userId ? { id: userId, plan: "Pro" } : null, capture);
   const dependencies: Record<string, unknown> = {
     "@/lib/admin/maintenance-access": { guardMaintenance: async () => {} },
     "@/lib/admin/maintenance-policy": maintenancePolicy,
     "@/lib/admin/test-session-store": { resolveRequestIdentity: async () => ({ effectiveUserId: userId }) },
-    "@/lib/db": { prisma: {} },
+    "@/lib/db": {
+      prisma: {
+        spider: {
+          findFirst: async ({ where }: { where: { userId: string; profilePhoto: string } }) =>
+            where.userId === userId && profilePhotos.includes(where.profilePhoto) ? { id: "spider-1" } : null,
+        },
+      },
+    },
     "@/lib/features/gate": gate,
     "@/lib/supabase": { getSupabaseAdmin: () => assert.fail("must not download") },
     "@/lib/photo-media-route": {
@@ -372,9 +385,29 @@ function loadPhotoRoute(states: Record<string, FeatureGateState>, userId: string
   const route = loadModule<{ GET: (request: Request) => Promise<Response> }>(
     "app/api/photos/route.ts",
     dependencies,
-    { Response },
+    { Response, URL },
   );
-  return { get: () => route.GET(new Request("https://example.test/api/photos?ref=x")), served };
+  return {
+    get: (ref = "x") => route.GET(new Request(`https://example.test/api/photos?ref=${encodeURIComponent(ref)}`)),
+    served,
+    gateCalls: capture.allGateCalls,
+  };
+}
+
+for (const state of ["upsell", "coming-soon"] as const) {
+  test(`photo gallery route (photo.gallery.view): a spood profile photo renders for a ${state} user without resolving the gate`, async () => {
+    const route = loadPhotoRoute({ "photo.gallery.view": state }, "user-1", ["profile-ref"]);
+    assert.equal((await route.get("profile-ref")).status, 200);
+    assert.deepEqual(route.served, ["user-1"]);
+    assert.deepEqual(route.gateCalls, []);
+  });
+
+  test(`photo gallery route (photo.gallery.view): a gallery reference still 403s for a ${state} user even when a profile photo exists`, async () => {
+    const route = loadPhotoRoute({ "photo.gallery.view": state }, "user-1", ["profile-ref"]);
+    assert.equal((await route.get("gallery-ref")).status, 403);
+    assert.deepEqual(route.served, []);
+    assert.deepEqual(route.gateCalls, [["user-1", "photo.gallery.view"]]);
+  });
 }
 
 test("photo gallery route (photo.gallery.view): entitled user is served", async () => {
@@ -427,11 +460,12 @@ test("photo gallery shows grid delete buttons only when management and photo.del
   const photos = [1, 2].map((i) => ({ id: String(i), url: `/p${i}.jpg`, caption: `Moment ${i}`, takenAt: "2026-10-02T12:00:00Z" }));
   const deletes = (props: Record<string, unknown>) =>
     (markup(React.createElement(PhotoGallery, { photos, ...props })).match(/aria-label="Delete photo/g) ?? []).length;
-  assert.equal(deletes({ allowManage: true }), 2);
+  assert.equal(deletes({}), 0, "omitted allow flags fail closed");
+  assert.equal(deletes({ allowManage: true }), 0);
   assert.equal(deletes({ allowManage: true, allowDelete: true }), 2);
   assert.equal(deletes({ allowManage: true, allowDelete: false }), 0);
   assert.equal(deletes({ allowManage: false, allowDelete: true }), 0);
-  assert.equal(deletes({ allowManage: true, allowSetProfile: false }), 2);
+  assert.equal(deletes({ allowManage: true, allowDelete: true, allowSetProfile: false }), 2);
 });
 
 // ---------------------------------------------------------------- pages

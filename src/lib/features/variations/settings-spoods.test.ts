@@ -647,10 +647,11 @@ for (const state of STATES) {
   });
 }
 
-test("quick-log housekeeping: callers that never resolve housekeeping.log keep the button open", () => {
+test("quick-log housekeeping: callers that never resolve housekeeping.log fail closed to coming-soon", () => {
   const { SpoodCareDetails } = loadSpoodCard();
   const html = markup(SpoodCareDetails({ view: VIEW, gates: careGates(), showStatus: false }));
-  assert.match(html, /data-actions="[^"]*housekeeping/);
+  assert.doesNotMatch(html, /data-actions="[^"]*housekeeping/);
+  assert.match(html, /coming soon/i);
 });
 
 test("quick-log housekeeping: a locked housekeeping action renders only its notice when it is the sole action", () => {

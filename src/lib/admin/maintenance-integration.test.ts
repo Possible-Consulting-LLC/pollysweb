@@ -51,7 +51,7 @@ test('photos fail closed without download when maintenance starts after ownershi
     '@/lib/admin/test-session-store': { resolveRequestIdentity: async () => ({ effectiveUserId: 'demo' }) }, '@/lib/db': { prisma: { photo: { findFirst: async () => ({ id: 'photo' }) } } },
     '@/lib/photo-reference-owner': { ownsPhotoReference: async () => true }, '@/lib/features/gate': { resolveUserFeatureGate: async () => 'entitled' },
     '@/lib/supabase': { getSupabaseAdmin: () => { downloads++; throw Error(); } }, '@/lib/photo-media-route': { servePrivatePhoto }, '@/lib/photo-media': photoMedia,
-  });
+  }, { URL });
   const response = await api.GET(new Request('https://example.test/api/photos?ref=' + encodeURIComponent('spood-storage:demo/image.png')));
   assert.equal(response.status, 503);
   assert.equal(response.headers.get('retry-after'), '60');

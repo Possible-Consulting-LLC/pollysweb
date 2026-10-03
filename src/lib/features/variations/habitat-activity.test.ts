@@ -103,7 +103,8 @@ test("resolveUserGates reads a constant number of rows regardless of how many ke
     const { db, counts } = countingDb(known);
     const gates = await resolveUserGates(db, "user-1", asked);
     assert.equal(Object.keys(gates).length, asked.length);
-    assert.deepEqual(counts, { featureFindMany: 1, featureFindUnique: 0, userFindUnique: 1, planFindMany: 1, siteSettings: 0 });
+    // subscription-first: the effective subscription answers, so legacy plans are not read; siteSettings is the one telemetry read
+    assert.deepEqual(counts, { featureFindMany: 1, featureFindUnique: 0, userFindUnique: 1, planFindMany: 0, siteSettings: 1 });
     totals.push(Object.values(counts).reduce((sum, n) => sum + n, 0));
   }
   assert.equal(totals[0], totals[1]);
@@ -133,20 +134,16 @@ test("resolveUserGates marks every key coming-soon when the signed-in user row i
   assert.deepEqual(await resolveUserGates(db, "user-1", ["k.a"]), { "k.a": "coming-soon" });
 });
 
-test("resolveUserGates falls back to per-key lookups when the batched read fails, isolating failures", async () => {
-  const { db } = countingDb(["k.a"]);
-  const feature = (db as unknown as { feature: Record<string, unknown> }).feature;
-  feature.findMany = async () => {
+test("resolveUserGates fails closed for every key when the batched read fails (no per-key fallback)", async () => {
+  const { db, counts } = countingDb(["k.a"]);
+  (db as unknown as { feature: Record<string, unknown> }).feature.findMany = async () => {
     throw new Error("batch down");
   };
-  feature.findUnique = async ({ where }: { where: { key: string } }) => {
-    if (where.key === "k.bad") throw new Error("row down");
-    return { key: where.key, active: true };
-  };
   assert.deepEqual(await resolveUserGates(db, "user-1", ["k.a", "k.bad"]), {
-    "k.a": "entitled",
+    "k.a": "coming-soon",
     "k.bad": "coming-soon",
   });
+  assert.equal(counts.featureFindUnique, 0);
 });
 
 // ---------------------------------------------------------------- habitat actions
@@ -404,7 +401,10 @@ test("activity editor shows Edit and standalone Delete controls according to the
   const edit = (html: string) => />Edit</.test(html);
   const del = (html: string) => />Delete</.test(html);
 
-  const all = render({});
+  const unset = render({});
+  assert.ok(!edit(unset) && !del(unset), "omitted allow flags fail closed");
+
+  const all = render({ allowEdit: true, allowDelete: true });
   assert.ok(edit(all));
   assert.ok(!del(all), "delete lives inside the open edit form when editing is allowed");
 

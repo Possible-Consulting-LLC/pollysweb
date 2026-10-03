@@ -214,9 +214,9 @@ export function PhotoGallery({
   profilePhotoUrl,
   emptyLabel = "No photos yet — add one above.",
   className,
-  allowManage = true,
-  allowSetProfile = true,
-  allowDelete = true,
+  allowManage = false,
+  allowSetProfile = false,
+  allowDelete = false,
 }: {
   photos: GalleryPhoto[];
   profilePhotoUrl?: string | null;
