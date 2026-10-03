@@ -29,5 +29,5 @@ test("every post has an excerpt, tags, and rendered structure", () => {
 
 test("the welcome post tells the rebrand story", () => {
   const post = getBlogPost("welcome-to-pollys-web");
-  assert.ok(post?.html.includes("Spoodly Space"));
+  assert.ok(post?.html.includes("Polly's Web"));
 });

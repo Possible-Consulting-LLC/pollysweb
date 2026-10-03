@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# mockups
+/mockups
+
 # production
 /build
 

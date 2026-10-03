@@ -6,7 +6,7 @@ import ts from "typescript";
 import { socialErrorMessage } from "./social-error";
 
 function loginPage(signedIn: boolean) {
-  const source = readFileSync(new URL("../app/(auth)/login/page.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../app/(marketing)/login/page.tsx", import.meta.url), "utf8");
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
