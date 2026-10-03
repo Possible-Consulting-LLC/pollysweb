@@ -5,7 +5,7 @@ export function FeatureGate({ state, featureKey, name, children }: {
   state: FeatureGateState;
   featureKey: string;
   name: string;
-  children: ReactNode;
+  children?: ReactNode;
 }): ReactNode {
   switch (state) {
     case "entitled":
